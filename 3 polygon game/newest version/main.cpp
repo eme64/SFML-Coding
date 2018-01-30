@@ -1,9 +1,12 @@
 #include <iostream>
 #include <stdlib.h>
 #include <cmath>
+#include <cstddef>
 //#include <list>
 #include <SFML/Graphics.hpp>
 
+#include "FastNoise/FastNoise.h"
+//https://github.com/Auburns/FastNoise/wiki
 
 //https://github.com/JCash/voronoi
 #define JC_VORONOI_IMPLEMENTATION
@@ -12,6 +15,7 @@
 //#define JCV_FABS fabs
 //#define JCV_ATAN2 atan2
 #include "jc_voronoi.h"
+
 
 
 float SCREEN_SIZE_X = 1600;
@@ -40,13 +44,13 @@ void DrawLine(float x1, float y1, float x2, float y2, sf::RenderWindow &window)
 
 
 // --------------------------------------------------------- VORONOI
-void voronoi_generate(int numpoints, const jcv_point* points, jcv_diagram &diagram)
+void voronoi_generate(int numpoints, const jcv_point* points, jcv_diagram &diagram, _jcv_rect* rect)
 {
   memset(&diagram, 0, sizeof(jcv_diagram));
-  jcv_diagram_generate(numpoints, points, 0, &diagram);
+  jcv_diagram_generate(numpoints, points, rect, &diagram);
 }
 
-void voronoi_relax_points(const jcv_diagram &diagram, jcv_point* points)
+void voronoi_relax_points(const jcv_diagram &diagram, jcv_point* points, _jcv_rect* rect)
 {
   const jcv_site* sites = jcv_diagram_get_sites(&diagram);
   for( int i = 0; i < diagram.numsites; ++i )
@@ -67,6 +71,12 @@ void voronoi_relax_points(const jcv_diagram &diagram, jcv_point* points)
 
     points[site->index].x = sum.x / count;
     points[site->index].y = sum.y / count;
+
+    if(points[site->index].x < rect->min.x){points[site->index].x = rect->min.x;}
+    if(points[site->index].y < rect->min.y){points[site->index].y = rect->min.y;}
+
+    if(points[site->index].x > rect->max.x){points[site->index].x = rect->max.x;}
+    if(points[site->index].y > rect->max.y){points[site->index].y = rect->max.y;}
   }
 }
 
@@ -147,6 +157,8 @@ struct PolyMap
   size_t num_cells;
   std::vector<PolyMapCell> cells;
 
+  std::vector<sf::Vertex> mesh;
+
   PolyMap(size_t n_cells, float s_x, float s_y)
   {
     num_cells = n_cells;
@@ -165,17 +177,37 @@ struct PolyMap
 
     // --------------------------- Prepare Diagram
     jcv_diagram diagram;
-    voronoi_generate(num_cells, points, diagram);
+    _jcv_rect rect;
+    rect.min.x = 0;
+    rect.min.y = 0;
+    rect.max.x = spread_x;
+    rect.max.y = spread_y;
+    voronoi_generate(num_cells, points, diagram, &rect);
 
-    for(int i=0; i<100; i++) // relax some -> make more equispaced
+    for(int i=0; i<10; i++) // relax some -> make more equispaced
     {
-      voronoi_relax_points(diagram, points);
+      voronoi_relax_points(diagram, points, &rect);
       voronoi_free(diagram);
-      voronoi_generate(num_cells, points, diagram);
+      voronoi_generate(num_cells, points, diagram, &rect);
     }
 
     // ----------------  extract graph
     cells.resize(num_cells);
+
+    FastNoise myNoise1;
+    myNoise1.SetNoiseType(FastNoise::SimplexFractal);
+		myNoise1.SetSeed(1000);
+		myNoise1.SetFrequency(0.005);
+
+    FastNoise myNoise2;
+    myNoise2.SetNoiseType(FastNoise::SimplexFractal);
+		myNoise2.SetSeed(1001);
+		myNoise2.SetFrequency(0.005);
+
+    FastNoise myNoise3;
+    myNoise3.SetNoiseType(FastNoise::SimplexFractal);
+		myNoise3.SetSeed(1002);
+		myNoise3.SetFrequency(0.005);
 
     // get positions
     for(size_t i = 0; i<num_cells; i++)
@@ -183,7 +215,11 @@ struct PolyMap
       cells[i].pos.x = points[i].x;
       cells[i].pos.y = points[i].y;
 
-      cells[i].color = sf::Color(255*cells[i].pos.x / spread_x,(i*31) % 128,255*cells[i].pos.y / spread_y);
+      float r = (1.0+myNoise1.GetNoise(cells[i].pos.x, cells[i].pos.y))*0.5*255.0;
+      float g = (1.0+myNoise2.GetNoise(cells[i].pos.x, cells[i].pos.y))*0.5*255.0;
+      float b = (1.0+myNoise3.GetNoise(cells[i].pos.x, cells[i].pos.y))*0.5*255.0;
+
+      cells[i].color = sf::Color(r, g, b);
     }
 
     // get neighbours and edges
@@ -207,10 +243,45 @@ struct PolyMap
     }
 
     voronoi_free(diagram);
+
+    create_mesh();
+  }
+  void create_mesh()
+  {
+    mesh.clear();
+
+    for(size_t i = 0; i<num_cells; i++)
+    {
+      int nc = cells[i].corners.size();
+
+      for(int c = 2; c<nc; c++){
+        mesh.push_back(sf::Vertex(
+                          sf::Vector2f(cells[i].corners[0].x,cells[i].corners[0].y),
+                          cells[i].color));
+
+        mesh.push_back(sf::Vertex(
+                          sf::Vector2f(cells[i].corners[c-1].x,cells[i].corners[c-1].y),
+                          cells[i].color));
+
+        mesh.push_back(sf::Vertex(
+                          sf::Vector2f(cells[i].corners[c].x,cells[i].corners[c].y),
+                          cells[i].color));
+      }
+    }
   }
 
   void draw(float x, float y, float zoom, sf::RenderWindow &window)
   {
+    sf::Transform t;
+
+    t.translate(SCREEN_SIZE_X*0.5, SCREEN_SIZE_Y*0.5);
+    t.scale(zoom, zoom);
+    t.translate(-x, -y);
+
+    window.draw(&mesh[0], mesh.size(), sf::Triangles, t);
+
+    return;
+
     for(size_t i = 0; i<num_cells; i++)
     {
       // draw cells
@@ -228,7 +299,7 @@ struct PolyMap
       convex.setFillColor(cells[i].color);
       window.draw(convex, sf::BlendAdd);
 
-
+      /*
       // draw connections
       int nn = cells[i].neighbors.size();
       for(int c = 0; c<nn; c++){
@@ -240,9 +311,12 @@ struct PolyMap
                   (cells[j].pos.y - y)*zoom+ SCREEN_SIZE_Y*0.5,
                   window);
       }
+      */
 
+      /*
       // draw dots
       DrawDot((cells[i].pos.x - x)*zoom + SCREEN_SIZE_X*0.5, (cells[i].pos.y - y)*zoom + SCREEN_SIZE_Y*0.5, window);
+      */
     }
   }
 };
@@ -252,10 +326,12 @@ struct PolyMap
 //-------------------------------------------------------- Main
 int main()
 {
-    sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "first attempts");
+    sf::ContextSettings settings;
+    settings.antialiasingLevel = 8;
+    sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "first attempts", sf::Style::Default, settings);
     window.setVerticalSyncEnabled(true);
 
-    PolyMap map = PolyMap(1000, 800, 600);
+    PolyMap map = PolyMap(10000, 1000, 1000);
 
     float screen_x = 0;
     float screen_y = 0;
