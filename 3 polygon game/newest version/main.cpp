@@ -1,9 +1,10 @@
-#include <iostream>
 #include <stdlib.h>
+#include <iostream>
 #include <cmath>
 #include <cstddef>
-//#include <list>
 #include <SFML/Graphics.hpp>
+#include <list>
+#include <queue>
 
 #include "FastNoise/FastNoise.h"
 //https://github.com/Auburns/FastNoise/wiki
@@ -18,8 +19,8 @@
 
 
 
-float SCREEN_SIZE_X = 1600;
-float SCREEN_SIZE_Y = 1000;
+float SCREEN_SIZE_X = 800;
+float SCREEN_SIZE_Y = 600;
 
 
 // --------------------------------------------------------- DRAWING
@@ -270,6 +271,67 @@ struct PolyMap
     }
   }
 
+  size_t getCell(float x, float y)
+  {
+    size_t res = 0;
+    float squaredist = spread_x*spread_x + spread_y*spread_y; // max dist on map !
+
+    for(size_t i = 0; i<num_cells; i++)
+    {
+      float dx = cells[i].pos.x - x;
+      float dy = cells[i].pos.y - y;
+
+      float d = dx*dx + dy*dy;
+
+      if(d < squaredist)
+      {
+        res = i;
+        squaredist = d;
+      }
+    }
+
+    return res;
+  }
+
+  void bfs(size_t root, std::vector<size_t> &parents)
+  {
+    // creates a rooted tree from a bfs traversal
+
+    bool marked[num_cells] = {false};
+
+    std::queue<size_t> q;
+
+    parents[root] = root;
+    q.push(root);
+
+    while(!q.empty())
+    {
+      size_t c = q.front();
+      q.pop();
+
+      std::cout << "# " << c << std::endl;
+
+      if(!marked[c])
+      {
+        marked[c] = true;
+
+        //push all children
+        size_t nn = cells[c].neighbors.size();
+        for(size_t nec; nec<nn; nec++)
+        {
+          size_t ne = cells[c].neighbors[nec];
+          if(!marked[ne])
+          {
+            parents[ne] = c;
+            std::cout << "(" << c << ", " << ne << ")" << std::endl;
+
+            q.push(ne);
+          }
+        }
+      }
+    }
+  }
+
   void draw(float x, float y, float zoom, sf::RenderWindow &window)
   {
     sf::Transform t;
@@ -279,6 +341,21 @@ struct PolyMap
     t.translate(-x, -y);
 
     window.draw(&mesh[0], mesh.size(), sf::Triangles, t);
+
+
+    std::vector<size_t> parents(num_cells);
+    bfs(0, parents);
+
+    // draw connections
+    for(size_t i = 0; i<num_cells; i++)
+    {
+      DrawLine(
+                (cells[i].pos.x - x)*zoom+ SCREEN_SIZE_X*0.5,
+                (cells[i].pos.y - y)*zoom+ SCREEN_SIZE_Y*0.5,
+                (cells[parents[i]].pos.x - x)*zoom+ SCREEN_SIZE_X*0.5,
+                (cells[parents[i]].pos.y - y)*zoom+ SCREEN_SIZE_Y*0.5,
+                window);
+    }
 
     return;
 
@@ -321,7 +398,42 @@ struct PolyMap
   }
 };
 
+//-------------------------------------------------------- Obj
+struct GObject
+{
+  float x;
+  float y;
 
+  PolyMap *map;
+  size_t cell;
+
+  GObject(float x, float y, PolyMap *map): x(x), y(y), map(map)
+  {
+    // let's find the closesd cell:
+
+    cell = map->getCell(x,y);
+  }
+
+  void draw(float s_x, float s_y, float zoom, sf::RenderWindow &window)
+  {
+    sf::Transform t;
+
+    t.translate(SCREEN_SIZE_X*0.5, SCREEN_SIZE_Y*0.5);
+    t.scale(zoom, zoom);
+    t.translate(-s_x, -s_y);
+
+    DrawDot((x - s_x)*zoom + SCREEN_SIZE_X*0.5, (y - s_y)*zoom + SCREEN_SIZE_Y*0.5, window);
+
+    DrawLine(   (x - s_x)*zoom + SCREEN_SIZE_X*0.5, (y - s_y)*zoom + SCREEN_SIZE_Y*0.5,
+                (map->cells[cell].pos.x - s_x)*zoom + SCREEN_SIZE_X*0.5, (map->cells[cell].pos.y - s_y)*zoom + SCREEN_SIZE_Y*0.5,
+                window);
+  }
+
+  void update()
+  {
+
+  }
+};
 
 //-------------------------------------------------------- Main
 int main()
@@ -332,6 +444,15 @@ int main()
     window.setVerticalSyncEnabled(true);
 
     PolyMap map = PolyMap(10000, 1000, 1000);
+    std::list<GObject*> obj_list;
+
+    for(int i=0; i<100; i++)
+    {
+      float xx = map.spread_x * ((float) rand() / (RAND_MAX));
+      float yy = map.spread_y * ((float) rand() / (RAND_MAX));
+      GObject* n = new GObject(xx,yy, &map);
+      obj_list.push_back(n);
+    }
 
     float screen_x = 0;
     float screen_y = 0;
@@ -359,33 +480,38 @@ int main()
           window.close();
         }
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Add)){
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)){
           screen_zoom*= 1.01;
         }
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract)){
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)){
           screen_zoom*= 0.99;
         }
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)){
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)){
           screen_x-=5/screen_zoom;
         }
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)){
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)){
           screen_x+=5/screen_zoom;
         }
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)){
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)){
           screen_y-=5/screen_zoom;
         }
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down)){
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)){
           screen_y+=5/screen_zoom;
         }
 
         window.clear();
 
         map.draw(screen_x, screen_y, screen_zoom, window);
+
+        for (std::list<GObject*>::iterator it = obj_list.begin(); it != obj_list.end(); it++)
+        {
+            (**it).draw(screen_x, screen_y, screen_zoom, window);
+        }
 
         window.display();
     }
