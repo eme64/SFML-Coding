@@ -37,8 +37,8 @@ void DrawLine(float x1, float y1, float x2, float y2, sf::RenderWindow &window)
 {
   sf::Vertex line[] =
   {
-    sf::Vertex(sf::Vector2f(x1,y1)),
-    sf::Vertex(sf::Vector2f(x2,y2))
+    sf::Vertex(sf::Vector2f(x1,y1), sf::Color(0,0,0)),
+    sf::Vertex(sf::Vector2f(x2,y2), sf::Color(255,255,255))
   };
   window.draw(line, 2, sf::Lines, sf::BlendAdd);
 }
@@ -271,6 +271,46 @@ struct PolyMap
     }
   }
 
+  size_t getCell(float x, float y, size_t guess_cell)
+  {
+    size_t number_iterations = 0;
+    // supposed to speed up, because could be close:
+    size_t res = guess_cell;
+
+    float dx = cells[guess_cell].pos.x - x;
+    float dy = cells[guess_cell].pos.y - y;
+    float squaredist = dx*dx + dy*dy; // from initial guess
+
+    bool done = false;
+    while(!done)
+    {
+      done = true;
+
+      // check neighbors of current guess, find better fit
+      size_t nc = cells[res].neighbors.size();
+
+      for(int i=0; i<nc; i++)
+      {
+        size_t n = cells[res].neighbors[i];
+        dx = cells[n].pos.x - x;
+        dy = cells[n].pos.y - y;
+
+        float d = dx*dx + dy*dy;
+
+        if(d < squaredist)
+        {
+          res = n;
+          squaredist = d;
+          done = false;
+          number_iterations++;
+          break; // needed to recompute nc !
+        }
+      }
+    }
+    std::cout << "it: " << number_iterations << std::endl;
+    return res;
+  }
+
   size_t getCell(float x, float y)
   {
     size_t res = 0;
@@ -296,12 +336,11 @@ struct PolyMap
   void bfs(size_t root, std::vector<size_t> &parents)
   {
     // creates a rooted tree from a bfs traversal
-
     bool marked[num_cells] = {false};
-
     std::queue<size_t> q;
 
     parents[root] = root;
+    marked[root] = true;
     q.push(root);
 
     while(!q.empty())
@@ -309,24 +348,16 @@ struct PolyMap
       size_t c = q.front();
       q.pop();
 
-      std::cout << "# " << c << std::endl;
-
-      if(!marked[c])
+      //push all children
+      size_t nn = cells[c].neighbors.size();
+      for(size_t nec = 0; nec<nn; nec++)
       {
-        marked[c] = true;
-
-        //push all children
-        size_t nn = cells[c].neighbors.size();
-        for(size_t nec; nec<nn; nec++)
+        size_t ne = cells[c].neighbors[nec];
+        if(!marked[ne])
         {
-          size_t ne = cells[c].neighbors[nec];
-          if(!marked[ne])
-          {
-            parents[ne] = c;
-            std::cout << "(" << c << ", " << ne << ")" << std::endl;
-
-            q.push(ne);
-          }
+          parents[ne] = c;
+          q.push(ne);
+          marked[ne] = true;
         }
       }
     }
@@ -342,7 +373,7 @@ struct PolyMap
 
     window.draw(&mesh[0], mesh.size(), sf::Triangles, t);
 
-
+    /*
     std::vector<size_t> parents(num_cells);
     bfs(0, parents);
 
@@ -356,6 +387,7 @@ struct PolyMap
                 (cells[parents[i]].pos.y - y)*zoom+ SCREEN_SIZE_Y*0.5,
                 window);
     }
+    */
 
     return;
 
@@ -404,14 +436,56 @@ struct GObject
   float x;
   float y;
 
+  float speed = 1.0;
+
   PolyMap *map;
   size_t cell;
+  size_t cell_goal;
+  std::vector<size_t> path;
+  size_t path_it; // points to the pos in path where the cell is that needs to be reached next
 
   GObject(float x, float y, PolyMap *map): x(x), y(y), map(map)
   {
     // let's find the closesd cell:
 
-    cell = map->getCell(x,y);
+    cell = map->getCell(x,y, 0);
+
+    calculatePath(map->num_cells * ((float) rand() / (RAND_MAX)));
+  }
+
+  void calculatePath(size_t goal)
+  {
+    cell_goal = goal;
+
+    path.clear();
+    path_it = 0;
+    std::vector<size_t> parents(map->num_cells);
+    map->bfs(cell_goal, parents);
+
+    size_t current = cell;
+    while(current != cell_goal)
+    {
+      size_t next = parents[current];
+
+      path.push_back(next);
+      current = next;
+    }
+
+    /*
+    std::vector<size_t> parents(num_cells);
+    bfs(0, parents);
+
+    // draw connections
+    for(size_t i = 0; i<num_cells; i++)
+    {
+      DrawLine(
+                (cells[i].pos.x - x)*zoom+ SCREEN_SIZE_X*0.5,
+                (cells[i].pos.y - y)*zoom+ SCREEN_SIZE_Y*0.5,
+                (cells[parents[i]].pos.x - x)*zoom+ SCREEN_SIZE_X*0.5,
+                (cells[parents[i]].pos.y - y)*zoom+ SCREEN_SIZE_Y*0.5,
+                window);
+    }
+    */
   }
 
   void draw(float s_x, float s_y, float zoom, sf::RenderWindow &window)
@@ -424,14 +498,54 @@ struct GObject
 
     DrawDot((x - s_x)*zoom + SCREEN_SIZE_X*0.5, (y - s_y)*zoom + SCREEN_SIZE_Y*0.5, window);
 
+    /*
     DrawLine(   (x - s_x)*zoom + SCREEN_SIZE_X*0.5, (y - s_y)*zoom + SCREEN_SIZE_Y*0.5,
                 (map->cells[cell].pos.x - s_x)*zoom + SCREEN_SIZE_X*0.5, (map->cells[cell].pos.y - s_y)*zoom + SCREEN_SIZE_Y*0.5,
                 window);
+                */
+    std::vector<sf::Vertex> line;
+    // local position
+    line.push_back(sf::Vertex(sf::Vector2f((x - s_x)*zoom + SCREEN_SIZE_X*0.5, (y - s_y)*zoom + SCREEN_SIZE_Y*0.5), sf::Color(255,0,0)));
+    // my cell
+    line.push_back(sf::Vertex(sf::Vector2f((map->cells[cell].pos.x - s_x)*zoom + SCREEN_SIZE_X*0.5, (map->cells[cell].pos.y - s_y)*zoom + SCREEN_SIZE_Y*0.5), sf::Color(255,255,0)));
+    line.push_back(sf::Vertex(sf::Vector2f((map->cells[cell].pos.x - s_x)*zoom + SCREEN_SIZE_X*0.5, (map->cells[cell].pos.y - s_y)*zoom + SCREEN_SIZE_Y*0.5), sf::Color(255,255,0)));
+
+    size_t path_size = path.size();
+    for(size_t i=path_it; i<path_size; i++)
+    {
+      size_t c = path[i];
+      line.push_back(sf::Vertex(sf::Vector2f((map->cells[c].pos.x - s_x)*zoom + SCREEN_SIZE_X*0.5, (map->cells[c].pos.y - s_y)*zoom + SCREEN_SIZE_Y*0.5), sf::Color(0,255-255*i/path_size,255*i/path_size)));
+      line.push_back(sf::Vertex(sf::Vector2f((map->cells[c].pos.x - s_x)*zoom + SCREEN_SIZE_X*0.5, (map->cells[c].pos.y - s_y)*zoom + SCREEN_SIZE_Y*0.5), sf::Color(0,255-255*i/path_size,255*i/path_size)));
+    }
+    window.draw(&line[0], line.size(), sf::Lines, sf::BlendAlpha);
   }
 
   void update()
   {
+    // check my cell:
+    size_t new_cell = map->getCell(x,y, cell);
+    cell = new_cell;
+    // check path:
+    size_t next_cell = path[path_it];
+    float dx = map->cells[next_cell].pos.x - x;
+    float dy = map->cells[next_cell].pos.y - y;
 
+    float d = std::sqrt(dx*dx + dy*dy);
+    dx/= d;
+    dy/= d;
+
+    x+= dx*speed;
+    y+= dy*speed;
+
+    if(new_cell == next_cell)
+    {
+      path_it++;
+      if(path_it >= path.size())
+      {
+        std::cout << "path done!" << std::endl;
+        calculatePath(map->num_cells * ((float) rand() / (RAND_MAX)));
+      }
+    }
   }
 };
 
@@ -507,6 +621,11 @@ int main()
         window.clear();
 
         map.draw(screen_x, screen_y, screen_zoom, window);
+
+        for (std::list<GObject*>::iterator it = obj_list.begin(); it != obj_list.end(); it++)
+        {
+            (**it).update();
+        }
 
         for (std::list<GObject*>::iterator it = obj_list.begin(); it != obj_list.end(); it++)
         {
