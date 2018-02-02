@@ -142,6 +142,15 @@ struct PolyMapCell
 
   std::vector<_EPPos> corners;
   std::vector<size_t> neighbors;
+
+  /* --- game properies:
+  land -> land, air
+  water -> water, air
+  solid -> air
+  */
+
+  bool isLand;
+  bool isWater;
 };
 
 struct PolyMap
@@ -195,20 +204,103 @@ struct PolyMap
     // ----------------  extract graph
     cells.resize(num_cells);
 
-    FastNoise myNoise1;
-    myNoise1.SetNoiseType(FastNoise::SimplexFractal);
-		myNoise1.SetSeed(1000);
-		myNoise1.SetFrequency(0.005);
+    // ---------------------   generation settings:
+    size_t generation_seed = 1000;
+    float water_frac = 0.4; // 0 - 1
+    float hight_noise = 1.0; // 0 - 1
 
-    FastNoise myNoise2;
-    myNoise2.SetNoiseType(FastNoise::SimplexFractal);
-		myNoise2.SetSeed(1001);
-		myNoise2.SetFrequency(0.005);
+    // -------------------- hight function
+    FastNoise noiseHight;
+    noiseHight.SetNoiseType(FastNoise::SimplexFractal);
+		noiseHight.SetSeed(generation_seed + 1);
+		noiseHight.SetFrequency(0.01*hight_noise + 0.0005);
 
-    FastNoise myNoise3;
-    myNoise3.SetNoiseType(FastNoise::SimplexFractal);
-		myNoise3.SetSeed(1002);
-		myNoise3.SetFrequency(0.005);
+    auto height = [&noiseHight, this](float x, float y)
+    {
+      float border_proximity_x = std::min(x, spread_x-x);
+      float border_proximity_y = std::min(y, spread_y-y);
+      float border_proximity = std::min(border_proximity_x, border_proximity_y);
+
+      float res = (1.0+noiseHight.GetNoise(x,y))*0.5;
+
+      float border = 100;
+      if(border > border_proximity)
+      {
+        res *= border_proximity/border;
+      }
+
+      return res;
+    };
+
+    // --------------------- water color function
+    FastNoise noiseWaterColor1;
+    noiseWaterColor1.SetNoiseType(FastNoise::SimplexFractal);
+		noiseWaterColor1.SetSeed(generation_seed + 2);
+		noiseWaterColor1.SetFrequency(0.01);
+
+    FastNoise noiseWaterColor2;
+    noiseWaterColor2.SetNoiseType(FastNoise::SimplexFractal);
+		noiseWaterColor2.SetSeed(generation_seed + 3);
+		noiseWaterColor2.SetFrequency(0.01);
+
+    auto waterColor = [&noiseWaterColor1, &noiseWaterColor2](float x, float y)
+    {
+      float light = 1 + 0.2*noiseWaterColor1.GetNoise(x,y);
+      float color = (1.0+noiseWaterColor2.GetNoise(x,y))*0.5;
+      float c_inv = 1.0 - color;
+      float r = light * 40;
+      float g = light * (80 * color + 120 * c_inv);
+      float b = light * (200 * color + 160 * c_inv);
+
+      return sf::Color(r,g,b);
+    };
+
+    // --------------------- sand color function
+    FastNoise noiseSandColor1;
+    noiseSandColor1.SetNoiseType(FastNoise::SimplexFractal);
+		noiseSandColor1.SetSeed(generation_seed + 3);
+		noiseSandColor1.SetFrequency(0.01);
+
+    FastNoise noiseSandColor2;
+    noiseSandColor2.SetNoiseType(FastNoise::SimplexFractal);
+		noiseSandColor2.SetSeed(generation_seed + 4);
+		noiseSandColor2.SetFrequency(0.01);
+
+    auto sandColor = [&noiseSandColor1, &noiseSandColor2](float x, float y)
+    {
+      float light = 1 + 0.2*noiseSandColor1.GetNoise(x,y);
+      float color = (1.0+noiseSandColor2.GetNoise(x,y))*0.5;
+      float c_inv = 1.0 - color;
+      float r = light * (76 * color + 200 * c_inv);
+      float g = light * (70 * color + 100 * c_inv);
+      float b = light * (50 * color + 30 * c_inv);
+
+      return sf::Color(r,g,b);
+    };
+
+    // --------------------- grass color function
+    FastNoise noiseGrassColor1;
+    noiseGrassColor1.SetNoiseType(FastNoise::SimplexFractal);
+		noiseGrassColor1.SetSeed(generation_seed + 5);
+		noiseGrassColor1.SetFrequency(0.03);
+
+    FastNoise noiseGrassColor2;
+    noiseGrassColor2.SetNoiseType(FastNoise::SimplexFractal);
+		noiseGrassColor2.SetSeed(generation_seed + 6);
+		noiseGrassColor2.SetFrequency(0.03);
+
+    auto grassColor = [&noiseGrassColor1, &noiseGrassColor2](float x, float y)
+    {
+      float light = 1 + 0.2*noiseGrassColor1.GetNoise(x,y);
+      float color = (1.0+noiseGrassColor2.GetNoise(x,y))*0.5;
+      float c_inv = 1.0 - color;
+      float r = light * (0 * color + 20 * c_inv);
+      float g = light * (100 * color + 80 * c_inv);
+      float b = light * (0 * color + 30 * c_inv);
+
+      return sf::Color(r,g,b);
+    };
+
 
     // get positions
     for(size_t i = 0; i<num_cells; i++)
@@ -216,11 +308,30 @@ struct PolyMap
       cells[i].pos.x = points[i].x;
       cells[i].pos.y = points[i].y;
 
-      float r = (1.0+myNoise1.GetNoise(cells[i].pos.x, cells[i].pos.y))*0.5*255.0;
-      float g = (1.0+myNoise2.GetNoise(cells[i].pos.x, cells[i].pos.y))*0.5*255.0;
-      float b = (1.0+myNoise3.GetNoise(cells[i].pos.x, cells[i].pos.y))*0.5*255.0;
+      float h = height(cells[i].pos.x, cells[i].pos.y);
 
-      cells[i].color = sf::Color(r, g, b);
+      cells[i].color = sf::Color(255 * h,255 * h,255 * h);
+
+      if(h<water_frac)
+      {
+        cells[i].isWater = true;
+        cells[i].isLand = false;
+        cells[i].color = waterColor(cells[i].pos.x, cells[i].pos.y);
+      }
+      else if(h < (water_frac + 0.05))
+      {
+        cells[i].isWater = false;
+        cells[i].isLand = true;
+        cells[i].color = sandColor(cells[i].pos.x, cells[i].pos.y);
+      }
+      else
+      {
+        cells[i].isWater = false;
+        cells[i].isLand = true;
+        cells[i].color = grassColor(cells[i].pos.x, cells[i].pos.y);
+      }
+
+
     }
 
     // get neighbours and edges
@@ -348,16 +459,21 @@ struct PolyMap
       size_t c = q.front();
       q.pop();
 
+      marked[c] = true;
+
       //push all children
       size_t nn = cells[c].neighbors.size();
       for(size_t nec = 0; nec<nn; nec++)
       {
         size_t ne = cells[c].neighbors[nec];
-        if(!marked[ne])
+        if(!marked[ne] && cells[ne].isLand)
         {
           parents[ne] = c;
           q.push(ne);
-          marked[ne] = true;
+
+          //if(((float) rand() / (RAND_MAX)) < 0.9){ // makes it inprecize, helps them find different paths
+            marked[ne] = true;
+          //}
         }
       }
     }
@@ -436,7 +552,7 @@ struct GObject
   float x;
   float y;
 
-  float speed = 1.0;
+  float speed = 2.0;
 
   PolyMap *map;
   size_t cell;
@@ -453,7 +569,7 @@ struct GObject
     calculatePath(map->num_cells * ((float) rand() / (RAND_MAX)));
   }
 
-  void calculatePath(size_t goal)
+  bool calculatePath(size_t goal, size_t STEP_BOUND = 1000)
   {
     cell_goal = goal;
 
@@ -462,15 +578,20 @@ struct GObject
     std::vector<size_t> parents(map->num_cells);
     map->bfs(cell_goal, parents);
 
+    size_t step_counter = 0;
+
     size_t current = cell;
-    while(current != cell_goal)
+    while(current != cell_goal && step_counter<STEP_BOUND)
     {
       size_t next = parents[current];
 
       path.push_back(next);
       current = next;
+
+      step_counter++;
     }
 
+    return (step_counter< STEP_BOUND);
     /*
     std::vector<size_t> parents(num_cells);
     bfs(0, parents);
@@ -525,6 +646,7 @@ struct GObject
     // check my cell:
     size_t new_cell = map->getCell(x,y, cell);
     cell = new_cell;
+
     // check path:
     size_t next_cell = path[path_it];
     float dx = map->cells[next_cell].pos.x - x;
@@ -543,7 +665,11 @@ struct GObject
       if(path_it >= path.size())
       {
         std::cout << "path done!" << std::endl;
-        calculatePath(map->num_cells * ((float) rand() / (RAND_MAX)));
+
+        bool done = false;
+        while(!done){
+          done = calculatePath(map->num_cells * ((float) rand() / (RAND_MAX)));
+        }
       }
     }
   }
@@ -557,7 +683,7 @@ int main()
     sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "first attempts", sf::Style::Default, settings);
     window.setVerticalSyncEnabled(true);
 
-    PolyMap map = PolyMap(10000, 1000, 1000);
+    PolyMap map = PolyMap(30000, 1000, 1000);
     std::list<GObject*> obj_list;
 
     for(int i=0; i<100; i++)
