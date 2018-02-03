@@ -17,18 +17,40 @@
 //#define JCV_ATAN2 atan2
 #include "jc_voronoi.h"
 
+/*
+------------------------------- TODO
 
+- make objects collide
+- give objects a player, player belongs to a group
+- allow objects to navigate to a coordinate within a cell
+- object selection / commands
 
-float SCREEN_SIZE_X = 800;
-float SCREEN_SIZE_Y = 600;
+- networking
+*/
+
+//----------------------------------- STATIC VARIABLES
+float SCREEN_SIZE_X = 1600;
+float SCREEN_SIZE_Y = 1000;
+
+float MOUSE_X;
+float MOUSE_Y;
+
+sf::Font FONT;
+
+// --------- MOUSE
+bool MOUSE_LEFT_HIT = false;
+bool MOUSE_LEFT_DOWN = false;
+
+bool MOUSE_RIGHT_HIT = false;
+bool MOUSE_RIGHT_DOWN = false;
 
 
 // --------------------------------------------------------- DRAWING
-void DrawDot(float x, float y, sf::RenderWindow &window)
+void DrawDot(float x, float y, sf::RenderWindow &window, sf::Color color = sf::Color(255,0,0))
 {
   float r = 3;
   sf::CircleShape shape(r);
-  shape.setFillColor(sf::Color(255,0,0));
+  shape.setFillColor(color);
   shape.setPosition(x-r, y-r);
   window.draw(shape, sf::BlendAdd);
 }
@@ -43,6 +65,17 @@ void DrawLine(float x1, float y1, float x2, float y2, sf::RenderWindow &window)
   window.draw(line, 2, sf::Lines, sf::BlendAdd);
 }
 
+void DrawText(float x, float y, std::string text, float size, sf::RenderWindow &window, sf::Color color = sf::Color(255,255,255))
+{
+  sf::Text shape(text, FONT);//(text, FONT);
+  //shape.setFont(FONT);
+  //shape.setString(text); //std::to_string(input[i])
+  shape.setCharacterSize(size);
+  shape.setColor(color);
+  shape.setPosition(x,y);
+  //shape.setStyle(sf::Text::Bold | sf::Text::Underlined);
+  window.draw(shape, sf::BlendAdd);
+}
 
 // --------------------------------------------------------- VORONOI
 void voronoi_generate(int numpoints, const jcv_point* points, jcv_diagram &diagram, _jcv_rect* rect)
@@ -207,7 +240,7 @@ struct PolyMap
     // ---------------------   generation settings:
     size_t generation_seed = 1000;
     float water_frac = 0.4; // 0 - 1
-    float hight_noise = 1.0; // 0 - 1
+    float hight_noise = 0.5; // 0 - 1
 
     // -------------------- hight function
     FastNoise noiseHight;
@@ -243,9 +276,10 @@ struct PolyMap
 		noiseWaterColor2.SetSeed(generation_seed + 3);
 		noiseWaterColor2.SetFrequency(0.01);
 
-    auto waterColor = [&noiseWaterColor1, &noiseWaterColor2](float x, float y)
+    auto waterColor = [&noiseWaterColor1, &noiseWaterColor2, &water_frac](float x, float y, float height)
     {
-      float light = 1 + 0.2*noiseWaterColor1.GetNoise(x,y);
+      float water_depth_ratio = height / water_frac;
+      float light = water_depth_ratio + 0.4*(1.0+noiseWaterColor1.GetNoise(x,y))*0.5;
       float color = (1.0+noiseWaterColor2.GetNoise(x,y))*0.5;
       float c_inv = 1.0 - color;
       float r = light * 40;
@@ -289,16 +323,25 @@ struct PolyMap
 		noiseGrassColor2.SetSeed(generation_seed + 6);
 		noiseGrassColor2.SetFrequency(0.03);
 
-    auto grassColor = [&noiseGrassColor1, &noiseGrassColor2](float x, float y)
+    auto grassColor = [&noiseGrassColor1, &noiseGrassColor2, &water_frac](float x, float y, float height)
     {
+      // fraction over water
+      float fow = (height - water_frac) / (1.0 - water_frac);
+      float fow_inv = 1.0 - fow;
+
       float light = 1 + 0.2*noiseGrassColor1.GetNoise(x,y);
       float color = (1.0+noiseGrassColor2.GetNoise(x,y))*0.5;
       float c_inv = 1.0 - color;
-      float r = light * (0 * color + 20 * c_inv);
-      float g = light * (100 * color + 80 * c_inv);
-      float b = light * (0 * color + 30 * c_inv);
+      float r_grass = light * (0 * color + 20 * c_inv);
+      float g_grass = light * (100 * color + 80 * c_inv);
+      float b_grass = light * (0 * color + 30 * c_inv);
 
-      return sf::Color(r,g,b);
+      float r_hill = light * (50 * color + 70 * c_inv);
+      float g_hill = light * (50 * color + 50 * c_inv);
+      float b_hill = light * (50 * color + 30 * c_inv);
+
+
+      return sf::Color(r_grass * fow_inv + r_hill * fow, g_grass * fow_inv + g_hill * fow, b_grass * fow_inv + b_hill * fow);
     };
 
 
@@ -316,7 +359,7 @@ struct PolyMap
       {
         cells[i].isWater = true;
         cells[i].isLand = false;
-        cells[i].color = waterColor(cells[i].pos.x, cells[i].pos.y);
+        cells[i].color = waterColor(cells[i].pos.x, cells[i].pos.y, h);
       }
       else if(h < (water_frac + 0.05))
       {
@@ -328,7 +371,7 @@ struct PolyMap
       {
         cells[i].isWater = false;
         cells[i].isLand = true;
-        cells[i].color = grassColor(cells[i].pos.x, cells[i].pos.y);
+        cells[i].color = grassColor(cells[i].pos.x, cells[i].pos.y, h);
       }
 
 
@@ -418,7 +461,6 @@ struct PolyMap
         }
       }
     }
-    std::cout << "it: " << number_iterations << std::endl;
     return res;
   }
 
@@ -446,6 +488,20 @@ struct PolyMap
 
   void bfs(size_t root, std::vector<size_t> &parents)
   {
+    if(! cells[root].isLand)
+    {
+      // root is not reachable! -> make that clear in parents!
+      parents[root] = root;
+
+      size_t nn = cells[root].neighbors.size();
+      for(size_t nec = 0; nec<nn; nec++)
+      {
+        size_t ne = cells[root].neighbors[nec];
+        parents[ne] = ne;
+      }
+      return; // early abort
+    }
+
     // creates a rooted tree from a bfs traversal
     bool marked[num_cells] = {false};
     std::queue<size_t> q;
@@ -591,6 +647,15 @@ struct GObject
       step_counter++;
     }
 
+    if(! (step_counter< STEP_BOUND))
+    {
+      path.clear();
+      path_it = 0;
+      path.push_back(cell);
+
+      cell_goal = cell;
+    }
+
     return (step_counter< STEP_BOUND);
     /*
     std::vector<size_t> parents(num_cells);
@@ -624,6 +689,8 @@ struct GObject
                 (map->cells[cell].pos.x - s_x)*zoom + SCREEN_SIZE_X*0.5, (map->cells[cell].pos.y - s_y)*zoom + SCREEN_SIZE_Y*0.5,
                 window);
                 */
+
+    /*
     std::vector<sf::Vertex> line;
     // local position
     line.push_back(sf::Vertex(sf::Vector2f((x - s_x)*zoom + SCREEN_SIZE_X*0.5, (y - s_y)*zoom + SCREEN_SIZE_Y*0.5), sf::Color(255,0,0)));
@@ -639,6 +706,7 @@ struct GObject
       line.push_back(sf::Vertex(sf::Vector2f((map->cells[c].pos.x - s_x)*zoom + SCREEN_SIZE_X*0.5, (map->cells[c].pos.y - s_y)*zoom + SCREEN_SIZE_Y*0.5), sf::Color(0,255-255*i/path_size,255*i/path_size)));
     }
     window.draw(&line[0], line.size(), sf::Lines, sf::BlendAlpha);
+    */
   }
 
   void update()
@@ -664,11 +732,11 @@ struct GObject
       path_it++;
       if(path_it >= path.size())
       {
-        std::cout << "path done!" << std::endl;
+        bool done = calculatePath(map->num_cells * ((float) rand() / (RAND_MAX)));
 
-        bool done = false;
-        while(!done){
-          done = calculatePath(map->num_cells * ((float) rand() / (RAND_MAX)));
+        if(!done)
+        {
+          calculatePath(new_cell);
         }
       }
     }
@@ -678,11 +746,21 @@ struct GObject
 //-------------------------------------------------------- Main
 int main()
 {
+    // ------------------------------------ WINDOW
     sf::ContextSettings settings;
     settings.antialiasingLevel = 8;
     sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "first attempts", sf::Style::Default, settings);
     window.setVerticalSyncEnabled(true);
+    window.setMouseCursorVisible(false);
 
+    // ------------------------------------ FONT
+    if (!FONT.loadFromFile("arial.ttf"))
+    {
+        std::cout << "font could not be loaded!" << std::endl;
+        return 0;
+    }
+
+    // ------------------------------------ MAP
     PolyMap map = PolyMap(30000, 1000, 1000);
     std::list<GObject*> obj_list;
 
@@ -694,13 +772,39 @@ int main()
       obj_list.push_back(n);
     }
 
+    // ------------------------------------ SCEEN
     float screen_x = 0;
     float screen_y = 0;
     float screen_zoom = 1.0;
 
+    // ------------------------------------ FPS
+    clock_t last_stamp = clock();
+    clock_t deltaTime = 1000;
+    float framesPerSec = 10;
+    float framesPerSec_avg = 10;
+    float averageDelta = 1000;
+    size_t ticker = 0;
+
+    auto FPS_tick = [&last_stamp, &deltaTime, &framesPerSec, &framesPerSec_avg, &averageDelta, &ticker]()
+    {
+      clock_t newTime = clock();
+      deltaTime = newTime - last_stamp;
+
+      averageDelta = 0.01 * deltaTime + 0.99 * averageDelta;
+
+      framesPerSec = CLOCKS_PER_SEC / (float)deltaTime;
+      framesPerSec_avg = CLOCKS_PER_SEC / (float)averageDelta;
+
+      last_stamp = newTime;
+      ticker++;
+    };
+
     // --------------------------- Render Loop
     while (window.isOpen())
     {
+        MOUSE_LEFT_HIT = false;
+        MOUSE_RIGHT_HIT = false;
+
         sf::Event event;
         while (window.pollEvent(event))
         {
@@ -708,13 +812,49 @@ int main()
             {
                 // window closed
                 case sf::Event::Closed:
-                    window.close();
-                    break;
+                  window.close();
+                  break;
+                case sf::Event::MouseWheelScrolled:
+                  if (event.mouseWheelScroll.wheel == sf::Mouse::VerticalWheel)
+                  {
+                    int delta = event.mouseWheelScroll.delta;
+                    if(delta > 0)
+                    {
+                      screen_zoom*= 1.1;
+                    }else{
+                      screen_zoom*= 0.9;
+                    }
+                  }
+                  break;
+                case sf::Event::MouseButtonPressed:
+                  if(event.mouseButton.button == sf::Mouse::Left)
+                  {
+                    MOUSE_LEFT_HIT = true;
+                    MOUSE_LEFT_DOWN = true;
+                  }else if(event.mouseButton.button == sf::Mouse::Right)
+                  {
+                    MOUSE_RIGHT_HIT = true;
+                    MOUSE_RIGHT_DOWN = true;
+                  }
+                  break;
+                case sf::Event::MouseButtonReleased:
+                  if(event.mouseButton.button == sf::Mouse::Left)
+                  {
+                    MOUSE_LEFT_DOWN = false;
+                  }else if(event.mouseButton.button == sf::Mouse::Right)
+                  {
+                    MOUSE_RIGHT_DOWN = false;
+                  }
+                  break;
                 // we don't process other types of events
                 default:
-                    break;
+                  break;
             }
         }
+
+        sf::Vector2i mousepos = sf::Mouse::getPosition(window);
+        MOUSE_X = mousepos.x;
+        MOUSE_Y = mousepos.y;
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape)){
           window.close();
@@ -757,6 +897,13 @@ int main()
         {
             (**it).draw(screen_x, screen_y, screen_zoom, window);
         }
+
+        DrawDot(MOUSE_X, MOUSE_Y, window, sf::Color(255*MOUSE_RIGHT_DOWN,255*MOUSE_LEFT_DOWN,255));
+
+        FPS_tick();
+        DrawText(5,5, "FPS: " + std::to_string(framesPerSec), 10, window, sf::Color(255,255,255));
+        DrawText(5,20, "avg: " + std::to_string(framesPerSec_avg), 10, window, sf::Color(255,255,255));
+        DrawText(5,35, "ticker: " + std::to_string(ticker), 10, window, sf::Color(255,255,255));
 
         window.display();
     }
