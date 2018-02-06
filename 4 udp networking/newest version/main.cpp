@@ -2,12 +2,15 @@
 #include <iostream>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
+
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <list>
 #include <queue>
 #include <map>
 #include <time.h>
+
 
 struct NServerClient_identifier;
 struct NServerClient;
@@ -19,20 +22,20 @@ struct NPacketSendHandler;
 
 /* TODO
 
-- replace sfml packages? -> use byte vector !
 - request / send files -> eg. map
 - chat
 
  --- completed:
 
  - package sequence wrap around -> infinite messages!
+ - replaced sfml packages with my own packaging
 */
 
-typedef sf::Uint16 NPSeq;
+typedef uint16_t NPSeq;
 const NPSeq NPSeq_HALF = 32768;
 const NPSeq NPSeq_START_AT = 32768 + 32750;
 /*
-sf::Uint16 - 32768
+uint16_t - 32768
 */
 
 typedef std::map<NServerClient_identifier, NServerClient*, cmpByNSC_ident> NSCMapIdentifyer;
@@ -83,18 +86,136 @@ void DrawText(float x, float y, std::string text, float size, sf::RenderWindow &
 
 // ------------------------------------------------------- Networking
 // just send a string
-const int NET_HEADER_ECHO = 100;
+const uint16_t NET_HEADER_ECHO = 100;
 
-const int NET_HEADER_PING = 200;
-const int NET_HEADER_PONG = 201;
+const uint16_t NET_HEADER_PING = 200;
+const uint16_t NET_HEADER_PONG = 201;
 
 // announce the recieve port of client
-const int NET_HEADER_CLIENT_ANNOUNCE = 2000;
+const uint16_t NET_HEADER_CLIENT_ANNOUNCE = 2000;
 // server id ping -> as first message over client channel
-const int NET_HEADER_SERVERCLIENT_IDPING = 3000;
+const uint16_t NET_HEADER_SERVERCLIENT_IDPING = 3000;
 
 // the NPacket
-const int NET_HEADER_NPacket = 4000;
+const uint16_t NET_HEADER_NPacket = 4000;
+
+// ---------------- UDP Packets:
+struct NUDPWritePacket
+{
+  std::vector<char> data;
+  size_t index = 0; // where to write next, may be beyond memory
+
+  bool send(sf::UdpSocket &socket, sf::IpAddress ip, unsigned short port)
+  {
+    return (socket.send(data.data(), index, ip, port) == sf::Socket::Done);
+  }
+};
+
+NUDPWritePacket& operator << (NUDPWritePacket& p, const char& c){
+  p.data.resize(p.index+1);
+  p.data[p.index] = c;
+  p.index++;
+
+  return p;
+}
+
+NUDPWritePacket& operator << (NUDPWritePacket& p, const uint16_t& c){
+  char b1 = c & 0xFF;
+  char b2 = c >> 8;
+
+  p.data.resize(p.index+2);
+  p.data[p.index] = b1;
+  p.data[p.index+1] = b2;
+  p.index+=2;
+
+  return p;
+}
+
+NUDPWritePacket& operator << (NUDPWritePacket& p, const std::string& c){
+
+  uint16_t size = c.size();
+
+  p << size;
+
+  p.data.resize(p.index + size);
+  std::memcpy(&(p.data[p.index]), c.data(), c.size());
+  p.index+=size;
+
+  return p;
+}
+
+
+struct NUDPReadPacket
+{
+  static const size_t rcv_buffer_size = sf::UdpSocket::MaxDatagramSize;
+  static char rcv_buffer[NUDPReadPacket::rcv_buffer_size];
+
+  std::vector<char> data;
+  size_t size = 0;
+  size_t index = 0; // where to read next
+
+  bool receive(sf::UdpSocket &socket, sf::IpAddress &ip, unsigned short& port);
+  bool endOfPacket();
+};
+char NUDPReadPacket::rcv_buffer[NUDPReadPacket::rcv_buffer_size];
+bool NUDPReadPacket::receive(sf::UdpSocket &socket, sf::IpAddress &ip, unsigned short& port)
+{
+  // returns true if successful
+  auto status = socket.receive(
+    NUDPReadPacket::rcv_buffer, NUDPReadPacket::rcv_buffer_size,
+    size, ip, port
+  );
+
+  if(status == sf::Socket::Done)
+  {
+
+    // success:
+    data.reserve(size);
+    std::memcpy(data.data(), rcv_buffer, size);
+
+    return true;
+  }else{
+    // failiure:
+
+    return false;
+  }
+}
+
+bool NUDPReadPacket::endOfPacket()
+{
+  return (index >= size);
+}
+
+
+NUDPReadPacket& operator >> (NUDPReadPacket& p, char& c){
+  c = p.data[p.index];
+  p.index++;
+
+  return p;
+}
+
+NUDPReadPacket& operator >> (NUDPReadPacket& p, uint16_t& c){
+  uint16_t b1 = p.data[p.index];
+  uint16_t b2 = p.data[p.index+1];
+  p.index+=2;
+
+  c = ((uint16_t(b1)& 0xFF) | ((uint16_t(b2) & 0xFF) << 8));
+  return p;
+}
+
+NUDPReadPacket& operator >> (NUDPReadPacket& p, std::string& c){
+
+  uint16_t size;
+  p >> size;
+
+  std::string cnew( &(p.data[p.index]), size);
+
+  c = cnew;
+
+  p.index+=size;
+
+  return p;
+}
 
 // ---------------- The Necessary Packets:
 /*
@@ -120,7 +241,7 @@ inline bool sequence_greater_than( NPSeq s1, NPSeq s2 )
 struct NPacket
 {
   NPSeq seq;
-  sf::Uint16 tag;
+  uint16_t tag;
   std::string str;
 
   // book keeping:
@@ -131,15 +252,15 @@ struct NPacketRcvHandler
 {
   NPSeq highest_seq_num_rcvd = NPSeq_START_AT;
 
-  sf::Uint16 packet_counter = 0;
+  uint16_t packet_counter = 0;
 
   std::map<NPSeq, NPSeq> map_missing;
 
 
-  void createAckMessage(sf::Packet &p);
+  void createAckMessage(NUDPWritePacket &p);
   bool hasNews; // if the ack situation changed since last createAckMessage
 
-  void incoming(sf::Packet &p, NPacketSendHandler &np_send);
+  void incoming(NUDPReadPacket &p, NPacketSendHandler &np_send);
 };
 
 struct NPacketSendHandler
@@ -167,14 +288,14 @@ struct NPacketSendHandler
     time_last_send = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
   }
 
-  int enqueue(sf::Uint16 tag, const std::string &txt);
+  int enqueue(uint16_t tag, const std::string &txt);
   void update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket, const sf::IpAddress &ip, const unsigned short &port);
-  void readAcks(sf::Packet &p);
+  void readAcks(NUDPReadPacket &p);
 
   std::string missingToString();
 };
 
-int NPacketSendHandler::enqueue(sf::Uint16 tag, const std::string &txt)
+int NPacketSendHandler::enqueue(uint16_t tag, const std::string &txt)
 {
   // returns sequence number of the Packet
   last_sequence_number++;
@@ -192,7 +313,7 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
   {
     time_last_send = now_time;
     // something to send:
-    sf::Packet p;
+    NUDPWritePacket p;
     p << NET_HEADER_NPacket;
 
     np_rcv.createAckMessage(p);
@@ -221,7 +342,7 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
     }
 
     // append new ones
-    while(queue.size() > 0 && map_sent.size() < num_wait_ack_limit && p.getDataSize() < 50000)
+    while(queue.size() > 0 && map_sent.size() < num_wait_ack_limit && p.index < 50000)
     {
       // send from queue, append to map
       NPacket np = queue.front();
@@ -247,17 +368,17 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
     }
 
     // send packet:
-    if (socket.send(p, ip, port) != sf::Socket::Done)
+    if(!p.send(socket,ip, port))//socket.send(p, ip, port) != sf::Socket::Done)
     {
         std::cout << "Error on send ! (NPacket)" << std::endl;
     }
   }
 }
 
-void NPacketSendHandler::readAcks(sf::Packet &p)
+void NPacketSendHandler::readAcks(NUDPReadPacket &p)
 {
   NPSeq highest;
-  sf::Uint16 num_missing;
+  uint16_t num_missing;
 
   p >> highest >> num_missing;
 
@@ -266,7 +387,7 @@ void NPacketSendHandler::readAcks(sf::Packet &p)
   std::vector<NPSeq> missingWrapVec;
   missingWrapVec.reserve(num_missing);
 
-  for(sf::Uint16 i = 0; i<num_missing; i++)
+  for(uint16_t i = 0; i<num_missing; i++)
   {
     NPSeq seq;
     p >> seq;
@@ -343,85 +464,6 @@ void NPacketSendHandler::readAcks(sf::Packet &p)
   {
     map_sent.erase(deletees[i]);
   }
-
-  /*
-
-  NPSeq highest = 0;
-  sf::Uint16 num_missing = 0;
-
-  p >> highest >> num_missing;
-
-  NPSeq next_missing;
-  int ack_counter = 0;
-
-  if(num_missing == 0)
-  {
-    next_missing = highest+1;
-  }else{
-    p >> next_missing;
-    ack_counter++;
-  }
-
-  std::vector<NPSeq> deletees;
-
-  // iterate through all that are still to be acked:
-  std::map<NPSeq, NPacket>::iterator it;
-  int counter = 0;
-
-  it = map_sent.upper_bound(NPSeq_HALF);
-  if(highest < NPSeq_HALF && it != map_sent.end())
-  {
-    std::cout << "WRAP AROUND DANGER! " << next_missing << std::endl;
-
-    do {
-      // work through rest of high elements:
-      NPSeq seq = it->first;
-      std::cout << seq << std::endl;
-
-      // loop stuff below
-      ++it;
-    } while(it != map_sent.end());
-  }
-
-
-  for (it=map_sent.begin(); it!=map_sent.end(); ++it)
-  {
-    NPSeq seq = it->first;
-
-    if( !sequence_greater_than(seq, highest) )// seq <= highest
-    {
-      while(sequence_greater_than(seq, next_missing) && ack_counter < num_missing)
-      {
-        // advance in acks:
-        p >> next_missing;
-        ack_counter++;
-      }
-
-      if(sequence_greater_than(next_missing, seq))
-      {
-        // acked!
-        //map_sent.erase(seq);
-
-        deletees.push_back(seq);
-      }
-    }
-  }
-
-  // actually delete the deletees:
-  for(size_t i =0 ; i< deletees.size(); i++)
-  {
-    map_sent.erase(deletees[i]);
-  }
-
-  // read rest:
-  while(ack_counter < num_missing)
-  {
-    // advance in acks:
-    p >> next_missing;
-    ack_counter++;
-  }
-
-  */
 }
 
 
@@ -441,12 +483,12 @@ std::string NPacketSendHandler::missingToString()
 }
 // ---------------- NPacketRcvHandler
 
-void NPacketRcvHandler::createAckMessage(sf::Packet &p)
+void NPacketRcvHandler::createAckMessage(NUDPWritePacket &p)
 {
   hasNews = false;
 
   p << highest_seq_num_rcvd;
-  p << (sf::Uint16)(map_missing.size());
+  p << (uint16_t)(map_missing.size());
 
   // send all that are missing:
   std::map<NPSeq, NPSeq>::iterator it;
@@ -456,7 +498,7 @@ void NPacketRcvHandler::createAckMessage(sf::Packet &p)
   }
 }
 
-void NPacketRcvHandler::incoming(sf::Packet &p, NPacketSendHandler &np_send)
+void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
 {
   // header already removed.
 
@@ -530,7 +572,7 @@ struct cmpByNSC_ident {
 struct NServerClient
 {
   static int id_last;
-  int id;
+  uint16_t id;
   sf::IpAddress remoteIp;
   unsigned short remotePort;
 
@@ -553,9 +595,9 @@ struct NServerClient
     last_ping = last_rcv;
   }
 
-  void sendPacket(sf::Packet &p, sf::UdpSocket &socket)
+  void sendPacket(NUDPWritePacket &p, sf::UdpSocket &socket)
   {
-    if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
+    if(!p.send(socket,remoteIp, remotePort)) //(socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
     {
         std::cout << "Error on send !" << std::endl;
     }
@@ -563,10 +605,10 @@ struct NServerClient
 
   void sendIdPing(sf::UdpSocket &socket)
   {
-    sf::Packet p;
+    NUDPWritePacket p;
 
     p << NET_HEADER_SERVERCLIENT_IDPING << id;
-    if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
+    if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
     {
         std::cout << "Error on send !" << std::endl;
     }
@@ -574,9 +616,9 @@ struct NServerClient
 
   void sendPing(sf::UdpSocket &socket)
   {
-    sf::Packet p;
+    NUDPWritePacket p;
     p << NET_HEADER_PING;
-    if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
+    if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
     {
         std::cout << "Error on send !" << std::endl;
     }
@@ -584,19 +626,19 @@ struct NServerClient
 
   void sendPong(sf::UdpSocket &socket)
   {
-    sf::Packet p;
+    NUDPWritePacket p;
     p << NET_HEADER_PONG;
-    if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
+    if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
     {
         std::cout << "Error on send !" << std::endl;
     }
   }
 
-  void rcvPacket(sf::Packet &p, sf::UdpSocket &socket)
+  void rcvPacket(NUDPReadPacket &p, sf::UdpSocket &socket)
   {
     last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
 
-    int header;
+    uint16_t header;
     p >> header;
 
     switch (header)
@@ -760,13 +802,15 @@ struct NServer
 
     do
     {
-      sf::Packet p;
+      NUDPReadPacket p;
       sf::IpAddress remoteIp;
       unsigned short remotePort;
-      auto status = socket.receive(p, remoteIp, remotePort);
+
+      bool success = p.receive(socket, remoteIp, remotePort);
+      //auto status = socket.receive(p, remoteIp, remotePort);
 
       repeat = false;
-      if(status == sf::Socket::Done)
+      if(success)
       {
         repeat = true;
 
@@ -775,7 +819,7 @@ struct NServer
         if(c == NULL)
         {
           // create only if this was a port announcement:
-          int header;
+          uint16_t header;
           p >> header;
 
           if( header == NET_HEADER_CLIENT_ANNOUNCE)
@@ -788,6 +832,7 @@ struct NServer
           }else{
             std::cout << "ignoring msg (header " << header << ")" << std::endl;
           }
+
         }else{
           // ok, can rcv packet for the client:
           c->rcvPacket(p, socket);
@@ -829,7 +874,7 @@ struct NClient
   NPacketRcvHandler np_rcv;
   NPacketSendHandler np_send;
 
-  int id_on_server;
+  uint16_t id_on_server;
 
   // ------------------------------------- STATE MACHINE start
   int finite_state = 0;
@@ -894,19 +939,21 @@ struct NClient
     bool repeat = false;
     do
     {
-      sf::Packet p;
+      NUDPReadPacket p;
       sf::IpAddress remoteIp;
       unsigned short remotePort;
-      auto status = socket.receive(p, remoteIp, remotePort);
+
+      bool success = p.receive(socket, remoteIp, remotePort);
+      //auto status = socket.receive(p, remoteIp, remotePort);
 
       repeat = false;
-      if(status == sf::Socket::Done)
+      if(success)
       {
         last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
 
 
         repeat = true;
-        int header;
+        uint16_t header;
         p >> header;
 
         switch (header)
@@ -986,12 +1033,12 @@ struct NClient
     }
   }
 
-  void send(int header, const std::string &txt)
+  void send(uint16_t header, const std::string &txt)
   {
-    sf::Packet p;
+    NUDPWritePacket p;
     p << header << txt;
 
-    if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
+    if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
     {
         std::cout << "Error on send !" << std::endl;
     }
@@ -999,10 +1046,10 @@ struct NClient
 
   void announcePort()
   {
-    sf::Packet p;
+    NUDPWritePacket p;
     p << NET_HEADER_CLIENT_ANNOUNCE << socket_port;
 
-    if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
+    if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
     {
         std::cout << "Error on send !" << std::endl;
     }
@@ -1013,10 +1060,10 @@ struct NClient
 
   void sendPing()
   {
-    sf::Packet p;
+    NUDPWritePacket p;
     p << NET_HEADER_PING;
 
-    if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
+    if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
     {
         std::cout << "Error on send !" << std::endl;
     }
@@ -1024,10 +1071,10 @@ struct NClient
 
   void sendPong()
   {
-    sf::Packet p;
+    NUDPWritePacket p;
     p << NET_HEADER_PONG;
 
-    if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
+    if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
     {
         std::cout << "Error on send !" << std::endl;
     }
