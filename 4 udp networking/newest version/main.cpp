@@ -19,8 +19,16 @@ struct NPacketSendHandler;
 
 /* TODO
 
-- test wrap around ! or else make variable big enough !
+ --- completed:
 
+ - package sequence wrap around -> infinite messages!
+*/
+
+typedef sf::Uint16 NPSeq;
+const NPSeq NPSeq_HALF = 32768;
+const NPSeq NPSeq_START_AT = 32768 + 32750;
+/*
+sf::Uint16 - 32768
 */
 
 typedef std::map<NServerClient_identifier, NServerClient*, cmpByNSC_ident> NSCMapIdentifyer;
@@ -99,15 +107,15 @@ the idea is that one can listen for them elsewhere -> set a function!
 the structure of a message:
 seq. number, tag, string
 */
-inline bool sequence_greater_than( sf::Uint16 s1, sf::Uint16 s2 )
+inline bool sequence_greater_than( NPSeq s1, NPSeq s2 )
 {
-  return ( ( s1 > s2 ) && ( s1 - s2 <= 32768 ) ) ||
-  ( ( s1 < s2 ) && ( s2 - s1  > 32768 ) );
+  return ( ( s1 > s2 ) && ( s1 - s2 <= NPSeq_HALF ) ) ||
+  ( ( s1 < s2 ) && ( s2 - s1  > NPSeq_HALF ) );
 }
 
 struct NPacket
 {
-  sf::Uint16 seq;
+  NPSeq seq;
   sf::Uint16 tag;
   std::string str;
 
@@ -117,11 +125,12 @@ struct NPacket
 
 struct NPacketRcvHandler
 {
-  sf::Uint16 highest_seq_num_rcvd = 0;
+  NPSeq highest_seq_num_rcvd = NPSeq_START_AT;
 
   sf::Uint16 packet_counter = 0;
 
-  std::map<sf::Uint16, sf::Uint16> map_missing;
+  std::map<NPSeq, NPSeq> map_missing;
+
 
   void createAckMessage(sf::Packet &p);
   bool hasNews; // if the ack situation changed since last createAckMessage
@@ -131,8 +140,8 @@ struct NPacketRcvHandler
 
 struct NPacketSendHandler
 {
-  sf::Uint16 last_sequence_number = 0;
-  sf::Uint16 oldest_sequence_waiting = 0;
+  NPSeq last_sequence_number = NPSeq_START_AT;
+  NPSeq oldest_sequence_waiting = NPSeq_START_AT;
 
   sf::Int32 msgTimeOutLimit = 500; // then resend it
   int num_wait_ack_limit = 100; // this will affect the transmission speed!
@@ -144,7 +153,7 @@ struct NPacketSendHandler
   size_t c = q.front();
   q.pop();
   */
-  std::map<sf::Uint16, NPacket> map_sent;
+  std::map<NPSeq, NPacket> map_sent;
 
   sf::Int32 time_last_send;
   sf::Int32 minimum_send_delay = 200;
@@ -157,6 +166,8 @@ struct NPacketSendHandler
   int enqueue(sf::Uint16 tag, const std::string &txt);
   void update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket, const sf::IpAddress &ip, const unsigned short &port);
   void readAcks(sf::Packet &p);
+
+  std::string missingToString();
 };
 
 int NPacketSendHandler::enqueue(sf::Uint16 tag, const std::string &txt)
@@ -183,11 +194,11 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
     np_rcv.createAckMessage(p);
 
     // update from map (the ones that have timed out)
-    std::map<sf::Uint16, NPacket>::iterator it;
+    std::map<NPSeq, NPacket>::iterator it;
 
     for (it=map_sent.begin(); it!=map_sent.end(); ++it)
     {
-      sf::Uint16 seq = it->first;
+      NPSeq seq = it->first;
       sf::Int32 sent_time = it->second.time_sent;
       if( (now_time - sent_time) > msgTimeOutLimit)
       {
@@ -226,7 +237,7 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
       }
 
       map_sent.insert(
-        std::pair<sf::Uint16, NPacket>
+        std::pair<NPSeq, NPacket>
         (np.seq, np)
       );
     }
@@ -241,12 +252,102 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
 
 void NPacketSendHandler::readAcks(sf::Packet &p)
 {
-  sf::Uint16 highest = 0;
+  NPSeq highest;
+  sf::Uint16 num_missing;
+
+  p >> highest >> num_missing;
+
+  std::vector<NPSeq> missingVec;
+  missingVec.reserve(num_missing+1);
+  std::vector<NPSeq> missingWrapVec;
+  missingWrapVec.reserve(num_missing);
+
+  for(sf::Uint16 i = 0; i<num_missing; i++)
+  {
+    NPSeq seq;
+    p >> seq;
+
+    if(seq > highest){
+      // wrapping around!
+      missingWrapVec.push_back(seq);
+    }else{
+      // normal
+      missingVec.push_back(seq);
+    }
+  }
+  missingVec.push_back(highest+1);
+
+  std::vector<NPSeq> deletees;
+  deletees.reserve(map_sent.size());
+  std::map<NPSeq, NPacket>::iterator it;
+
+  // go about deleting left over high ones (wrap)
+  it = map_sent.upper_bound(NPSeq_HALF);
+  if(highest < NPSeq_HALF && it != map_sent.end())
+  {
+    std::cout << "WRAP AROUND DANGER!" << std::endl;
+
+    size_t i = 0; // index in missingWrapVec
+
+    do {
+      // work through rest of high elements:
+      NPSeq seq = it->first;
+      std::cout << seq << std::endl;
+
+      while(i<missingWrapVec.size() && seq > missingWrapVec[i])
+      {i++;}
+
+      if(i>=missingWrapVec.size() || seq < missingWrapVec[i])
+      {
+        // can delete:
+        deletees.push_back(seq);
+        std::cout << "del." << std::endl;
+      }
+
+      // loop stuff below
+      ++it;
+    } while(it != map_sent.end() && i<missingWrapVec.size());
+  }
+
+  size_t i = 0; // index in missingVec
+
+  // iterate through all that are still to be acked:
+  for (it=map_sent.begin(); it!=map_sent.end(); ++it)
+  {
+    NPSeq seq = it->first;
+
+    if( seq <= highest )// seq <= highest
+    {
+      while(i<missingVec.size() && sequence_greater_than(seq, missingVec[i]))
+      {
+        // advance in acks:
+        i++;
+      }
+
+      if(i<missingVec.size() && sequence_greater_than(missingVec[i], seq))
+      {
+        // acked!
+        //map_sent.erase(seq);
+
+        deletees.push_back(seq);
+      }
+    }
+  }
+
+  // actually delete the deletees:
+  for(size_t i =0 ; i< deletees.size(); i++)
+  {
+    map_sent.erase(deletees[i]);
+  }
+
+  /*
+
+  NPSeq highest = 0;
   sf::Uint16 num_missing = 0;
 
   p >> highest >> num_missing;
 
-  sf::Uint16 next_missing;
+  NPSeq next_missing;
   int ack_counter = 0;
 
   if(num_missing == 0)
@@ -257,25 +358,42 @@ void NPacketSendHandler::readAcks(sf::Packet &p)
     ack_counter++;
   }
 
-  std::vector<sf::Uint16> deletees;
+  std::vector<NPSeq> deletees;
 
   // iterate through all that are still to be acked:
-  std::map<sf::Uint16, NPacket>::iterator it;
+  std::map<NPSeq, NPacket>::iterator it;
   int counter = 0;
+
+  it = map_sent.upper_bound(NPSeq_HALF);
+  if(highest < NPSeq_HALF && it != map_sent.end())
+  {
+    std::cout << "WRAP AROUND DANGER! " << next_missing << std::endl;
+
+    do {
+      // work through rest of high elements:
+      NPSeq seq = it->first;
+      std::cout << seq << std::endl;
+
+      // loop stuff below
+      ++it;
+    } while(it != map_sent.end());
+  }
+
+
   for (it=map_sent.begin(); it!=map_sent.end(); ++it)
   {
-    sf::Uint16 seq = it->first;
+    NPSeq seq = it->first;
 
-    if(seq <= highest)
+    if( !sequence_greater_than(seq, highest) )// seq <= highest
     {
-      while(seq > next_missing && ack_counter < num_missing)
+      while(sequence_greater_than(seq, next_missing) && ack_counter < num_missing)
       {
         // advance in acks:
         p >> next_missing;
         ack_counter++;
       }
 
-      if(seq < next_missing)
+      if(sequence_greater_than(next_missing, seq))
       {
         // acked!
         //map_sent.erase(seq);
@@ -298,8 +416,25 @@ void NPacketSendHandler::readAcks(sf::Packet &p)
     p >> next_missing;
     ack_counter++;
   }
+
+  */
 }
 
+
+std::string NPacketSendHandler::missingToString()
+{
+  std::string ret;
+  ret = "n: " + std::to_string(map_sent.size()) + ".  ";
+
+  std::map<NPSeq, NPacket>::iterator it;
+  for (it=map_sent.begin(); it!=map_sent.end(); ++it)
+  {
+    NPSeq seq = it->first;
+    ret.append(" " + std::to_string(seq) + ",");
+  }
+
+  return ret;
+}
 // ---------------- NPacketRcvHandler
 
 void NPacketRcvHandler::createAckMessage(sf::Packet &p)
@@ -310,7 +445,7 @@ void NPacketRcvHandler::createAckMessage(sf::Packet &p)
   p << (sf::Uint16)(map_missing.size());
 
   // send all that are missing:
-  std::map<sf::Uint16, sf::Uint16>::iterator it;
+  std::map<NPSeq, NPSeq>::iterator it;
 	for (it=map_missing.begin(); it!=map_missing.end(); ++it)
 	{
 		p << (it->second);
@@ -335,19 +470,18 @@ void NPacketRcvHandler::incoming(sf::Packet &p, NPacketSendHandler &np_send)
     if(sequence_greater_than(np.seq, highest_seq_num_rcvd))
     {
       // insert all between:
-      if(np.seq > highest_seq_num_rcvd)
+      //if(np.seq > highest_seq_num_rcvd)
       {
-        for(sf::Uint16 i = highest_seq_num_rcvd+1; i < np.seq; i++)
+        for(NPSeq i = highest_seq_num_rcvd+1; sequence_greater_than(np.seq, i); i++)
         {
           map_missing.insert(
-            std::pair<sf::Uint16, sf::Uint16>
+            std::pair<NPSeq, NPSeq>
             (i,i)
           );
         }
-      }else{
+      }/*else{
         std::cout << "wrap around ???" << std::endl;
-        exit;
-      }
+      }*/
 
       highest_seq_num_rcvd = np.seq;
 
@@ -355,7 +489,7 @@ void NPacketRcvHandler::incoming(sf::Packet &p, NPacketSendHandler &np_send)
       std::cout << "newest: " << np.seq << ":" << np.tag << " -> " << np.str << std::endl;
     }else{
       // one of the missing ones? else reject.
-      std::map<sf::Uint16,sf::Uint16>::iterator it;
+      std::map<NPSeq,NPSeq>::iterator it;
 
       it = map_missing.find(np.seq);
       if(it != map_missing.end()){
@@ -738,7 +872,8 @@ struct NClient
     }
 
     DrawText(5,50,
-      "q: " + std::to_string(np_send.queue.size()) + ", w: " + std::to_string(np_send.map_sent.size()),
+      "q: " + std::to_string(np_send.queue.size()) + ", w: " + std::to_string(np_send.map_sent.size())
+       + np_send.missingToString(),
       12, window, sf::Color(255,255,255)
     );
 
