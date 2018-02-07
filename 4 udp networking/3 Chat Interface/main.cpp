@@ -23,9 +23,7 @@ struct NPacketSendHandler;
 /* TODO
 
 - request / send files -> eg. map
-- chat -> handle packets better, enable broadcast:
-NPacketRcvHandler::incoming
-std::string cl = chat.update();
+- chat
 
  --- completed:
 
@@ -196,19 +194,6 @@ NUDPWritePacket& operator << (NUDPWritePacket& p, const std::string& c){
   return p;
 }
 
-NUDPWritePacket& operator << (NUDPWritePacket& p, const std::vector<char>& c){
-
-  uint16_t size = c.size();
-
-  p << size;
-
-  p.data.resize(p.index + size);
-  std::memcpy(&(p.data[p.index]), c.data(), c.size());
-  p.index+=size;
-
-  return p;
-}
-
 
 struct NUDPReadPacket
 {
@@ -235,7 +220,7 @@ bool NUDPReadPacket::receive(sf::UdpSocket &socket, sf::IpAddress &ip, unsigned 
   {
 
     // success:
-    data.resize(size);
+    data.reserve(size);
     std::memcpy(data.data(), rcv_buffer, size);
 
     return true;
@@ -282,18 +267,6 @@ NUDPReadPacket& operator >> (NUDPReadPacket& p, std::string& c){
   return p;
 }
 
-NUDPReadPacket& operator >> (NUDPReadPacket& p, std::vector<char>& c){
-  uint16_t size;
-  p >> size;
-
-  c.resize(size);
-  std::memcpy(c.data(), &(p.data[p.index]), size);
-
-  p.index+=size;
-
-  return p;
-}
-
 // ---------------- The Necessary Packets:
 /*
 Idea:
@@ -322,9 +295,7 @@ struct NPacket
 {
   NPSeq seq;
   uint16_t tag;
-
-  //std::string str;
-  std::vector<char> data;
+  std::string str;
 
   // book keeping:
   sf::Int32 time_sent; // for timeout and resend
@@ -370,15 +341,14 @@ struct NPacketSendHandler
     time_last_send = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
   }
 
-  int enqueue(uint16_t tag, const std::vector<char> &txt);
-  void enqueueChat(const std::string &c);
+  int enqueue(uint16_t tag, const std::string &txt);
   void update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket, const sf::IpAddress &ip, const unsigned short &port);
   void readAcks(NUDPReadPacket &p);
 
   std::string missingToString();
 };
 
-int NPacketSendHandler::enqueue(uint16_t tag, const std::vector<char> &txt)
+int NPacketSendHandler::enqueue(uint16_t tag, const std::string &txt)
 {
   // returns sequence number of the Packet
   last_sequence_number++;
@@ -386,15 +356,6 @@ int NPacketSendHandler::enqueue(uint16_t tag, const std::vector<char> &txt)
   queue.push(NPacket{last_sequence_number, tag, txt});
 
   return queue.size();
-}
-
-void NPacketSendHandler::enqueueChat(const std::string &c)
-{
-  std::vector<char> v;
-  v.resize(c.size());
-  std::memcpy(v.data(), c.data(), c.size());
-
-  enqueue(NPacket_TAG_CHAT, v);
 }
 
 void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket, const sf::IpAddress &ip, const unsigned short &port)
@@ -421,11 +382,11 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
       {
         if( ((float) rand() / (RAND_MAX)) < 0.8 )
         {
-          p << it->second.seq << it->second.tag << it->second.data;
+          p << it->second.seq << it->second.tag << it->second.str;
 
           if( ((float) rand() / (RAND_MAX)) < 0.1 )
           {
-            p << it->second.seq << it->second.tag << it->second.data; // send double!
+            p << it->second.seq << it->second.tag << it->second.str; // send double!
           }
         }
 
@@ -445,11 +406,11 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
       // artificially loose and double some packets:
       if( ((float) rand() / (RAND_MAX)) < 0.8 )
       {
-        p << np.seq << np.tag << np.data;
+        p << np.seq << np.tag << np.str;
 
         if( ((float) rand() / (RAND_MAX)) < 0.1 )
         {
-          p << np.seq << np.tag << np.data; // send double!
+          p << np.seq << np.tag << np.str; // send double!
         }
       }
 
@@ -603,8 +564,7 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
     hasNews = true;
 
     NPacket np;
-    p >> np.seq >> np.tag >> np.data;
-
+    p >> np.seq >> np.tag >> np.str;
 
     if(sequence_greater_than(np.seq, highest_seq_num_rcvd))
     {
@@ -618,12 +578,14 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
             (i,i)
           );
         }
-      }
+      }/*else{
+        std::cout << "wrap around ???" << std::endl;
+      }*/
 
       highest_seq_num_rcvd = np.seq;
 
       packet_counter++;
-      std::cout << "newest: " << np.seq << ":" << np.tag << std::endl;
+      std::cout << "newest: " << np.seq << ":" << np.tag << " -> " << np.str << std::endl;
     }else{
       // one of the missing ones? else reject.
       std::map<NPSeq,NPSeq>::iterator it;
@@ -633,7 +595,7 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
         map_missing.erase(np.seq);
 
         packet_counter++;
-        std::cout << "missing: " << np.seq << ":" << np.tag << std::endl;
+        std::cout << "missing: " << np.seq << ":" << np.tag << " -> " << np.str << std::endl;
   		}else{
   			// not found -> was a double!
   		}
@@ -993,11 +955,10 @@ struct NClient
     last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
 
     std::cout << "Client Created. listen on " << socket_port << std::endl;
-    /*
+
     np_send.enqueue(112, "hello world ! 1");
     np_send.enqueue(121, "hello world ! 2");
     np_send.enqueue(211, "hello world ! 3");
-    */
   }
 
   void draw(sf::RenderWindow &window)
@@ -1124,6 +1085,19 @@ struct NClient
       }
     }
   }
+
+  /*
+  void send(uint16_t header, const std::string &txt)
+  {
+    NUDPWritePacket p;
+    p << header << txt;
+
+    if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
+    {
+        std::cout << "Error on send !" << std::endl;
+    }
+  }
+  */
 
   void announcePort()
   {
@@ -1305,7 +1279,6 @@ int main(int argc, char** argv)
           window.close();
         }
 
-        /*
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space) && window.hasFocus()){
           if(!NET_SERVER_MODE)
           {
@@ -1313,7 +1286,6 @@ int main(int argc, char** argv)
             NET_CLIENT->np_send.enqueue(0, txt);
           }
         }
-        */
 
         // chat INPUT
 
@@ -1343,15 +1315,7 @@ int main(int argc, char** argv)
         std::string cl = chat.update();
         if(cl != "")
         {
-            if(NET_SERVER_MODE)
-            {
-              chat.push(cl);
-              // broadcast:
-
-            }else{
-              // send to server:
-              NET_CLIENT->np_send.enqueueChat(cl);
-            }
+            chat.push(cl);
         }
         chat.draw(0,600, window);
 
