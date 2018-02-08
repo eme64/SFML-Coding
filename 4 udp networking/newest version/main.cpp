@@ -958,7 +958,7 @@ struct NClient
 {
   sf::UdpSocket socket;
   unsigned short destination_port = 54000;
-  sf::IpAddress recipient = "localhost";
+  sf::IpAddress recipient = "192.168.1.41";
 
   unsigned short socket_port;
 
