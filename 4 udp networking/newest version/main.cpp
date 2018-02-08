@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <functional>
 
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
@@ -19,13 +20,16 @@ struct NClient;
 struct cmpByNSC_ident;
 struct NPacketRcvHandler;
 struct NPacketSendHandler;
+struct NPacket;
+typedef std::function<void(NPacket &)> NPacket_tag_function;
+typedef std::function<void(std::string &)> EChat_input_function;
+struct EChat;
 
 /* TODO
 
 - request / send files -> eg. map
 - chat -> handle packets better, enable broadcast:
-NPacketRcvHandler::incoming
-std::string cl = chat.update();
+enable the broadcast !
 
  --- completed:
 
@@ -136,6 +140,76 @@ bool InputHandler::updateString(std::string &s)
   }
   return false;
 }
+
+//-------------------------------------------------------- CHAT
+struct EChat
+{
+  std::list<std::string> lines;
+  size_t num_lines_max = 20;
+  std::string inputLine;
+
+  size_t blinker = 0;
+
+  bool isActive = true; // true -> catches input, draw more opaque
+
+  EChat_input_function input_handler = NULL; // called when line is entered.
+  void setInputFunction(EChat_input_function f)
+  {
+    input_handler = f;
+  }
+  void draw(float x, float y, sf::RenderWindow &window)
+  {
+    blinker++;
+    std::string blinker_txt = "";
+    if(blinker > 30)
+    {
+      blinker = 0;
+    }else if(blinker > 10)
+    {
+      blinker_txt = "|";
+    }
+    DrawText(x+5,y-20, ">" + inputLine + blinker_txt, 12, window, sf::Color(255,255,255));
+
+    float y_pos = y-40;
+    for(std::string l:lines)
+    {
+      DrawText(x+5,y_pos, l, 12, window, sf::Color(200,200,200));
+      y_pos -= 15;
+    }
+  }
+
+  void push(std::string line)
+  {
+    lines.push_front(line);
+    while(lines.size() > num_lines_max)
+    {
+      lines.pop_back();
+    }
+  }
+
+  void update()
+  {
+    // returns string if enter pressed
+    if(isActive)
+    {
+      if(InputHandler::updateString(inputLine))
+      {
+        if(inputLine != "")
+        {
+          if(input_handler!=NULL)
+          {
+            input_handler(inputLine);
+          }else{
+            std::cout << "EChat: input handler was NULL !" << std::endl;
+            std::cout << inputLine << std::endl;
+          }
+        }
+
+        inputLine = "";
+      }
+    }
+  }
+};
 // ------------------------------------------------------- Networking
 // just send a string
 const uint16_t NET_HEADER_ECHO = 100;
@@ -338,11 +412,17 @@ struct NPacketRcvHandler
 
   std::map<NPSeq, NPSeq> map_missing;
 
-
   void createAckMessage(NUDPWritePacket &p);
   bool hasNews; // if the ack situation changed since last createAckMessage
 
+  //typedef void (*NPacket_tag_function)(NPacket &);
+  NPacket_tag_function npacket_tag_functions_default = NULL;
+  std::map<uint16_t, NPacket_tag_function > npacket_tag_functions_map;
+  void incomingProcess(NPacket &np);
   void incoming(NUDPReadPacket &p, NPacketSendHandler &np_send);
+
+  void setDefaultTagFunction(NPacket_tag_function f);
+  void addTagFunction(uint16_t tag, NPacket_tag_function f);
 };
 
 struct NPacketSendHandler
@@ -589,6 +669,33 @@ void NPacketRcvHandler::createAckMessage(NUDPWritePacket &p)
 		p << (it->second);
   }
 }
+void NPacketRcvHandler::incomingProcess(NPacket &np)
+{
+  // process according to tag:
+  std::map<uint16_t, NPacket_tag_function>::iterator it;
+
+  it = npacket_tag_functions_map.find(np.tag);
+
+  if(it != npacket_tag_functions_map.end())
+  {
+    // call the function:
+    if(it->second != NULL)
+    {
+      it->second(np);
+    }else{
+        std::cout << "tag found, but function is NULL" << std::endl;
+    }
+  }else{
+    // no found: default
+    if(npacket_tag_functions_default != NULL)
+    {
+      npacket_tag_functions_default(np);
+    }else{
+      // not even default.
+      std::cout << "no matching function. not even default..." << std::endl;
+    }
+  }
+}
 
 void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
 {
@@ -623,7 +730,8 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
       highest_seq_num_rcvd = np.seq;
 
       packet_counter++;
-      std::cout << "newest: " << np.seq << ":" << np.tag << std::endl;
+      //std::cout << "newest: " << np.seq << ":" << np.tag << std::endl;
+      incomingProcess(np);
     }else{
       // one of the missing ones? else reject.
       std::map<NPSeq,NPSeq>::iterator it;
@@ -633,7 +741,8 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
         map_missing.erase(np.seq);
 
         packet_counter++;
-        std::cout << "missing: " << np.seq << ":" << np.tag << std::endl;
+        //std::cout << "missing: " << np.seq << ":" << np.tag << std::endl;
+        incomingProcess(np);
   		}else{
   			// not found -> was a double!
   		}
@@ -641,7 +750,53 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
   }
 }
 
-// ---------------- Server - Client
+void NPacketRcvHandler::setDefaultTagFunction(NPacket_tag_function f)
+{
+  // set function if valid
+  if(f != NULL)
+  {
+    npacket_tag_functions_default = f;
+  }else{
+    std::cout << "new default tag function is NULL !" << std::endl;
+  }
+}
+void NPacketRcvHandler::addTagFunction(uint16_t tag, NPacket_tag_function f)
+{
+  // test if already set:
+  std::map<uint16_t, NPacket_tag_function>::iterator it;
+
+  it = npacket_tag_functions_map.find(tag);
+
+  if(it != npacket_tag_functions_map.end())
+  {
+    if(it->second != NULL)
+    {
+      std::cout << "function for tag " << tag << " already exists !" << std::endl;
+      return;
+    }else{
+      // was set but is not valid. need resetting:
+      std::cout << "function for tag " << tag << " was set to NULL -> overwrite!" << std::endl;
+    }
+  }else{
+    // no found -> good !
+  }
+
+  // set function if valid
+  if(f != NULL)
+  {
+    npacket_tag_functions_map.insert(
+      std::pair<uint16_t, NPacket_tag_function>
+      (tag, f)
+    );
+  }else{
+    std::cout << "new function for tag " << tag << " is NULL !" << std::endl;
+  }
+}
+
+// ###################################### NServerClient ######################################
+// ###################################### NServerClient ######################################
+// ###################################### NServerClient ######################################
+// ###################################### NServerClient ######################################
 struct NServerClient_identifier
 {
   sf::IpAddress remoteIp;
@@ -674,145 +829,16 @@ struct NServerClient
   sf::Int32 last_rcv;
   sf::Int32 last_ping;
 
-  NServerClient(sf::IpAddress remoteIp, unsigned short remotePort)
-    : remoteIp(remoteIp), remotePort(remotePort)
-  {
-    NServerClient::id_last++;
-    id = NServerClient::id_last;
+  NServerClient(sf::IpAddress remoteIp, unsigned short remotePort, NServer *nserver);
 
-    std::cout << "my ID: " << id << std::endl;
-
-    last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
-    last_ping = last_rcv;
-  }
-
-  void sendPacket(NUDPWritePacket &p, sf::UdpSocket &socket)
-  {
-    if(!p.send(socket,remoteIp, remotePort)) //(socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
-    {
-        std::cout << "Error on send !" << std::endl;
-    }
-  }
-
-  void sendIdPing(sf::UdpSocket &socket)
-  {
-    NUDPWritePacket p;
-
-    p << NET_HEADER_SERVERCLIENT_IDPING << id;
-    if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
-    {
-        std::cout << "Error on send !" << std::endl;
-    }
-  }
-
-  void sendPing(sf::UdpSocket &socket)
-  {
-    NUDPWritePacket p;
-    p << NET_HEADER_PING;
-    if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
-    {
-        std::cout << "Error on send !" << std::endl;
-    }
-  }
-
-  void sendPong(sf::UdpSocket &socket)
-  {
-    NUDPWritePacket p;
-    p << NET_HEADER_PONG;
-    if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
-    {
-        std::cout << "Error on send !" << std::endl;
-    }
-  }
-
-  void rcvPacket(NUDPReadPacket &p, sf::UdpSocket &socket)
-  {
-    last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
-
-    uint16_t header;
-    p >> header;
-
-    switch (header)
-    {
-      case NET_HEADER_ECHO:
-        {
-          std::string txt;
-          p >> txt;
-
-          std::cout << "(" << id <<") Echo: " << txt << std::endl;
-
-          break;
-        }
-      case NET_HEADER_PING:
-      {
-        // send back pong:
-        sendPong(socket);
-        break;
-      }
-      case NET_HEADER_PONG:
-      {
-        std::cout << "(" << id <<") Pong" << std::endl;
-        break;
-      }
-      case NET_HEADER_NPacket:
-      {
-        np_rcv.incoming(p, np_send);
-        break;
-      }
-      default:   // ------------ DEFAULT
-        std::cout << "unreadable header: "<< header << std::endl;
-        break;
-    }
-  }
-
-  void update(sf::UdpSocket &socket)
-  {
-    // time out prevention:
-    sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
-
-    if( (now_time - last_rcv) > 500)
-    {
-      if( (now_time - last_ping) > 300)
-      {
-        last_ping = now_time;
-        sendPing(socket);
-      }
-    }
-
-    np_send.update(np_rcv, socket, remoteIp, remotePort);
-  }
-
-  void draw(float x, float y, sf::RenderWindow &window)
-  {
-    DrawText(x,y,
-      "ID: " + std::to_string(id) + ", " + remoteIp.toString() + ":" + std::to_string(remotePort),
-      12, window, sf::Color(255,0,0)
-    );
-
-    DrawText(x+150,y,
-      "q: " + std::to_string(np_send.queue.size()) + ", w: " + std::to_string(np_send.map_sent.size()),
-      12, window, sf::Color(255,255,255)
-    );
-
-
-    DrawText(x+230,y,
-      "m: " + std::to_string(np_rcv.map_missing.size()) + ", h: " + std::to_string(np_rcv.highest_seq_num_rcvd) + ", cnt: " + std::to_string(np_rcv.packet_counter),
-      12, window, sf::Color(0,255,255)
-    );
-
-    sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
-
-    if( (now_time - last_rcv) > 500)
-    {
-      DrawText(x+400,y,
-        "Timeout Danger: " + std::to_string( (float)(now_time - last_rcv)/1000.0 ) + " / 10",
-        12, window, sf::Color(255,0,0)
-      );
-    }
-
-  }
+  void sendPacket(NUDPWritePacket &p, sf::UdpSocket &socket);
+  void sendIdPing(sf::UdpSocket &socket);
+  void sendPing(sf::UdpSocket &socket);
+  void sendPong(sf::UdpSocket &socket);
+  void rcvPacket(NUDPReadPacket &p, sf::UdpSocket &socket);
+  void update(sf::UdpSocket &socket);
+  void draw(float x, float y, sf::RenderWindow &window);
 };
-int NServerClient::id_last = 0;
 
 struct NServer
 {
@@ -822,136 +848,15 @@ struct NServer
   NSCMapIdentifyer map_identifyer;
   NSCMapId map_id;
 
-  NServer()
-  {
-    // bind socket:
-    if(socket.bind(socket_port) != sf::Socket::Done)
-    {
-      std::cout << "could not bind socket!" << std::endl;
-      return;
-    }
-    socket.setBlocking(false);
-    std::cout << "Server Created." << std::endl;
-  }
-
-  void addClient(NServerClient* c){
-		map_identifyer.insert(
-      std::pair<NServerClient_identifier, NServerClient*>
-      (NServerClient_identifier{c->remoteIp, c->remotePort}, c)
-    );
-
-    map_id.insert(
-      std::pair<int, NServerClient*>
-      (c->id, c)
-    );
-	}
-
-  void removeClient(NServerClient* c)
-  {
-    map_identifyer.erase(
-      NServerClient_identifier{c->remoteIp, c->remotePort}
-    );
-
-    map_id.erase(
-      c->id
-    );
-  }
-
-	NServerClient* getClient(sf::IpAddress ip, unsigned short port){
-		std::map<NServerClient_identifier, NServerClient*>::iterator it;
-
-		it = map_identifyer.find(NServerClient_identifier{ip, port});
-
-		if(it != map_identifyer.end()){
-			return it->second;
-		}else{
-			return NULL;
-		}
-	}
-
-  void draw(sf::RenderWindow &window)
-  {
-    DrawText(5,5, "Server Mode.", 12, window, sf::Color(255,0,0));
-
-    // draw all clients:
-    std::map<int, NServerClient*>::iterator it;
-
-    int counter = 0;
-		for (it=map_id.begin(); it!=map_id.end(); ++it)
-		{
-			NServerClient* c = it->second;
-
-      c->draw(10, 20+counter*15,window);
-
-      counter++;
-		}
-  }
-
-  void update()
-  {
-    bool repeat;
-
-    do
-    {
-      NUDPReadPacket p;
-      sf::IpAddress remoteIp;
-      unsigned short remotePort;
-
-      bool success = p.receive(socket, remoteIp, remotePort);
-      //auto status = socket.receive(p, remoteIp, remotePort);
-
-      repeat = false;
-      if(success)
-      {
-        repeat = true;
-
-        // find client:
-        NServerClient* c = getClient(remoteIp, remotePort);
-        if(c == NULL)
-        {
-          // create only if this was a port announcement:
-          uint16_t header;
-          p >> header;
-
-          if( header == NET_HEADER_CLIENT_ANNOUNCE)
-          {
-            // create !
-            c = new NServerClient(remoteIp, remotePort);
-            addClient(c);
-
-            c->sendIdPing(socket);
-          }else{
-            std::cout << "ignoring msg (header " << header << ")" << std::endl;
-          }
-
-        }else{
-          // ok, can rcv packet for the client:
-          c->rcvPacket(p, socket);
-        }
-      }
-    }while(repeat);
-
-    // update all clients:
-    std::map<int, NServerClient*>::iterator it;
-
-    sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
-
-		for (it=map_id.begin(); it!=map_id.end(); ++it)
-		{
-			NServerClient* c = it->second;
-
-      if((now_time - c->last_rcv) > 10000)
-      {
-        // timed out
-        std::cout << "timeout " << c->id << std::endl;
-
-        removeClient(c);
-      }
-
-      c->update(socket);
-		}
-
-  }
+  EChat *chat;
+  NServer(EChat *chat);
+  void handleChatInput(const NServerClient* client, const std::string &s);
+  void broadcastChat(const std::string &s);
+  void addClient(NServerClient* c);
+  void removeClient(NServerClient* c);
+  NServerClient* getClient(sf::IpAddress ip, unsigned short port);
+  void draw(sf::RenderWindow &window);
+  void update();
 };
 
 struct NClient
@@ -967,6 +872,8 @@ struct NClient
 
   uint16_t id_on_server;
 
+  EChat *chat;
+
   // ------------------------------------- STATE MACHINE start
   int finite_state = 0;
   // 0 - initial
@@ -977,248 +884,544 @@ struct NClient
   sf::Int32 last_rcv;
 
   // ------------------------------------- STATE MACHINE end
+  NClient(EChat *chat);
+  void draw(sf::RenderWindow &window);
+  void update();
+  void announcePort();
+  void sendPing();
+  void sendPong();
+};
 
-  NClient()
+
+// ###################################### NServerClient
+NServerClient::NServerClient(sf::IpAddress remoteIp, unsigned short remotePort, NServer *nserver)
+  : remoteIp(remoteIp), remotePort(remotePort)
+{
+  NServerClient::id_last++;
+  id = NServerClient::id_last;
+
+  std::cout << "my ID: " << id << std::endl;
+
+  last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+  last_ping = last_rcv;
+
+  // set NPacket tag functions:
+  auto f_default = [](NPacket &np)
   {
-    if(socket.bind(sf::Socket::AnyPort) != sf::Socket::Done)
-    {
-      std::cout << "could not bind socket!" << std::endl;
-      return;
-    }
-    socket.setBlocking(false);
-    socket_port = socket.getLocalPort();
+    std::cout << "default packet function. tag: " << np.tag << std::endl;
+  };
+  auto f_chat = [this, nserver](NPacket &np)
+  {
+    std::string cnew( &(np.data[0]), np.data.size());
+    nserver->handleChatInput(this, cnew);
+  };
 
-    announcePort();
+  np_rcv.setDefaultTagFunction(f_default);
+  np_rcv.addTagFunction(NPacket_TAG_CHAT, f_chat);
+}
 
-    last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
-
-    std::cout << "Client Created. listen on " << socket_port << std::endl;
-    /*
-    np_send.enqueue(112, "hello world ! 1");
-    np_send.enqueue(121, "hello world ! 2");
-    np_send.enqueue(211, "hello world ! 3");
-    */
+void NServerClient::sendPacket(NUDPWritePacket &p, sf::UdpSocket &socket)
+{
+  if(!p.send(socket,remoteIp, remotePort)) //(socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
+  {
+      std::cout << "Error on send !" << std::endl;
   }
+}
 
-  void draw(sf::RenderWindow &window)
+void NServerClient::sendIdPing(sf::UdpSocket &socket)
+{
+  NUDPWritePacket p;
+
+  p << NET_HEADER_SERVERCLIENT_IDPING << id;
+  if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
   {
-    DrawText(5,5, "Client Mode. connected to " + recipient.toString() + ":" + std::to_string(destination_port), 12, window, sf::Color(0,255,0));
-
-    DrawText(5,20, "State: " + std::to_string(finite_state), 12, window, sf::Color(0,255,0));
-
-    sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
-    if( (now_time - last_rcv) > 500)
-    {
-      DrawText(5,35, "Time out? " + std::to_string( (float)(now_time - last_rcv)/1000.0), 12, window, sf::Color(255,0,0));
-    }
-
-    DrawText(5,50,
-      "q: " + std::to_string(np_send.queue.size()) + ", w: " + std::to_string(np_send.map_sent.size())
-       + np_send.missingToString(),
-      12, window, sf::Color(255,255,255)
-    );
-
-    DrawText(5,65,
-      "m: " + std::to_string(np_rcv.map_missing.size()) + ", h: " + std::to_string(np_rcv.highest_seq_num_rcvd) + ", cnt: " + std::to_string(np_rcv.packet_counter),
-      12, window, sf::Color(0,255,255)
-    );
-
-
+      std::cout << "Error on send !" << std::endl;
   }
+}
 
-  void update()
+void NServerClient::sendPing(sf::UdpSocket &socket)
+{
+  NUDPWritePacket p;
+  p << NET_HEADER_PING;
+  if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
   {
-    bool repeat = false;
-    do
-    {
-      NUDPReadPacket p;
-      sf::IpAddress remoteIp;
-      unsigned short remotePort;
+      std::cout << "Error on send !" << std::endl;
+  }
+}
 
-      bool success = p.receive(socket, remoteIp, remotePort);
-      //auto status = socket.receive(p, remoteIp, remotePort);
+void NServerClient::sendPong(sf::UdpSocket &socket)
+{
+  NUDPWritePacket p;
+  p << NET_HEADER_PONG;
+  if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
+  {
+      std::cout << "Error on send !" << std::endl;
+  }
+}
 
-      repeat = false;
-      if(success)
+void NServerClient::rcvPacket(NUDPReadPacket &p, sf::UdpSocket &socket)
+{
+  last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+  uint16_t header;
+  p >> header;
+
+  switch (header)
+  {
+    case NET_HEADER_ECHO:
       {
-        last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+        std::string txt;
+        p >> txt;
+
+        std::cout << "(" << id <<") Echo: " << txt << std::endl;
+
+        break;
+      }
+    case NET_HEADER_PING:
+    {
+      // send back pong:
+      sendPong(socket);
+      break;
+    }
+    case NET_HEADER_PONG:
+    {
+      std::cout << "(" << id <<") Pong" << std::endl;
+      break;
+    }
+    case NET_HEADER_NPacket:
+    {
+      np_rcv.incoming(p, np_send);
+      break;
+    }
+    default:   // ------------ DEFAULT
+      std::cout << "unreadable header: "<< header << std::endl;
+      break;
+  }
+}
+
+void NServerClient::update(sf::UdpSocket &socket)
+{
+  // time out prevention:
+  sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+  if( (now_time - last_rcv) > 500)
+  {
+    if( (now_time - last_ping) > 300)
+    {
+      last_ping = now_time;
+      sendPing(socket);
+    }
+  }
+
+  np_send.update(np_rcv, socket, remoteIp, remotePort);
+}
+
+void NServerClient::draw(float x, float y, sf::RenderWindow &window)
+{
+  DrawText(x,y,
+    "ID: " + std::to_string(id) + ", " + remoteIp.toString() + ":" + std::to_string(remotePort),
+    12, window, sf::Color(255,0,0)
+  );
+
+  DrawText(x+150,y,
+    "q: " + std::to_string(np_send.queue.size()) + ", w: " + std::to_string(np_send.map_sent.size()),
+    12, window, sf::Color(255,255,255)
+  );
 
 
-        repeat = true;
+  DrawText(x+230,y,
+    "m: " + std::to_string(np_rcv.map_missing.size()) + ", h: " + std::to_string(np_rcv.highest_seq_num_rcvd) + ", cnt: " + std::to_string(np_rcv.packet_counter),
+    12, window, sf::Color(0,255,255)
+  );
+
+  sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+  if( (now_time - last_rcv) > 500)
+  {
+    DrawText(x+400,y,
+      "Timeout Danger: " + std::to_string( (float)(now_time - last_rcv)/1000.0 ) + " / 10",
+      12, window, sf::Color(255,0,0)
+    );
+  }
+
+}
+
+int NServerClient::id_last = 0;
+
+// ######################################## NServer
+
+NServer::NServer(EChat *chat): chat(chat)
+{
+  // bind socket:
+  if(socket.bind(socket_port) != sf::Socket::Done)
+  {
+    std::cout << "could not bind socket!" << std::endl;
+    return;
+  }
+  socket.setBlocking(false);
+  std::cout << "Server Created." << std::endl;
+
+  // ------------ chat
+  EChat_input_function f_input = [this](std::string &s)
+  {
+    handleChatInput(NULL, s);
+  };
+  chat->setInputFunction(f_input);
+}
+
+void NServer::handleChatInput(const NServerClient* client, const std::string &s)
+{
+  std::string line;
+
+  if(client != NULL)
+  {
+    // client input:
+    line = "[" + std::to_string(client->id) + "] " + s;
+
+  }else{
+    // server input:
+    line = "[server] " + s;
+  }
+
+  chat->push(line);
+  broadcastChat(line);
+}
+
+void NServer::broadcastChat(const std::string &s)
+{
+  std::map<int, NServerClient*>::iterator it;
+	for (it=map_id.begin(); it!=map_id.end(); ++it)
+	{
+		NServerClient* c = it->second;
+
+    c->np_send.enqueueChat(s);
+	}
+}
+
+void NServer::addClient(NServerClient* c)
+{
+	map_identifyer.insert(
+    std::pair<NServerClient_identifier, NServerClient*>
+    (NServerClient_identifier{c->remoteIp, c->remotePort}, c)
+  );
+
+  map_id.insert(
+    std::pair<int, NServerClient*>
+    (c->id, c)
+  );
+}
+
+void NServer::removeClient(NServerClient* c)
+{
+  map_identifyer.erase(
+    NServerClient_identifier{c->remoteIp, c->remotePort}
+  );
+
+  map_id.erase(
+    c->id
+  );
+}
+
+NServerClient* NServer::getClient(sf::IpAddress ip, unsigned short port)
+{
+	std::map<NServerClient_identifier, NServerClient*>::iterator it;
+
+	it = map_identifyer.find(NServerClient_identifier{ip, port});
+
+	if(it != map_identifyer.end()){
+		return it->second;
+	}else{
+		return NULL;
+	}
+}
+
+void NServer::draw(sf::RenderWindow &window)
+{
+  DrawText(5,5, "Server Mode.", 12, window, sf::Color(255,0,0));
+
+  // draw all clients:
+  std::map<int, NServerClient*>::iterator it;
+
+  int counter = 0;
+	for (it=map_id.begin(); it!=map_id.end(); ++it)
+	{
+		NServerClient* c = it->second;
+
+    c->draw(10, 20+counter*15,window);
+
+    counter++;
+	}
+}
+
+void NServer::update()
+{
+  bool repeat;
+
+  do
+  {
+    NUDPReadPacket p;
+    sf::IpAddress remoteIp;
+    unsigned short remotePort;
+
+    bool success = p.receive(socket, remoteIp, remotePort);
+    //auto status = socket.receive(p, remoteIp, remotePort);
+
+    repeat = false;
+    if(success)
+    {
+      repeat = true;
+
+      // find client:
+      NServerClient* c = getClient(remoteIp, remotePort);
+      if(c == NULL)
+      {
+        // create only if this was a port announcement:
         uint16_t header;
         p >> header;
 
-        switch (header)
+        if( header == NET_HEADER_CLIENT_ANNOUNCE)
         {
-          case NET_HEADER_ECHO:
-            {
-              std::string txt;
-              p >> txt;
+          // create !
+          c = new NServerClient(remoteIp, remotePort, this);
+          addClient(c);
 
-              std::cout << "IP: " << remoteIp << " : " << remotePort << std::endl;
-              std::cout << "Echo: " << txt << std::endl;
-
-              break;
-            }
-          case NET_HEADER_SERVERCLIENT_IDPING:
-            {
-              p >> id_on_server;
-
-              std::cout << "IP: " << remoteIp << " : " << remotePort << std::endl;
-              std::cout << "Id Ping: " << id_on_server << std::endl;
-
-              if(finite_state == 0)
-              {
-                finite_state = 1;
-              }
-
-              break;
-            }
-          case NET_HEADER_PING:
-            {
-              // send pong back
-              sendPong();
-              break;
-            }
-          case NET_HEADER_PONG:
-            {
-              std::cout << "pong" << std::endl;
-              break;
-            }
-          case NET_HEADER_NPacket:
-            {
-              np_rcv.incoming(p, np_send);
-              break;
-            }
-          default:   // ------------ DEFAULT
-            std::cout << "unreadable header: "<< header << std::endl;
-            break;
+          c->sendIdPing(socket);
+        }else{
+          std::cout << "ignoring msg (header " << header << ")" << std::endl;
         }
+
+      }else{
+        // ok, can rcv packet for the client:
+        c->rcvPacket(p, socket);
       }
     }
-    while(repeat);
+  }while(repeat);
 
-    // STATE MACHINE ITSELF
-    switch(finite_state)
+  // update all clients:
+  std::map<int, NServerClient*>::iterator it;
+
+  sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+	for (it=map_id.begin(); it!=map_id.end(); ++it)
+	{
+		NServerClient* c = it->second;
+
+    if((now_time - c->last_rcv) > 10000)
     {
-      case 0:
-      {
-        sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+      // timed out
+      std::cout << "timeout " << c->id << std::endl;
 
-        if((now_time-last_announce) > 1000){
-          announcePort();
-          std::cout << "send announce Port" << std::endl;
-        }
-        break;
-      }
-      case 1:
-      {
-        np_send.update(np_rcv, socket, recipient, destination_port);
-
-        break;
-      }
-      default:
-      {
-        std::cout << "undefined state: " << finite_state << std::endl;
-        break;
-      }
-    }
-  }
-
-  void announcePort()
-  {
-    NUDPWritePacket p;
-    p << NET_HEADER_CLIENT_ANNOUNCE << socket_port;
-
-    if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
-    {
-        std::cout << "Error on send !" << std::endl;
+      removeClient(c);
     }
 
-    number_announcements++;
-    last_announce = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
-  }
+    c->update(socket);
+	}
 
-  void sendPing()
-  {
-    NUDPWritePacket p;
-    p << NET_HEADER_PING;
+}
 
-    if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
-    {
-        std::cout << "Error on send !" << std::endl;
-    }
-  }
 
-  void sendPong()
-  {
-    NUDPWritePacket p;
-    p << NET_HEADER_PONG;
-
-    if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
-    {
-        std::cout << "Error on send !" << std::endl;
-    }
-  }
-};
-
-//-------------------------------------------------------- CHAT
-struct EChat
+// ########################################### NClient
+NClient::NClient(EChat *chat)
 {
-  std::list<std::string> lines;
-  size_t num_lines_max = 20;
-  std::string inputLine;
-
-  size_t blinker = 0;
-
-  bool isActive = true; // true -> catches input, draw more opaque
-
-  void draw(float x, float y, sf::RenderWindow &window)
+  if(socket.bind(sf::Socket::AnyPort) != sf::Socket::Done)
   {
-    blinker++;
-    std::string blinker_txt = "";
-    if(blinker > 30)
-    {
-      blinker = 0;
-    }else if(blinker > 10)
-    {
-      blinker_txt = "|";
-    }
-    DrawText(x+5,y-20, ">" + inputLine + blinker_txt, 12, window, sf::Color(255,255,255));
+    std::cout << "could not bind socket!" << std::endl;
+    return;
+  }
+  socket.setBlocking(false);
+  socket_port = socket.getLocalPort();
 
-    float y_pos = y-40;
-    for(std::string l:lines)
-    {
-      DrawText(x+5,y_pos, l, 12, window, sf::Color(200,200,200));
-      y_pos -= 15;
-    }
+  announcePort();
+
+  last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+  std::cout << "Client Created. listen on " << socket_port << std::endl;
+
+  // ------------------------------------------------------- EChat.
+  EChat_input_function f_input = [this](std::string &s)
+  {
+    // just send line to server, it will decide how to bounce it back.
+    np_send.enqueueChat(s);
+  };
+  chat->setInputFunction(f_input);
+
+  // -------------------------------------    set NPacket tag functions:
+  auto f_default = [](NPacket &np)
+  {
+    std::cout << "default packet function. tag: " << np.tag << std::endl;
+  };
+  auto f_chat = [chat](NPacket &np)
+  {
+    std::string cnew( &(np.data[0]), np.data.size());
+
+    chat->push(cnew);
+  };
+
+  np_rcv.setDefaultTagFunction(f_default);
+  np_rcv.addTagFunction(NPacket_TAG_CHAT, f_chat);
+}
+
+void NClient::draw(sf::RenderWindow &window)
+{
+  DrawText(5,5, "Client Mode. connected to " + recipient.toString() + ":" + std::to_string(destination_port), 12, window, sf::Color(0,255,0));
+
+  DrawText(5,20, "State: " + std::to_string(finite_state), 12, window, sf::Color(0,255,0));
+
+  sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+  if( (now_time - last_rcv) > 500)
+  {
+    DrawText(5,35, "Time out? " + std::to_string( (float)(now_time - last_rcv)/1000.0), 12, window, sf::Color(255,0,0));
   }
 
-  void push(std::string line)
-  {
-    lines.push_front(line);
-    while(lines.size() > num_lines_max)
-    {
-      lines.pop_back();
-    }
-  }
+  DrawText(5,50,
+    "q: " + std::to_string(np_send.queue.size()) + ", w: " + std::to_string(np_send.map_sent.size())
+     + np_send.missingToString(),
+    12, window, sf::Color(255,255,255)
+  );
 
-  std::string update()
+  DrawText(5,65,
+    "m: " + std::to_string(np_rcv.map_missing.size()) + ", h: " + std::to_string(np_rcv.highest_seq_num_rcvd) + ", cnt: " + std::to_string(np_rcv.packet_counter),
+    12, window, sf::Color(0,255,255)
+  );
+
+
+}
+
+void NClient::update()
+{
+  bool repeat = false;
+  do
   {
-    // returns string if enter pressed
-    std::string ret = "";
-    if(isActive)
+    NUDPReadPacket p;
+    sf::IpAddress remoteIp;
+    unsigned short remotePort;
+
+    bool success = p.receive(socket, remoteIp, remotePort);
+    //auto status = socket.receive(p, remoteIp, remotePort);
+
+    repeat = false;
+    if(success)
     {
-      if(InputHandler::updateString(inputLine))
+      last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+
+      repeat = true;
+      uint16_t header;
+      p >> header;
+
+      switch (header)
       {
-        //push(inputLine);
-        ret = inputLine;
-        inputLine = "";
+        case NET_HEADER_ECHO:
+          {
+            std::string txt;
+            p >> txt;
+
+            std::cout << "IP: " << remoteIp << " : " << remotePort << std::endl;
+            std::cout << "Echo: " << txt << std::endl;
+
+            break;
+          }
+        case NET_HEADER_SERVERCLIENT_IDPING:
+          {
+            p >> id_on_server;
+
+            std::cout << "IP: " << remoteIp << " : " << remotePort << std::endl;
+            std::cout << "Id Ping: " << id_on_server << std::endl;
+
+            if(finite_state == 0)
+            {
+              finite_state = 1;
+            }
+
+            break;
+          }
+        case NET_HEADER_PING:
+          {
+            // send pong back
+            sendPong();
+            break;
+          }
+        case NET_HEADER_PONG:
+          {
+            std::cout << "pong" << std::endl;
+            break;
+          }
+        case NET_HEADER_NPacket:
+          {
+            np_rcv.incoming(p, np_send);
+            break;
+          }
+        default:   // ------------ DEFAULT
+          std::cout << "unreadable header: "<< header << std::endl;
+          break;
       }
     }
-    return ret;
   }
-};
+  while(repeat);
+
+  // STATE MACHINE ITSELF
+  switch(finite_state)
+  {
+    case 0:
+    {
+      sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+      if((now_time-last_announce) > 1000){
+        announcePort();
+        std::cout << "send announce Port" << std::endl;
+      }
+      break;
+    }
+    case 1:
+    {
+      np_send.update(np_rcv, socket, recipient, destination_port);
+
+      break;
+    }
+    default:
+    {
+      std::cout << "undefined state: " << finite_state << std::endl;
+      break;
+    }
+  }
+}
+
+void NClient::announcePort()
+{
+  NUDPWritePacket p;
+  p << NET_HEADER_CLIENT_ANNOUNCE << socket_port;
+
+  if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
+  {
+      std::cout << "Error on send !" << std::endl;
+  }
+
+  number_announcements++;
+  last_announce = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+}
+
+void NClient::sendPing()
+{
+  NUDPWritePacket p;
+  p << NET_HEADER_PING;
+
+  if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
+  {
+      std::cout << "Error on send !" << std::endl;
+  }
+}
+
+void NClient::sendPong()
+{
+  NUDPWritePacket p;
+  p << NET_HEADER_PONG;
+
+  if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
+  {
+      std::cout << "Error on send !" << std::endl;
+  }
+}
+
 
 //-------------------------------------------------------- Main
 int main(int argc, char** argv)
@@ -1254,21 +1457,23 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // --------------------------- Setup Networking
+    // --------------------------- EChat
+    EChat chat;
 
+
+    // --------------------------- Setup Networking
     if(NET_SERVER_MODE)
     {
       // server
-      NET_SERVER = new NServer();
+      NET_SERVER = new NServer(&chat);
     }else{
       // client
-      NET_CLIENT = new NClient();
+      NET_CLIENT = new NClient(&chat);
     }
 
     std::string textInput;
 
-    // --------------------------- EChat
-    EChat chat;
+
 
     // --------------------------- Render Loop
     while (window.isOpen())
@@ -1340,19 +1545,8 @@ int main(int argc, char** argv)
           NET_CLIENT->draw(window);
         }
 
-        std::string cl = chat.update();
-        if(cl != "")
-        {
-            if(NET_SERVER_MODE)
-            {
-              chat.push(cl);
-              // broadcast:
+        chat.update();
 
-            }else{
-              // send to server:
-              NET_CLIENT->np_send.enqueueChat(cl);
-            }
-        }
         chat.draw(0,600, window);
 
         window.display();
