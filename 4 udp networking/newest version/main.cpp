@@ -22,12 +22,13 @@ struct cmpByNSC_ident;
 struct NPacketRcvHandler;
 struct NPacketSendHandler;
 struct NPacket;
-typedef std::function<void(NPacket &)> NPacket_tag_function;
+typedef std::function<void(NPacket &, NPacketSendHandler &)> NPacket_tag_function;
 typedef std::function<void(std::string &)> EChat_input_function;
 struct EChat;
 
 /* TODO
 
+- full code cleanup
 - data request -> eg. map
 - user names
 - chat commands
@@ -50,7 +51,7 @@ but it is very helpful to test if my code can actually handle it.
 ---- data request:
 all over semi-reliable transmission
 1. request: req id, file-name by string. can be interpreted as one wishes.
-2. answer: req id, denied / ack and num packages to be sent.
+2. answer: req id, denied + reason / ack + num packages to be sent.
 3. request: req id, ack
 4. answer: injection of all packages, will possibly jam the queue!
 
@@ -402,6 +403,23 @@ NUDPWritePacket& operator << (NUDPWritePacket& p, const uint16_t& c){
   return p;
 }
 
+NUDPWritePacket& operator << (NUDPWritePacket& p, const size_t& c){
+  char b1 = c & 0xFF;
+  char b2 = c >> 8;
+  char b3 = c >> 16;
+  char b4 = c >> 24;
+
+
+  p.data.resize(p.index+4);
+  p.data[p.index] = b1;
+  p.data[p.index+1] = b2;
+  p.data[p.index+2] = b3;
+  p.data[p.index+3] = b4;
+  p.index+=4;
+
+  return p;
+}
+
 NUDPWritePacket& operator << (NUDPWritePacket& p, const std::string& c){
 
   uint16_t size = c.size();
@@ -438,10 +456,17 @@ struct NUDPReadPacket
   size_t size = 0;
   size_t index = 0; // where to read next
 
+  void setFromVector(std::vector<char> &vec);
   bool receive(sf::UdpSocket &socket, sf::IpAddress &ip, unsigned short& port);
   bool endOfPacket();
 };
 char NUDPReadPacket::rcv_buffer[NUDPReadPacket::rcv_buffer_size];
+void NUDPReadPacket::setFromVector(std::vector<char> &vec)
+{
+  data = vec;
+  size = vec.size();
+  index = 0;
+}
 bool NUDPReadPacket::receive(sf::UdpSocket &socket, sf::IpAddress &ip, unsigned short& port)
 {
   // returns true if successful
@@ -484,6 +509,21 @@ NUDPReadPacket& operator >> (NUDPReadPacket& p, uint16_t& c){
   p.index+=2;
 
   c = ((uint16_t(b1)& 0xFF) | ((uint16_t(b2) & 0xFF) << 8));
+  return p;
+}
+
+NUDPReadPacket& operator >> (NUDPReadPacket& p, size_t& c){
+  uint16_t b1 = p.data[p.index];
+  uint16_t b2 = p.data[p.index+1];
+  uint16_t b3 = p.data[p.index+2];
+  uint16_t b4 = p.data[p.index+3];
+  p.index+=4;
+
+  c = ((uint16_t(b1)& 0xFF)
+    | ((uint16_t(b2) & 0xFF) << 8)
+    | ((uint16_t(b3) & 0xFF) << 16)
+    | ((uint16_t(b4) & 0xFF) << 24));
+
   return p;
 }
 
@@ -530,6 +570,10 @@ seq. number, tag, string
 */
 
 const uint16_t NPacket_TAG_CHAT = 1;
+const uint16_t NPacket_TAG_DATAREQUEST_REQ = 2;
+const uint16_t NPacket_TAG_DATAREQUEST_ANS = 3;
+const uint16_t NPacket_TAG_DATAREQUEST_ACK = 4;
+const uint16_t NPacket_TAG_DATAREQUEST_DAT = 5;
 
 inline bool sequence_greater_than( NPSeq s1, NPSeq s2 )
 {
@@ -548,14 +592,95 @@ struct NPacket
   // book keeping:
   sf::Int32 time_sent; // for timeout and resend
 };
+struct NPacketDataRequest_Send
+{
+  uint16_t id;
+  std::string fileName;
+  std::function<void(char*, size_t)> f_success;
+  std::function<void(bool, std::string)> f_failiure;
 
-struct NPacketRcvHandler
+  // state machine:
+  size_t status = 0;
+  /*
+  0 - not initialized
+  1 - initialized
+  2 - sent off
+  3 - granted, ack sent back, waiting for all packets
+  4 - complete
+  5 - rejected by server
+  6 - timed out
+  */
+
+  size_t dataSize;
+  size_t packageSize;
+  uint16_t num_packages;
+
+  std::vector<bool> rcvd; // true if reveived that package
+  char* data;
+  uint16_t num_packages_rcvd;
+
+  NPacketDataRequest_Send(uint16_t id, std::string fileName, std::function<void(char*, size_t)> f_success, std::function<void(bool, std::string)> f_failiure)
+  :id(id), fileName(fileName), f_success(f_success), f_failiure(f_failiure)
+  {
+    status = 1;
+  }
+
+  void makeReady(size_t size, size_t psize, uint16_t num_p)
+  {
+    // set datafield for data transmission, conter, bitfield.
+    dataSize = size;
+    packageSize = psize;
+    num_packages = num_p;
+
+    num_packages_rcvd = 0;
+    rcvd = std::vector<bool>(num_packages, false);
+    data = (char*)std::malloc(dataSize);
+  }
+};
+
+struct NPacketDataRequest_Rcv
+{
+  uint16_t id;
+  size_t dataSize;
+  char* dataPtr;
+
+  size_t packageSize;
+  uint16_t num_packages;
+
+  NPacketDataRequest_Rcv(uint16_t id, size_t dataSize, char* dataPtr)
+  : id(id), dataSize(dataSize), dataPtr(dataPtr)
+  {
+    const size_t package_size = 1024;
+    num_packages = dataSize / package_size;
+    if(dataSize % package_size !=0)
+    {
+      num_packages++;
+    }
+    packageSize = package_size;
+  }
+
+  void sendPackets(NPacketSendHandler &np_send)
+  {
+    std::cout << "sending packets: TODO" << std::endl;
+  }
+};
+
+typedef std::function<void(std::string , NServerClient* , bool& , char* , size_t &, std::string&)> DataReqHandler_t;
+struct NPacketRcvHandler // np_rcv
 {
   NPSeq highest_seq_num_rcvd = NPSeq_START_AT;
 
   uint16_t packet_counter = 0;
 
-  std::map<NPSeq, NPSeq> map_missing;
+  std::map<NPSeq, NPSeq> map_missing; // should really be a set...
+
+  NServerClient* client;
+  std::map<uint16_t,NPacketDataRequest_Rcv*> requestMap;
+
+  NPacketRcvHandler(NServerClient* client);
+
+  DataReqHandler_t f_dataRequestHandler;
+  void setDataRequestHandler(DataReqHandler_t f_handler);
 
   void createAckMessage(NUDPWritePacket &p);
   bool hasNews; // if the ack situation changed since last createAckMessage
@@ -563,14 +688,15 @@ struct NPacketRcvHandler
   //typedef void (*NPacket_tag_function)(NPacket &);
   NPacket_tag_function npacket_tag_functions_default = NULL;
   std::map<uint16_t, NPacket_tag_function > npacket_tag_functions_map;
-  void incomingProcess(NPacket &np);
+  void incomingProcess(NPacket &np, NPacketSendHandler &np_send);
   void incoming(NUDPReadPacket &p, NPacketSendHandler &np_send);
 
   void setDefaultTagFunction(NPacket_tag_function f);
   void addTagFunction(uint16_t tag, NPacket_tag_function f);
 };
 
-struct NPacketSendHandler
+
+struct NPacketSendHandler // np_send
 {
   NPSeq last_sequence_number = NPSeq_START_AT;
   NPSeq oldest_sequence_waiting = NPSeq_START_AT;
@@ -579,12 +705,7 @@ struct NPacketSendHandler
   int num_wait_ack_limit = 100; // this will affect the transmission speed!
 
   std::queue<NPacket> queue;
-  /*
-  q.push(root)
-  --
-  size_t c = q.front();
-  q.pop();
-  */
+
   std::map<NPSeq, NPacket> map_sent;
 
   sf::Int32 time_last_send;
@@ -601,7 +722,113 @@ struct NPacketSendHandler
   void readAcks(NUDPReadPacket &p);
 
   std::string missingToString();
+
+  uint16_t dataRequestNextId = 0; // reasonably never wrap around and overlap.
+  std::map<uint16_t,NPacketDataRequest_Send*> requestMap;
+  void issueDataRequest(std::string fileName, std::function<void(char*, size_t)> f_success, std::function<void(bool, std::string)> f_failiure);
+  void deniedDataRequest(uint16_t req_id, std::string errorMsg);
+  void ackDataRequest(uint16_t req_id, uint16_t num_packages, size_t packageSize,size_t dataSize);
+  void drawDataRequests(float x, float y, sf::RenderWindow &window);
 };
+
+struct NServerClient_identifier
+{
+  sf::IpAddress remoteIp;
+  unsigned short remotePort;
+};
+
+struct cmpByNSC_ident {
+  bool operator() (const NServerClient_identifier& lhs, const NServerClient_identifier& rhs) const
+  {
+    if(lhs.remotePort == rhs.remotePort)
+    {
+      return lhs.remoteIp < rhs.remoteIp;
+    }else{
+      return lhs.remotePort < rhs.remotePort;
+    }
+  }
+};
+
+struct NServerClient
+{
+  static int id_last;
+  uint16_t id;
+  sf::IpAddress remoteIp;
+  unsigned short remotePort;
+
+  NPacketRcvHandler np_rcv;
+  NPacketSendHandler np_send;
+
+  // time out ticker:
+  sf::Int32 last_rcv;
+  sf::Int32 last_ping;
+
+  NServerClient(sf::IpAddress remoteIp, unsigned short remotePort, NServer *nserver);
+
+  void sendPacket(NUDPWritePacket &p, sf::UdpSocket &socket);
+  void sendIdPing(sf::UdpSocket &socket);
+  void sendPing(sf::UdpSocket &socket);
+  void sendPong(sf::UdpSocket &socket);
+  void rcvPacket(NUDPReadPacket &p, sf::UdpSocket &socket);
+  void update(sf::UdpSocket &socket);
+  void draw(float x, float y, sf::RenderWindow &window);
+};
+
+struct NServer
+{
+  unsigned short socket_port = 54000;
+  sf::UdpSocket socket;
+
+  NSCMapIdentifyer map_identifyer;
+  NSCMapId map_id;
+
+  EChat *chat;
+  NServer(EChat *chat);
+  void handleChatInput(NServerClient* client, const std::string &s);
+  void broadcastChat(const std::string &s);
+  void addClient(NServerClient* c);
+  void removeClient(NServerClient* c);
+  NServerClient* getClient(sf::IpAddress ip, unsigned short port);
+  void draw(sf::RenderWindow &window);
+  void update();
+};
+
+struct NClient
+{
+  sf::UdpSocket socket;
+  unsigned short destination_port = 54000;
+  sf::IpAddress recipient = "192.168.1.41";
+
+  unsigned short socket_port;
+
+  NPacketRcvHandler np_rcv;
+  NPacketSendHandler np_send;
+
+  uint16_t id_on_server;
+
+  EChat *chat;
+
+  // ------------------------------------- STATE MACHINE start
+  int finite_state = 0;
+  // 0 - initial
+  sf::Int32 last_announce; // repeated announcement !
+  int number_announcements = 0;
+
+  // 1 - got answer from server -> id
+  sf::Int32 last_rcv;
+
+  // ------------------------------------- STATE MACHINE end
+  NClient(EChat *chat);
+  void draw(sf::RenderWindow &window);
+  void update();
+  void announcePort();
+  void sendPing();
+  void sendPong();
+};
+
+// ########################################### NPacketSendHandler ##########
+// ########################################### NPacketSendHandler ##########
+// ########################################### NPacketSendHandler ##########
 
 int NPacketSendHandler::enqueue(uint16_t tag, const std::vector<char> &txt)
 {
@@ -798,7 +1025,259 @@ std::string NPacketSendHandler::missingToString()
 
   return ret;
 }
+
+void NPacketSendHandler::issueDataRequest(std::string fileName, std::function<void(char*, size_t)> f_success, std::function<void(bool, std::string)> f_failiure)
+{
+  // f_failiure(noTimeout, errortext)
+  // f_success(data, datasize)
+  std::cout << "issueDataRequest: " << fileName << std::endl;
+
+  // build request object:
+  NPacketDataRequest_Send * req = new NPacketDataRequest_Send(
+    ++dataRequestNextId, fileName, f_success, f_failiure
+  );
+  requestMap.insert(
+    std::pair<uint16_t, NPacketDataRequest_Send*>
+    (req->id,req)
+  );
+
+  // build request message:
+  NUDPWritePacket reqMsg;
+  reqMsg << req->id;
+  reqMsg << fileName;
+
+  enqueue(NPacket_TAG_DATAREQUEST_REQ, reqMsg.data);
+  req->status = 2;
+  // the next step woud be getting a req_id, save req in a map, sending the request off
+}
+
+void NPacketSendHandler::deniedDataRequest(uint16_t req_id, std::string errorMsg)
+{
+  std::cout << "denied" << std::endl;
+
+  std::map<uint16_t, NPacketDataRequest_Send*>::iterator it;
+
+	it = requestMap.find(req_id);
+
+	if(it != requestMap.end()){
+		NPacketDataRequest_Send * req = it->second;
+    req->status = 5;
+    req->f_failiure(true, errorMsg);
+
+    requestMap.erase(it);
+    delete(req);
+	}else{
+		// not found! not sure what to do!
+    std::cout << "DID NOT FIND THE DENIED REQUEST ANYWAY...???" << std::endl;
+	}
+}
+void NPacketSendHandler::ackDataRequest(uint16_t req_id, uint16_t num_packages, size_t packageSize,size_t dataSize)
+{
+  std::cout << "acked" << std::endl;
+
+  std::map<uint16_t, NPacketDataRequest_Send*>::iterator it;
+
+	it = requestMap.find(req_id);
+
+	if(it != requestMap.end()){
+		NPacketDataRequest_Send * req = it->second;
+
+    std::cout << "size: " << std::to_string(dataSize) << ", psize: " << std::to_string(packageSize) <<", #p: " << std::to_string(num_packages) << std::endl;
+    req->status = 3;
+    req->dataSize = dataSize;
+    req->packageSize = packageSize;
+    req->num_packages = num_packages;
+  }else{
+		// not found! not sure what to do!
+    std::cout << "DID NOT FIND THE ACKED REQUEST ...???" << std::endl;
+	}
+}
+
+void NPacketSendHandler::drawDataRequests(float x, float y, sf::RenderWindow &window)
+{
+  std::map<uint16_t, NPacketDataRequest_Send*>::iterator it;
+	for (it=requestMap.begin(); it!=requestMap.end(); ++it)
+	{
+		NPacketDataRequest_Send* req = it->second;
+    DrawText(x,y,
+      "ID: " + std::to_string(req->id) + ", status:" + std::to_string(req->status),
+      12, window, sf::Color(100,100,100)
+    );
+
+    y+=15;
+	}
+
+}
 // ---------------- NPacketRcvHandler
+NPacketRcvHandler::NPacketRcvHandler(NServerClient* client): client(client)
+{
+  auto f = [](std::string fileName, NServerClient* client, bool& success, char* data, size_t &data_size, std::string& errorMsg)
+  {
+    std::cout << "DATA REQUEST:" << std::endl;
+    if(client!=NULL)
+    {
+      std::cout << "client id: " << std::to_string(client->id) << std::endl;
+    }else{
+      std::cout << "by server" << std::endl;
+    }
+
+    if(fileName == "testdata")
+    {
+      // set dummy data here:
+      data_size = 100000;
+      data = (char*)std::malloc(data_size);
+
+      for(size_t i = 0; i<data_size; i++)
+      {
+        data[i] = i;
+      }
+
+      success = true;
+    }else{
+      // we will now just send error instead:
+      success = false;
+      errorMsg = "this is only the dummy dataRequestHandler !";
+    }
+  };
+  setDataRequestHandler(f);
+
+
+  // ------------- set dataRequest packet handlers:
+
+  auto f_req = [this, client](NPacket &np, NPacketSendHandler &np_send)
+  {
+    std::cout << " - DATAREQUEST_REQ" << std::endl;
+
+    // reading packet in np.data:
+    NUDPReadPacket p;
+    p.setFromVector(np.data);
+
+    uint16_t req_id;
+    std::string fileName;
+    p >> req_id;
+    p >> fileName;
+
+    std::cout << " - id: " << req_id << ", fileName: " << fileName << std::endl;
+
+    // now see if data available:
+    bool success;
+    char* dataPtr;
+    size_t dataSize;
+    std::string errorMsg;
+    f_dataRequestHandler(fileName, client, success, dataPtr, dataSize, errorMsg);
+
+    if(success)
+    {
+      std::cout << " - success Data Request" << std::endl;
+
+      // anser, store data somewhere...
+      NPacketDataRequest_Rcv* req = new NPacketDataRequest_Rcv(req_id, dataSize, dataPtr);
+      requestMap.insert(
+        std::pair<uint16_t,NPacketDataRequest_Rcv*>
+        (req_id, req)
+      );
+
+      uint16_t acked = 1;
+      NUDPWritePacket reqMsg;
+      reqMsg << req_id;
+      reqMsg << acked;
+      reqMsg << req->dataSize;
+      reqMsg << req->packageSize;
+      reqMsg << req->num_packages;
+
+      np_send.enqueue(NPacket_TAG_DATAREQUEST_ANS, reqMsg.data);
+    }else{
+      std::cout << " - failure Data Request" << std::endl;
+
+      // send denied back:
+      uint16_t denied = 0;
+      NUDPWritePacket reqMsg;
+      reqMsg << req_id;
+      reqMsg << denied;
+      reqMsg << errorMsg;
+
+      np_send.enqueue(NPacket_TAG_DATAREQUEST_ANS, reqMsg.data);
+    }
+  };
+
+  auto f_ans = [](NPacket &np, NPacketSendHandler &np_send)
+  {
+    std::cout << " - DATAREQUEST_ANS" << std::endl;
+
+    // reading packet in np.data:
+    NUDPReadPacket p;
+    p.setFromVector(np.data);
+
+    uint16_t req_id;
+    uint16_t answer; // 0 denied, 1 ack
+    p >> req_id;
+    p >> answer;
+
+    if(answer == 0)
+    {
+      // denied
+      std::string errorMsg;
+      p >> errorMsg;
+      np_send.deniedDataRequest(req_id, errorMsg);
+    }else{
+      // ack
+      size_t dataSize;
+      size_t packageSize;
+      uint16_t num_packages;
+      p >> dataSize;
+      p >> packageSize;
+      p >> num_packages;
+      np_send.ackDataRequest(req_id, num_packages, packageSize, dataSize);
+
+      // send ack back.
+      NUDPWritePacket reqMsg;
+      reqMsg << req_id;
+      np_send.enqueue(NPacket_TAG_DATAREQUEST_ACK, reqMsg.data);
+    }
+  };
+
+  auto f_ack = [this](NPacket &np, NPacketSendHandler &np_send)
+  {
+    std::cout << "DATAREQUEST_ACK" << std::endl;
+
+    // reading packet in np.data:
+    NUDPReadPacket p;
+    p.setFromVector(np.data);
+
+    uint16_t req_id;
+    p >> req_id;
+
+    std::map<uint16_t,NPacketDataRequest_Rcv*>::iterator it;
+
+  	it = requestMap.find(req_id);
+
+  	if(it != requestMap.end()){
+  		NPacketDataRequest_Rcv * req = it->second;
+
+      // push the packets !
+      req->sendPackets(np_send);
+      requestMap.erase(it);
+      delete(req);
+    }else{
+      std::cout << "DID NOT FIND THE ID ...???" << std::endl;
+    }
+  };
+
+  auto f_dat = [](NPacket &np, NPacketSendHandler &np_send)
+  {
+    std::cout << "DATAREQUEST_DAT" << std::endl;
+  };
+
+  addTagFunction(NPacket_TAG_DATAREQUEST_REQ, f_req);
+  addTagFunction(NPacket_TAG_DATAREQUEST_ANS, f_ans);
+  addTagFunction(NPacket_TAG_DATAREQUEST_ACK, f_ack);
+  addTagFunction(NPacket_TAG_DATAREQUEST_DAT, f_dat);
+}
+
+void NPacketRcvHandler::setDataRequestHandler(DataReqHandler_t f_handler)
+{
+  f_dataRequestHandler = f_handler;
+}
 
 void NPacketRcvHandler::createAckMessage(NUDPWritePacket &p)
 {
@@ -814,7 +1293,7 @@ void NPacketRcvHandler::createAckMessage(NUDPWritePacket &p)
 		p << (it->second);
   }
 }
-void NPacketRcvHandler::incomingProcess(NPacket &np)
+void NPacketRcvHandler::incomingProcess(NPacket &np, NPacketSendHandler &np_send)
 {
   // process according to tag:
   std::map<uint16_t, NPacket_tag_function>::iterator it;
@@ -826,7 +1305,7 @@ void NPacketRcvHandler::incomingProcess(NPacket &np)
     // call the function:
     if(it->second != NULL)
     {
-      it->second(np);
+      it->second(np, np_send);
     }else{
         std::cout << "tag found, but function is NULL" << std::endl;
     }
@@ -834,7 +1313,7 @@ void NPacketRcvHandler::incomingProcess(NPacket &np)
     // no found: default
     if(npacket_tag_functions_default != NULL)
     {
-      npacket_tag_functions_default(np);
+      npacket_tag_functions_default(np, np_send);
     }else{
       // not even default.
       std::cout << "no matching function. not even default..." << std::endl;
@@ -876,7 +1355,7 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
 
       packet_counter++;
       //std::cout << "newest: " << np.seq << ":" << np.tag << std::endl;
-      incomingProcess(np);
+      incomingProcess(np, np_send);
     }else{
       // one of the missing ones? else reject.
       std::map<NPSeq,NPSeq>::iterator it;
@@ -887,7 +1366,7 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
 
         packet_counter++;
         //std::cout << "missing: " << np.seq << ":" << np.tag << std::endl;
-        incomingProcess(np);
+        incomingProcess(np, np_send);
   		}else{
   			// not found -> was a double!
   		}
@@ -942,105 +1421,12 @@ void NPacketRcvHandler::addTagFunction(uint16_t tag, NPacket_tag_function f)
 // ###################################### NServerClient ######################################
 // ###################################### NServerClient ######################################
 // ###################################### NServerClient ######################################
-struct NServerClient_identifier
-{
-  sf::IpAddress remoteIp;
-  unsigned short remotePort;
-};
 
-struct cmpByNSC_ident {
-  bool operator() (const NServerClient_identifier& lhs, const NServerClient_identifier& rhs) const
-  {
-    if(lhs.remotePort == rhs.remotePort)
-    {
-      return lhs.remoteIp < rhs.remoteIp;
-    }else{
-      return lhs.remotePort < rhs.remotePort;
-    }
-  }
-};
-
-struct NServerClient
-{
-  static int id_last;
-  uint16_t id;
-  sf::IpAddress remoteIp;
-  unsigned short remotePort;
-
-  NPacketRcvHandler np_rcv;
-  NPacketSendHandler np_send;
-
-  // time out ticker:
-  sf::Int32 last_rcv;
-  sf::Int32 last_ping;
-
-  NServerClient(sf::IpAddress remoteIp, unsigned short remotePort, NServer *nserver);
-
-  void sendPacket(NUDPWritePacket &p, sf::UdpSocket &socket);
-  void sendIdPing(sf::UdpSocket &socket);
-  void sendPing(sf::UdpSocket &socket);
-  void sendPong(sf::UdpSocket &socket);
-  void rcvPacket(NUDPReadPacket &p, sf::UdpSocket &socket);
-  void update(sf::UdpSocket &socket);
-  void draw(float x, float y, sf::RenderWindow &window);
-};
-
-struct NServer
-{
-  unsigned short socket_port = 54000;
-  sf::UdpSocket socket;
-
-  NSCMapIdentifyer map_identifyer;
-  NSCMapId map_id;
-
-  EChat *chat;
-  NServer(EChat *chat);
-  void handleChatInput(NServerClient* client, const std::string &s);
-  void broadcastChat(const std::string &s);
-  void addClient(NServerClient* c);
-  void removeClient(NServerClient* c);
-  NServerClient* getClient(sf::IpAddress ip, unsigned short port);
-  void draw(sf::RenderWindow &window);
-  void update();
-};
-
-struct NClient
-{
-  sf::UdpSocket socket;
-  unsigned short destination_port = 54000;
-  sf::IpAddress recipient = "192.168.1.41";
-
-  unsigned short socket_port;
-
-  NPacketRcvHandler np_rcv;
-  NPacketSendHandler np_send;
-
-  uint16_t id_on_server;
-
-  EChat *chat;
-
-  // ------------------------------------- STATE MACHINE start
-  int finite_state = 0;
-  // 0 - initial
-  sf::Int32 last_announce; // repeated announcement !
-  int number_announcements = 0;
-
-  // 1 - got answer from server -> id
-  sf::Int32 last_rcv;
-
-  // ------------------------------------- STATE MACHINE end
-  NClient(EChat *chat);
-  void draw(sf::RenderWindow &window);
-  void update();
-  void announcePort();
-  void sendPing();
-  void sendPong();
-};
 
 
 // ###################################### NServerClient
 NServerClient::NServerClient(sf::IpAddress remoteIp, unsigned short remotePort, NServer *nserver)
-  : remoteIp(remoteIp), remotePort(remotePort)
+  : remoteIp(remoteIp), remotePort(remotePort), np_rcv(NPacketRcvHandler(this))
 {
   NServerClient::id_last++;
   id = NServerClient::id_last;
@@ -1049,16 +1435,15 @@ NServerClient::NServerClient(sf::IpAddress remoteIp, unsigned short remotePort, 
   last_ping = last_rcv;
 
   // set NPacket tag functions:
-  auto f_default = [](NPacket &np)
+  auto f_default = [](NPacket &np, NPacketSendHandler &np_send)
   {
     std::cout << "default packet function. tag: " << np.tag << std::endl;
   };
-  auto f_chat = [this, nserver](NPacket &np)
+  auto f_chat = [this, nserver](NPacket &np, NPacketSendHandler &np_send)
   {
     std::string cnew( &(np.data[0]), np.data.size());
     nserver->handleChatInput(this, cnew);
   };
-
   np_rcv.setDefaultTagFunction(f_default);
   np_rcv.addTagFunction(NPacket_TAG_CHAT, f_chat);
 }
@@ -1187,6 +1572,7 @@ void NServerClient::draw(float x, float y, sf::RenderWindow &window)
     );
   }
 
+  np_send.drawDataRequests(x+500,y, window);
 }
 
 int NServerClient::id_last = 0;
@@ -1378,7 +1764,7 @@ void NServer::update()
 
 
 // ########################################### NClient
-NClient::NClient(EChat *chat)
+NClient::NClient(EChat *chat): np_rcv(NPacketRcvHandler(NULL))
 {
   if(socket.bind(sf::Socket::AnyPort) != sf::Socket::Done)
   {
@@ -1403,11 +1789,11 @@ NClient::NClient(EChat *chat)
   chat->setInputFunction(f_input);
 
   // -------------------------------------    set NPacket tag functions:
-  auto f_default = [](NPacket &np)
+  auto f_default = [](NPacket &np, NPacketSendHandler &np_send)
   {
     std::cout << "default packet function. tag: " << np.tag << std::endl;
   };
-  auto f_chat = [chat](NPacket &np)
+  auto f_chat = [chat](NPacket &np, NPacketSendHandler &np_send)
   {
     std::string cnew( &(np.data[0]), np.data.size());
 
@@ -1441,7 +1827,7 @@ void NClient::draw(sf::RenderWindow &window)
     12, window, sf::Color(0,255,255)
   );
 
-
+  np_send.drawDataRequests(5,100, window);
 }
 
 void NClient::update()
@@ -1626,11 +2012,32 @@ int main(int argc, char** argv)
     }else{
       // client
       NET_CLIENT = new NClient(&chat);
+
+      // test data request:
+      auto f_success = [](char* data, size_t size)
+      {
+        std::cout << "data received! size: " << std::to_string(size) << std::endl;
+
+        if(data == NULL){return;}
+        std::free(data);
+      };
+
+      auto f_failure = [](bool noTimeout, std::string errorMsg)
+      {
+        std::cout << ".test file name. failed" << std::endl;
+        std::cout << "ERROR: " << errorMsg << std::endl;
+        if(noTimeout)
+        {
+          std::cout << "not even timeout" << std::endl;
+        }else{
+          std::cout << "timeout" << std::endl;
+        }
+      };
+
+      NET_CLIENT->np_send.issueDataRequest("testdata", f_success, f_failure);
     }
 
     std::string textInput;
-
-
 
     // --------------------------- Render Loop
     while (window.isOpen())
