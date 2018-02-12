@@ -1,7 +1,9 @@
 /* TODO
 
+- unify packet send at unreliable level -> all over periodicPacket
+ -> queue stuff, add reliable if space...
 - check memory leeks
-- datagram Size check ??? -> some seem to be too big...
+- datagram Size check ??? -> some seem to be too big... - from sent-> chech size!
 - user names
 - chat commands
 - game state transmission (unreliable, newest sequence num only)
@@ -408,6 +410,19 @@ struct NUDPWritePacket
   {
     return (socket.send(data.data(), index, ip, port) == sf::Socket::Done);
   }
+
+  void writePacket(NUDPWritePacket &p)
+  {
+    data.resize(index + p.index);
+    std::memcpy(&(data[index]), p.data.data(), p.index);
+    index += p.index;
+  }
+
+  void clear()
+  {
+    data.resize(0);
+    index = 0;
+  }
 };
 
 NUDPWritePacket& operator << (NUDPWritePacket& p, const char& c){
@@ -795,6 +810,10 @@ struct NPacketSendHandler // np_send
 
   NPacketSendHandler();
   ~NPacketSendHandler();
+
+   // queue to this via enqueueUnreliable, sent in update with reliable ones.
+  NUDPWritePacket periodicPacket;
+  void enqueueUnreliable(NUDPWritePacket &p);
 
   int enqueue(uint16_t tag, const std::vector<char> &txt);
   void enqueueChat(const std::string &c);
@@ -1331,6 +1350,11 @@ NPacketSendHandler::~NPacketSendHandler()
   requestMap.clear();
 }
 
+void NPacketSendHandler::enqueueUnreliable(NUDPWritePacket &p)
+{
+  periodicPacket.writePacket(p);
+}
+
 int NPacketSendHandler::enqueue(uint16_t tag, const std::vector<char> &txt)
 {
   // returns sequence number of the Packet
@@ -1358,10 +1382,10 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
   {
     time_last_send = now_time;
     // something to send:
-    NUDPWritePacket p;
-    p << NET_HEADER_NPacket;
+    //NUDPWritePacket p; // ------------------ simply add to it!
+    periodicPacket << NET_HEADER_NPacket;
 
-    np_rcv.createAckMessage(p);
+    np_rcv.createAckMessage(periodicPacket);
 
     // update from map (the ones that have timed out)
     std::map<NPSeq, NPacket>::iterator it;
@@ -1374,11 +1398,11 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
       {
         if( ((float) rand() / (RAND_MAX)) < 0.8 )
         {
-          p << it->second.seq << it->second.tag << it->second.data;
+          periodicPacket << it->second.seq << it->second.tag << it->second.data;
 
           if( ((float) rand() / (RAND_MAX)) < 0.1 )
           {
-            p << it->second.seq << it->second.tag << it->second.data; // send double!
+            periodicPacket << it->second.seq << it->second.tag << it->second.data; // send double!
           }
         }
 
@@ -1387,7 +1411,7 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
     }
 
     // append new ones
-    while(queue.size() > 0 && map_sent.size() < num_wait_ack_limit && p.index < 50000)
+    while(queue.size() > 0 && map_sent.size() < num_wait_ack_limit && periodicPacket.index < 50000)
     {
       // send from queue, append to map
       NPacket np = queue.front();
@@ -1398,11 +1422,11 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
       // artificially loose and double some packets:
       if( ((float) rand() / (RAND_MAX)) < 0.8 )
       {
-        p << np.seq << np.tag << np.data;
+        periodicPacket << np.seq << np.tag << np.data;
 
         if( ((float) rand() / (RAND_MAX)) < 0.1 )
         {
-          p << np.seq << np.tag << np.data; // send double!
+          periodicPacket << np.seq << np.tag << np.data; // send double!
         }
       }
 
@@ -1413,10 +1437,11 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
     }
 
     // send packet:
-    if(!p.send(socket,ip, port))//socket.send(p, ip, port) != sf::Socket::Done)
+    if(!periodicPacket.send(socket,ip, port))//socket.send(p, ip, port) != sf::Socket::Done)
     {
         std::cout << "Error on send ! (NPacket)" << std::endl;
     }
+    periodicPacket.clear();
   }
 }
 
@@ -1692,39 +1717,45 @@ void NServerClient::rcvPacket(NUDPReadPacket &p, sf::UdpSocket &socket)
 {
   last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
 
-  uint16_t header;
-  p >> header;
-
-  switch (header)
+  int cnt = 0;
+  while(!p.endOfPacket())
   {
-    case NET_HEADER_ECHO:
+    if(cnt > 0){std::cout << "more than one" << std::endl;}
+    cnt++;
+    uint16_t header;
+    p >> header;
+
+    switch (header)
+    {
+      case NET_HEADER_ECHO:
+        {
+          std::string txt;
+          p >> txt;
+
+          std::cout << "(" << id <<") Echo: " << txt << std::endl;
+
+          break;
+        }
+      case NET_HEADER_PING:
       {
-        std::string txt;
-        p >> txt;
-
-        std::cout << "(" << id <<") Echo: " << txt << std::endl;
-
+        // send back pong:
+        sendPong(socket);
         break;
       }
-    case NET_HEADER_PING:
-    {
-      // send back pong:
-      sendPong(socket);
-      break;
+      case NET_HEADER_PONG:
+      {
+        std::cout << "(" << id <<") Pong" << std::endl;
+        break;
+      }
+      case NET_HEADER_NPacket:
+      {
+        np_rcv.incoming(p, np_send);
+        break;
+      }
+      default:   // ------------ DEFAULT
+        std::cout << "unreadable header: "<< header << std::endl;
+        break;
     }
-    case NET_HEADER_PONG:
-    {
-      std::cout << "(" << id <<") Pong" << std::endl;
-      break;
-    }
-    case NET_HEADER_NPacket:
-    {
-      np_rcv.incoming(p, np_send);
-      break;
-    }
-    default:   // ------------ DEFAULT
-      std::cout << "unreadable header: "<< header << std::endl;
-      break;
   }
 }
 
@@ -2066,56 +2097,62 @@ void NClient::update()
     {
       last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
 
-
-      repeat = true;
-      uint16_t header;
-      p >> header;
-
-      switch (header)
+      int cnt = 0;
+      while(!p.endOfPacket())
       {
-        case NET_HEADER_ECHO:
-          {
-            std::string txt;
-            p >> txt;
+        if(cnt > 0){std::cout << "more than one" << std::endl;}
+        cnt++;
 
-            std::cout << "IP: " << remoteIp << " : " << remotePort << std::endl;
-            std::cout << "Echo: " << txt << std::endl;
+        repeat = true;
+        uint16_t header;
+        p >> header;
 
-            break;
-          }
-        case NET_HEADER_SERVERCLIENT_IDPING:
-          {
-            p >> id_on_server;
-
-            std::cout << "IP: " << remoteIp << " : " << remotePort << std::endl;
-            std::cout << "Id Ping: " << id_on_server << std::endl;
-
-            if(finite_state == 0)
+        switch (header)
+        {
+          case NET_HEADER_ECHO:
             {
-              finite_state = 1;
-            }
+              std::string txt;
+              p >> txt;
 
+              std::cout << "IP: " << remoteIp << " : " << remotePort << std::endl;
+              std::cout << "Echo: " << txt << std::endl;
+
+              break;
+            }
+          case NET_HEADER_SERVERCLIENT_IDPING:
+            {
+              p >> id_on_server;
+
+              std::cout << "IP: " << remoteIp << " : " << remotePort << std::endl;
+              std::cout << "Id Ping: " << id_on_server << std::endl;
+
+              if(finite_state == 0)
+              {
+                finite_state = 1;
+              }
+
+              break;
+            }
+          case NET_HEADER_PING:
+            {
+              // send pong back
+              sendPong();
+              break;
+            }
+          case NET_HEADER_PONG:
+            {
+              std::cout << "pong" << std::endl;
+              break;
+            }
+          case NET_HEADER_NPacket:
+            {
+              np_rcv.incoming(p, np_send);
+              break;
+            }
+          default:   // ------------ DEFAULT
+            std::cout << "unreadable header: "<< header << std::endl;
             break;
-          }
-        case NET_HEADER_PING:
-          {
-            // send pong back
-            sendPong();
-            break;
-          }
-        case NET_HEADER_PONG:
-          {
-            std::cout << "pong" << std::endl;
-            break;
-          }
-        case NET_HEADER_NPacket:
-          {
-            np_rcv.incoming(p, np_send);
-            break;
-          }
-        default:   // ------------ DEFAULT
-          std::cout << "unreadable header: "<< header << std::endl;
-          break;
+        }
       }
     }
   }
@@ -2267,7 +2304,7 @@ int main(int argc, char** argv)
         }
       };
 
-      for(int i=0; i<100; i++)
+      for(int i=0; i<3; i++)
       {
         NET_CLIENT->np_send.issueDataRequest("testdata", f_success, f_failure);
       }
