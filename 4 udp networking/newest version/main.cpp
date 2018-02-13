@@ -1,4 +1,9 @@
 /* TODO
+- game state transmission (unreliable, newest sequence num only)
+ -> minimum_send_delay set low
+ -> call update (often) only after game states posted to periodicPacket
+ -> create some dummy objects
+ -> broadcast from server!
 
  - datagram Size check ??? -> some seem to be too big... - from sent-> chech size!
  - react to benchmark data?
@@ -6,8 +11,6 @@
 - check memory leeks
 - user names
 - chat commands
-- game state transmission (unreliable, newest sequence num only)
-
 
 
  --- completed:
@@ -81,6 +84,7 @@ const uint16_t NET_HEADER_PONG = 201;
 const uint16_t NET_HEADER_CLIENT_ANNOUNCE = 2000; // announce the recieve port of client
 const uint16_t NET_HEADER_SERVERCLIENT_IDPING = 3000; // server id ping -> as first message over client channel
 const uint16_t NET_HEADER_NPacket = 4000; // the NPacket
+const uint16_t NET_HEADER_GameObjects = 5000;
 struct NUDPWritePacket; // and operators
 struct NUDPReadPacket; // and operators
 
@@ -112,6 +116,10 @@ typedef std::map<NServerClient_identifier, NServerClient*, cmpByNSC_ident> NSCMa
 typedef std::map<int, NServerClient*> NSCMapId;
 struct NClient;
 
+
+const uint16_t GameObject_TYPE_BASIC = 1;
+struct GameObject;
+struct GameObjectHandler;
 
 // ############### STATIC VARIABLES #############
 // ############### STATIC VARIABLES #############
@@ -469,6 +477,19 @@ NUDPWritePacket& operator << (NUDPWritePacket& p, const size_t& c){
   return p;
 }
 
+NUDPWritePacket& operator << (NUDPWritePacket& p, const float& c){
+  char* b = (char*)&c;
+
+  p.data.resize(p.index+4);
+  p.data[p.index] = b[0];
+  p.data[p.index+1] = b[1];
+  p.data[p.index+2] = b[2];
+  p.data[p.index+3] = b[3];
+  p.index+=4;
+
+  return p;
+}
+
 NUDPWritePacket& operator << (NUDPWritePacket& p, const std::string& c){
 
   uint16_t size = c.size();
@@ -572,6 +593,22 @@ NUDPReadPacket& operator >> (NUDPReadPacket& p, size_t& c){
     | ((uint16_t(b2) & 0xFF) << 8)
     | ((uint16_t(b3) & 0xFF) << 16)
     | ((uint16_t(b4) & 0xFF) << 24));
+
+  return p;
+}
+
+NUDPReadPacket& operator >> (NUDPReadPacket& p, float& c){
+  uint16_t b1 = p.data[p.index];
+  uint16_t b2 = p.data[p.index+1];
+  uint16_t b3 = p.data[p.index+2];
+  uint16_t b4 = p.data[p.index+3];
+  p.index+=4;
+
+  char* b = (char*)&c;
+  b[0] = b1;
+  b[1] = b1;
+  b[2] = b1;
+  b[3] = b1;
 
   return p;
 }
@@ -910,6 +947,12 @@ struct NServer
   NSCMapIdentifyer map_identifyer;
   NSCMapId map_id;
 
+  sf::Int32 gobj_send_delay = 1000;
+  sf::Int32 last_gobj_send;
+  GameObjectHandler* gobj_handler;
+
+  TODO: broadcast objects!
+
   EChat *chat;
   NServer(EChat *chat);
   ~NServer();
@@ -937,6 +980,8 @@ struct NClient
 
   EChat *chat;
 
+  GameObjectHandler* gobj_handler;
+
   // ------------------------------------- STATE MACHINE start
   int finite_state = 0;
   // 0 - initial
@@ -948,6 +993,7 @@ struct NClient
 
   // ------------------------------------- STATE MACHINE end
   NClient(EChat *chat);
+  ~NClient();
   void draw(sf::RenderWindow &window);
   void update();
   void announcePort();
@@ -955,6 +1001,138 @@ struct NClient
   void sendPong();
 };
 
+// ############################## GAME OBJECTS ##############################
+// ############################## GAME OBJECTS ##############################
+// ############################## GAME OBJECTS ##############################
+struct GameObject
+{
+  size_t id;
+  uint16_t type = GameObject_TYPE_BASIC;
+  float x; float y;
+
+  GameObject(size_t id): id(id)
+  {
+    type = GameObject_TYPE_BASIC;
+  }
+
+  void toPacket(NUDPWritePacket& p)
+  {
+    p << id << type;
+    p << x << y;
+  }
+  void fromPacket(NUDPReadPacket& p)
+  {
+    // id and type already read.
+    p >> x >> y;
+  }
+
+  void draw(sf::RenderWindow &window)
+  {
+    DrawDot(x,y, window, sf::Color(10*id % 256,255,30*id % 256));
+  }
+};
+
+struct GameObjectHandler
+{
+  std::map<size_t, GameObject*> objects_map;
+
+  GameObjectHandler()
+  {
+
+  }
+  ~GameObjectHandler()
+  {
+    std::map<size_t, GameObject*>::iterator it;
+    for (it=objects_map.begin(); it!=objects_map.end(); ++it)
+  	{
+  		GameObject* obj = it->second;
+
+      delete(obj);
+    }
+    objects_map.clear();
+  }
+
+  void populate_debug()
+  {
+    for(size_t i = 1; i<101; i++)
+    {
+      GameObject* obj = new GameObject(i);
+      obj->x = ((float) rand() / (RAND_MAX)) * 400 + 200;
+      obj->y = ((float) rand() / (RAND_MAX)) * 400 + 100;
+      objects_map.insert(
+        std::pair<size_t, GameObject*>
+        (obj->id,obj)
+      );
+    }
+  }
+
+  void toPacket(NUDPWritePacket& p)
+  {
+    // post number of objects:
+    p << (size_t)objects_map.size();
+
+    // post all objects
+    std::map<size_t, GameObject*>::iterator it;
+    for (it=objects_map.begin(); it!=objects_map.end(); ++it)
+  	{
+  		GameObject* obj = it->second;
+
+      obj->toPacket(p);
+    }
+  }
+
+  void fromPacket(NUDPReadPacket& p)
+  {
+    std::cout << "from Packet:" << std::endl;
+    size_t num_obj;
+    p >> num_obj;
+
+    for(size_t i = 0; i<num_obj; i++)
+    {
+      size_t id_rcvd;
+      uint16_t type_rcvd;
+      p >> id_rcvd >> type_rcvd;
+
+      std::map<size_t, GameObject*>::iterator it;
+      it = objects_map.find(id_rcvd);
+
+      if(it != objects_map.end())
+      {
+        // found
+        GameObject* obj = it->second;
+        obj->fromPacket(p);
+      }else{
+        // not found -> create:
+        switch (type_rcvd) {
+          case GameObject_TYPE_BASIC:
+          {
+            GameObject* obj = new GameObject(id_rcvd);
+            obj->fromPacket(p);
+            objects_map.insert(
+              std::pair<size_t, GameObject*>
+              (obj->id,obj)
+            );
+            break;
+          }
+          default:
+            std::cout << "Object type not found: " << type_rcvd << std::endl;
+            break;
+        }
+      }
+    }
+    std::cout << "from Packet done." << std::endl;
+  }
+
+  void draw(sf::RenderWindow &window)
+  {
+    std::map<size_t, GameObject*>::iterator it;
+    for (it=objects_map.begin(); it!=objects_map.end(); ++it)
+  	{
+  		GameObject* obj = it->second;
+      obj->draw(window);
+    }
+  }
+};
 // # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 // # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 // # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -974,7 +1152,7 @@ NPacketDataRequest_Rcv::NPacketDataRequest_Rcv(uint16_t id, size_t dataSize, cha
   // free_dataPtr_in_destructor = false; // keep data
   // currently dataPtr is freed in deconstructor.
 
-  const size_t package_size = 1024; //1024
+  const size_t package_size = 1024*4; //1024
   num_packages = dataSize / package_size;
   if(dataSize % package_size !=0)
   {
@@ -1935,6 +2113,10 @@ NServer::NServer(EChat *chat): chat(chat)
     handleChatInput(NULL, s);
   };
   chat->setInputFunction(f_input);
+
+  // ------------ game stuff:
+  gobj_handler = new GameObjectHandler();
+  gobj_handler->populate_debug();
 }
 
 NServer::~NServer()
@@ -1948,6 +2130,8 @@ NServer::~NServer()
 
   map_identifyer.clear();
   map_id.clear();
+
+  delete(gobj_handler);
 }
 
 void NServer::handleChatInput(NServerClient* client, const std::string &s)
@@ -2032,6 +2216,11 @@ NServerClient* NServer::getClient(sf::IpAddress ip, unsigned short port)
 
 void NServer::draw(sf::RenderWindow &window)
 {
+  // ----------- draw GAME
+  gobj_handler->draw(window);
+
+  // ----------- draw HUD
+
   DrawText(5,5, "Server Mode.", 12, window, sf::Color(255,0,0));
 
   // draw all clients:
@@ -2155,10 +2344,22 @@ NClient::NClient(EChat *chat): np_rcv(NPacketRcvHandler(NULL))
 
   np_rcv.setDefaultTagFunction(f_default);
   np_rcv.addTagFunction(NPacket_TAG_CHAT, f_chat);
+
+  // ------------ GAME:
+  gobj_handler = new GameObjectHandler();
+}
+
+NClient::~NClient()
+{
+  delete(gobj_handler);
 }
 
 void NClient::draw(sf::RenderWindow &window)
 {
+  // -------------- GAME:
+  gobj_handler->draw(window);
+
+  // --------------  HUD
   DrawText(5,5, "Client Mode. connected to " + recipient.toString() + ":" + std::to_string(destination_port), 12, window, sf::Color(0,255,0));
 
   DrawText(5,20, "State: " + std::to_string(finite_state) + ", ID: " + std::to_string(id_on_server), 12, window, sf::Color(0,255,0));
@@ -2257,6 +2458,11 @@ void NClient::update()
               np_rcv.incoming(p, np_send);
               break;
             }
+          case NET_HEADER_GameObjects:
+            {
+              gobj_handler->fromPacket(p);
+              break;
+            }
           default:   // ------------ DEFAULT
             std::cout << "unreadable header: "<< header << std::endl;
             break;
@@ -2331,6 +2537,7 @@ void NClient::sendPong()
       std::cout << "Error on send !" << std::endl;
   }
 }
+
 
 
 // ############################## MAIN ##############################
