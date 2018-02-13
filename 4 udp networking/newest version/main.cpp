@@ -1,14 +1,14 @@
 /* TODO
 
-- unify packet send at unreliable level -> all over periodicPacket
- -> queue stuff, add reliable if space...
+ - datagram Size check ??? -> some seem to be too big... - from sent-> chech size!
+ - react to benchmark data?
+
 - check memory leeks
-- datagram Size check ??? -> some seem to be too big... - from sent-> chech size!
 - user names
 - chat commands
 - game state transmission (unreliable, newest sequence num only)
 
-- benchmark number packages sent, delay, packet loss, ...
+
 
  --- completed:
 
@@ -17,11 +17,13 @@
  - simple chat + colors
  - deconstructors -> timeout handling
  - data requesting (more infos below)
+ - add different time outs for NPackets
 
 --- beware:
 currently there is an extra part which "forgets" to send packages
 or sends them twice. This will have to be eventually turned off
 but it is very helpful to test if my code can actually handle it.
+-> EVP_DEBUG
 
 ---- data request:
 all over semi-reliable transmission
@@ -58,6 +60,11 @@ rest taken care of by system!
 #include <map>
 #include <time.h>
 
+
+// ###############   DEBUG   #############
+// ###############   DEBUG   #############
+// ###############   DEBUG   #############
+#define EVP_DEBUG // will make send more unreliable.
 
 // ############### DECLARATIONS #############
 // ############### DECLARATIONS #############
@@ -628,6 +635,7 @@ struct NPacket
   //std::string str;
   std::vector<char> data;
 
+  sf::Int32 timeout;
   // book keeping:
   sf::Int32 time_sent; // for timeout and resend
 };
@@ -771,6 +779,12 @@ struct NPacketRcvHandler // np_rcv
   NServerClient* client;
   std::map<uint16_t,NPacketDataRequest_Rcv*> requestMap;
 
+  // benchmarking:
+  size_t num_packets_rcvd = 0; // UDP
+  size_t num_subpackets_rcvd = 0; // NET HEADER
+  size_t num_NPackets_rcvd = 0;
+  size_t num_NPackets_double = 0;
+
   NPacketRcvHandler(NServerClient* client);
   ~NPacketRcvHandler();
 
@@ -790,6 +804,8 @@ struct NPacketRcvHandler // np_rcv
   void addTagFunction(uint16_t tag, NPacket_tag_function f);
 
   void drawDataRequests(float x, float y, sf::RenderWindow &window);
+
+  void drawBenchmarking(float x, float y, sf::RenderWindow &window);
 };
 
 
@@ -799,6 +815,8 @@ struct NPacketSendHandler // np_send
   NPSeq oldest_sequence_waiting = NPSeq_START_AT;
 
   sf::Int32 msgTimeOutLimit = 500; // then resend it
+  sf::Int32 msgTimeOutLimit_chat = 200; // then resend it
+  sf::Int32 msgTimeOutLimit_data = 2000; // then resend it
   int num_wait_ack_limit = 100; // this will affect the transmission speed!
 
   std::queue<NPacket> queue;
@@ -808,6 +826,12 @@ struct NPacketSendHandler // np_send
   sf::Int32 time_last_send;
   sf::Int32 minimum_send_delay = 200;
 
+  // for benchmarking only:
+  size_t num_packets_sent = 0; // udp-send
+  size_t num_subpackets_sent = 0; // NET HEADER
+  size_t num_NPackets_sent = 0; // semi-reliable
+  size_t num_NPackets_resent = 0;
+
   NPacketSendHandler();
   ~NPacketSendHandler();
 
@@ -815,7 +839,7 @@ struct NPacketSendHandler // np_send
   NUDPWritePacket periodicPacket;
   void enqueueUnreliable(NUDPWritePacket &p);
 
-  int enqueue(uint16_t tag, const std::vector<char> &txt);
+  int enqueue(uint16_t tag, const std::vector<char> &txt, sf::Int32 time_out = 0);
   void enqueueChat(const std::string &c);
   void update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket, const sf::IpAddress &ip, const unsigned short &port);
   void readAcks(NUDPReadPacket &p);
@@ -829,6 +853,8 @@ struct NPacketSendHandler // np_send
   void ackDataRequest(uint16_t req_id, uint16_t num_packages, size_t packageSize,size_t dataSize);
   void rcvdDataRequest(uint16_t req_id, size_t req_num_of_this_package, std::vector<char> &v);
   void drawDataRequests(float x, float y, sf::RenderWindow &window);
+
+  void drawBenchmarking(float x, float y, sf::RenderWindow &window);
 };
 
 // ####################### SERVER CLIENT ###########################
@@ -868,7 +894,6 @@ struct NServerClient
 
   NServerClient(sf::IpAddress remoteIp, unsigned short remotePort, NServer *nserver);
 
-  void sendPacket(NUDPWritePacket &p, sf::UdpSocket &socket);
   void sendIdPing(sf::UdpSocket &socket);
   void sendPing(sf::UdpSocket &socket);
   void sendPong(sf::UdpSocket &socket);
@@ -949,7 +974,7 @@ NPacketDataRequest_Rcv::NPacketDataRequest_Rcv(uint16_t id, size_t dataSize, cha
   // free_dataPtr_in_destructor = false; // keep data
   // currently dataPtr is freed in deconstructor.
 
-  const size_t package_size = 1024;
+  const size_t package_size = 1024; //1024
   num_packages = dataSize / package_size;
   if(dataSize % package_size !=0)
   {
@@ -986,7 +1011,7 @@ void NPacketDataRequest_Rcv::sendPackets(NPacketSendHandler &np_send)
     p << i; // num of this package
     p << v; // data of package
 
-    np_send.enqueue(NPacket_TAG_DATAREQUEST_DAT, p.data);
+    np_send.enqueue(NPacket_TAG_DATAREQUEST_DAT, p.data, np_send.msgTimeOutLimit_data);
   }
 }
 
@@ -1010,7 +1035,7 @@ NPacketRcvHandler::NPacketRcvHandler(NServerClient* client): client(client)
     if(fileName == "testdata")
     {
       // set dummy data here:
-      data_size = 100000;
+      data_size = 1000000;
       data = (char*)std::malloc(data_size);
 
       for(size_t i = 0; i<data_size; i++)
@@ -1229,6 +1254,7 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
   {
     hasNews = true;
 
+    num_NPackets_rcvd++;
     NPacket np;
     p >> np.seq >> np.tag >> np.data;
 
@@ -1265,6 +1291,7 @@ void NPacketRcvHandler::incoming(NUDPReadPacket &p, NPacketSendHandler &np_send)
         incomingProcess(np, np_send);
   		}else{
   			// not found -> was a double!
+        num_NPackets_double++;
   		}
     }
   }
@@ -1331,6 +1358,35 @@ void NPacketRcvHandler::drawDataRequests(float x, float y, sf::RenderWindow &win
 
 }
 
+void NPacketRcvHandler::drawBenchmarking(float x, float y, sf::RenderWindow &window)
+{
+  DrawText(x,y,
+      "UDP: " + std::to_string(num_packets_rcvd),
+      12, window, sf::Color(0,255,255)
+  );
+
+  DrawText(x+120,y,
+      "NET: " + std::to_string(num_subpackets_rcvd),
+      12, window, sf::Color(0,255,255)
+  );
+
+  DrawText(x+240,y,
+      "NP rcvd: " + std::to_string(num_NPackets_rcvd),
+      12, window, sf::Color(0,255,255)
+  );
+
+  DrawText(x+360,y,
+      "NP double: " + std::to_string(num_NPackets_double),
+      12, window, sf::Color(0,255,255)
+  );
+
+  DrawText(x+480,y,
+      "NP eff.cy: " + std::to_string(1.0 - (float)num_NPackets_double /(float)num_NPackets_rcvd),
+      12, window, sf::Color(0,255,255)
+  );
+}
+
+
 
 // ########################################### NPacketSendHandler ##########
 // ########################################### NPacketSendHandler ##########
@@ -1355,12 +1411,16 @@ void NPacketSendHandler::enqueueUnreliable(NUDPWritePacket &p)
   periodicPacket.writePacket(p);
 }
 
-int NPacketSendHandler::enqueue(uint16_t tag, const std::vector<char> &txt)
+int NPacketSendHandler::enqueue(uint16_t tag, const std::vector<char> &txt, sf::Int32 time_out)
 {
   // returns sequence number of the Packet
   last_sequence_number++;
 
-  queue.push(NPacket{last_sequence_number, tag, txt});
+  if(time_out == 0)
+  {
+    time_out = msgTimeOutLimit;
+  }
+  queue.push(NPacket{last_sequence_number, tag, txt, time_out});
 
   return queue.size();
 }
@@ -1371,7 +1431,7 @@ void NPacketSendHandler::enqueueChat(const std::string &c)
   v.resize(c.size());
   std::memcpy(v.data(), c.data(), c.size());
 
-  enqueue(NPacket_TAG_CHAT, v);
+  enqueue(NPacket_TAG_CHAT, v, msgTimeOutLimit_chat);
 }
 
 void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket, const sf::IpAddress &ip, const unsigned short &port)
@@ -1384,6 +1444,7 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
     // something to send:
     //NUDPWritePacket p; // ------------------ simply add to it!
     periodicPacket << NET_HEADER_NPacket;
+    num_subpackets_sent++;
 
     np_rcv.createAckMessage(periodicPacket);
 
@@ -1394,17 +1455,23 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
     {
       NPSeq seq = it->first;
       sf::Int32 sent_time = it->second.time_sent;
-      if( (now_time - sent_time) > msgTimeOutLimit)
+      if( (now_time - sent_time) > it->second.timeout)
       {
-        if( ((float) rand() / (RAND_MAX)) < 0.8 )
-        {
-          periodicPacket << it->second.seq << it->second.tag << it->second.data;
-
-          if( ((float) rand() / (RAND_MAX)) < 0.1 )
+        #ifdef EVP_DEBUG
+          if( ((float) rand() / (RAND_MAX)) < 0.8 )
           {
-            periodicPacket << it->second.seq << it->second.tag << it->second.data; // send double!
+            periodicPacket << it->second.seq << it->second.tag << it->second.data;
+
+            if( ((float) rand() / (RAND_MAX)) < 0.1 )
+            {
+              periodicPacket << it->second.seq << it->second.tag << it->second.data; // send double!
+            }
           }
-        }
+        #else
+          periodicPacket << it->second.seq << it->second.tag << it->second.data;
+        #endif
+
+        num_NPackets_resent++;
 
         it->second.time_sent = now_time;
       }
@@ -1419,16 +1486,21 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
 
       np.time_sent = now_time;
 
-      // artificially loose and double some packets:
-      if( ((float) rand() / (RAND_MAX)) < 0.8 )
-      {
-        periodicPacket << np.seq << np.tag << np.data;
-
-        if( ((float) rand() / (RAND_MAX)) < 0.1 )
+      #ifdef EVP_DEBUG
+        // artificially loose and double some packets:
+        if( ((float) rand() / (RAND_MAX)) < 0.8 )
         {
-          periodicPacket << np.seq << np.tag << np.data; // send double!
+          periodicPacket << np.seq << np.tag << np.data;
+
+          if( ((float) rand() / (RAND_MAX)) < 0.1 )
+          {
+            periodicPacket << np.seq << np.tag << np.data; // send double!
+          }
         }
-      }
+      #else
+        periodicPacket << np.seq << np.tag << np.data;
+      #endif
+      num_NPackets_sent++;
 
       map_sent.insert(
         std::pair<NPSeq, NPacket>
@@ -1437,6 +1509,7 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
     }
 
     // send packet:
+    num_packets_sent++;
     if(!periodicPacket.send(socket,ip, port))//socket.send(p, ip, port) != sf::Socket::Done)
     {
         std::cout << "Error on send ! (NPacket)" << std::endl;
@@ -1648,6 +1721,34 @@ void NPacketSendHandler::drawDataRequests(float x, float y, sf::RenderWindow &wi
 
 }
 
+void NPacketSendHandler::drawBenchmarking(float x, float y, sf::RenderWindow &window)
+{
+  DrawText(x,y,
+      "UDP: " + std::to_string(num_packets_sent),
+      12, window, sf::Color(255,255,255)
+  );
+
+  DrawText(x+120,y,
+      "NET: " + std::to_string(num_subpackets_sent),
+      12, window, sf::Color(255,255,255)
+  );
+
+  DrawText(x+240,y,
+      "NP send: " + std::to_string(num_NPackets_sent),
+      12, window, sf::Color(255,255,255)
+  );
+
+  DrawText(x+360,y,
+      "NP resend: " + std::to_string(num_NPackets_resent),
+      12, window, sf::Color(255,255,255)
+  );
+
+  DrawText(x+480,y,
+      "NP eff.cy: " + std::to_string(1.0 - (float)num_NPackets_resent /(float)num_NPackets_sent),
+      12, window, sf::Color(255,255,255)
+  );
+}
+
 // ###################################### NServerClient ######################################
 // ###################################### NServerClient ######################################
 // ###################################### NServerClient ######################################
@@ -1674,19 +1775,13 @@ NServerClient::NServerClient(sf::IpAddress remoteIp, unsigned short remotePort, 
   np_rcv.addTagFunction(NPacket_TAG_CHAT, f_chat);
 }
 
-void NServerClient::sendPacket(NUDPWritePacket &p, sf::UdpSocket &socket)
-{
-  if(!p.send(socket,remoteIp, remotePort)) //(socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
-  {
-      std::cout << "Error on send !" << std::endl;
-  }
-}
-
 void NServerClient::sendIdPing(sf::UdpSocket &socket)
 {
   NUDPWritePacket p;
 
   p << NET_HEADER_SERVERCLIENT_IDPING << id;
+  np_send.num_subpackets_sent++;
+  np_send.num_packets_sent++;
   if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
   {
       std::cout << "Error on send !" << std::endl;
@@ -1697,6 +1792,8 @@ void NServerClient::sendPing(sf::UdpSocket &socket)
 {
   NUDPWritePacket p;
   p << NET_HEADER_PING;
+  np_send.num_subpackets_sent++;
+  np_send.num_packets_sent++;
   if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
   {
       std::cout << "Error on send !" << std::endl;
@@ -1707,6 +1804,8 @@ void NServerClient::sendPong(sf::UdpSocket &socket)
 {
   NUDPWritePacket p;
   p << NET_HEADER_PONG;
+  np_send.num_subpackets_sent++;
+  np_send.num_packets_sent++;
   if(!p.send(socket,remoteIp, remotePort))//if (socket.send(p, remoteIp, remotePort) != sf::Socket::Done)
   {
       std::cout << "Error on send !" << std::endl;
@@ -1717,11 +1816,15 @@ void NServerClient::rcvPacket(NUDPReadPacket &p, sf::UdpSocket &socket)
 {
   last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
 
+  np_rcv.num_packets_rcvd++;
+
   int cnt = 0;
   while(!p.endOfPacket())
   {
     if(cnt > 0){std::cout << "more than one" << std::endl;}
     cnt++;
+
+    np_rcv.num_subpackets_rcvd++;
     uint16_t header;
     p >> header;
 
@@ -1804,8 +1907,10 @@ void NServerClient::draw(float x, float y, sf::RenderWindow &window)
     );
   }
 
-  np_send.drawDataRequests(x+50,y +15, window);
-  np_rcv.drawDataRequests(x+250,y+15, window);
+  np_send.drawDataRequests(x+50,y +45, window);
+  np_rcv.drawDataRequests(x+250,y+45, window);
+  np_send.drawBenchmarking(x+50,y +15, window);
+  np_rcv.drawBenchmarking(x+50,y +30, window);
 }
 
 int NServerClient::id_last = 0;
@@ -1937,7 +2042,7 @@ void NServer::draw(sf::RenderWindow &window)
 	{
 		NServerClient* c = it->second;
 
-    c->draw(10, 20+counter*35,window);
+    c->draw(10, 20+counter*95,window);
 
     counter++;
 	}
@@ -1954,7 +2059,6 @@ void NServer::update()
     unsigned short remotePort;
 
     bool success = p.receive(socket, remoteIp, remotePort);
-    //auto status = socket.receive(p, remoteIp, remotePort);
 
     repeat = false;
     if(success)
@@ -2076,8 +2180,10 @@ void NClient::draw(sf::RenderWindow &window)
     12, window, sf::Color(0,255,255)
   );
 
-  np_send.drawDataRequests(5,100, window);
-  np_rcv.drawDataRequests(200, 100, window);
+  np_send.drawDataRequests(5,140, window);
+  np_rcv.drawDataRequests(200, 140, window);
+  np_send.drawBenchmarking(5, 100, window);
+  np_rcv.drawBenchmarking(5, 120, window);
 }
 
 void NClient::update()
@@ -2090,18 +2196,20 @@ void NClient::update()
     unsigned short remotePort;
 
     bool success = p.receive(socket, remoteIp, remotePort);
-    //auto status = socket.receive(p, remoteIp, remotePort);
 
     repeat = false;
     if(success)
     {
       last_rcv = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+      np_rcv.num_packets_rcvd++;
 
       int cnt = 0;
       while(!p.endOfPacket())
       {
         if(cnt > 0){std::cout << "more than one" << std::endl;}
         cnt++;
+
+        np_rcv.num_subpackets_rcvd++;
 
         repeat = true;
         uint16_t header;
@@ -2189,7 +2297,8 @@ void NClient::announcePort()
 {
   NUDPWritePacket p;
   p << NET_HEADER_CLIENT_ANNOUNCE << socket_port;
-
+  np_send.num_subpackets_sent++;
+  np_send.num_packets_sent++;
   if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
   {
       std::cout << "Error on send !" << std::endl;
@@ -2203,7 +2312,8 @@ void NClient::sendPing()
 {
   NUDPWritePacket p;
   p << NET_HEADER_PING;
-
+  np_send.num_subpackets_sent++;
+  np_send.num_packets_sent++;
   if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
   {
       std::cout << "Error on send !" << std::endl;
@@ -2214,7 +2324,8 @@ void NClient::sendPong()
 {
   NUDPWritePacket p;
   p << NET_HEADER_PONG;
-
+  np_send.num_subpackets_sent++;
+  np_send.num_packets_sent++;
   if( !p.send(socket, recipient, destination_port))//if (socket.send(p, recipient, destination_port) != sf::Socket::Done)
   {
       std::cout << "Error on send !" << std::endl;
@@ -2345,16 +2456,6 @@ int main(int argc, char** argv)
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::F1) && window.hasFocus()){
           window.close();
         }
-
-        /*
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space) && window.hasFocus()){
-          if(!NET_SERVER_MODE)
-          {
-            std::string txt = "hello " + std::to_string(rand());
-            NET_CLIENT->np_send.enqueue(0, txt);
-          }
-        }
-        */
 
         // chat INPUT
 
