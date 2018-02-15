@@ -273,19 +273,16 @@ struct EChat
   }
   void draw(float x, float y, sf::RenderWindow &window)
   {
-    if (isActive) {
-      blinker++;
-      std::string blinker_txt = "";
-      if(blinker > 30)
-      {
-        blinker = 0;
-      }else if(blinker > 10)
-      {
-        blinker_txt = "|";
-      }
-      DrawText(x+5,y-20, ">" + inputLine + blinker_txt, 15, window, sf::Color(255,255,255));
-
+    blinker++;
+    std::string blinker_txt = "";
+    if(blinker > 30)
+    {
+      blinker = 0;
+    }else if(blinker > 10)
+    {
+      blinker_txt = "|";
     }
+    DrawText(x+5,y-20, ">" + inputLine + blinker_txt, 15, window, sf::Color(255,255,255));
 
     float y_pos = y-40;
     for(std::string l:lines)
@@ -413,7 +410,6 @@ struct EChat
           if(input_handler!=NULL)
           {
             input_handler(inputLine);
-            isActive = false;
           }else{
             std::cout << "EChat: input handler was NULL !" << std::endl;
             std::cout << inputLine << std::endl;
