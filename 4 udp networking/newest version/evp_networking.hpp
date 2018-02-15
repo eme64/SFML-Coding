@@ -21,6 +21,7 @@ semi-reliable packets
 --- framework complete:
 chat handler.
 data req handler
+... game objects. -> render against others? compress data?
 
  --- completed:
 
@@ -128,8 +129,6 @@ typedef std::map<NServerClient_identifier, NServerClient*, cmpByNSC_ident> NSCMa
 typedef std::map<int, NServerClient*> NSCMapId;
 struct NClient;
 
-
-const uint16_t GameObject_TYPE_BASIC = 1;
 struct GameObject;
 struct GameObjectHandler;
 
@@ -1020,38 +1019,16 @@ struct NClient
 struct GameObject
 {
   size_t id;
-  uint16_t type = GameObject_TYPE_BASIC;
-  float x; float y;
+  uint16_t type;
 
-  GameObject(size_t id): id(id)
-  {
-    type = GameObject_TYPE_BASIC;
-  }
+  virtual void toPacket(NUDPWritePacket& p) = 0;
+  virtual void fromPacket(NUDPReadPacket& p) = 0;
 
-  void toPacket(NUDPWritePacket& p)
-  {
-    p << id << type;
-    p << x << y;
-  }
-  void fromPacket(NUDPReadPacket& p)
-  {
-    // id and type already read.
-    p >> x >> y;
-  }
-
-  void draw(sf::RenderWindow &window)
-  {
-    DrawDot(x,y, window, sf::Color(10*id % 256,255,30*id % 256));
-  }
-
-  void updateServer()
-  {
-    // server only!
-    x+= ((float) rand() / (RAND_MAX))-0.5;
-    y+= ((float) rand() / (RAND_MAX))-0.5;
-  }
+  virtual void draw(sf::RenderWindow &window) = 0;
+  virtual void updateServer() = 0;
 };
 
+std::function<GameObject*(size_t, uint16_t)> new_GameObject;
 struct GameObjectHandler
 {
   NPSeq last_seq = 0;
@@ -1079,9 +1056,7 @@ struct GameObjectHandler
   {
     for(size_t i = 1; i<101; i++)
     {
-      GameObject* obj = new GameObject(i);
-      obj->x = ((float) rand() / (RAND_MAX)) * 400 + 200;
-      obj->y = ((float) rand() / (RAND_MAX)) * 400 + 100;
+      GameObject* obj = new_GameObject(i, 0);
       objects_map.insert(
         std::pair<size_t, GameObject*>
         (obj->id,obj)
@@ -1139,21 +1114,12 @@ struct GameObjectHandler
         obj->fromPacket(p);
       }else{
         // not found -> create:
-        switch (type_rcvd) {
-          case GameObject_TYPE_BASIC:
-          {
-            GameObject* obj = new GameObject(id_rcvd);
-            obj->fromPacket(p);
-            objects_map.insert(
-              std::pair<size_t, GameObject*>
-              (obj->id,obj)
-            );
-            break;
-          }
-          default:
-            std::cout << "Object type not found: " << type_rcvd << std::endl;
-            break;
-        }
+        GameObject* obj = new_GameObject(id_rcvd, type_rcvd);
+        obj->fromPacket(p);
+        objects_map.insert(
+          std::pair<size_t, GameObject*>
+          (obj->id,obj)
+        );
       }
     }
   }

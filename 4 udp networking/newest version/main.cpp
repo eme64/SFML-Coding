@@ -1,12 +1,67 @@
 #include "evp_networking.hpp"
 
+const uint16_t GameObject_TYPE_BASIC = 1;
+struct GameObject_Basic:public GameObject
+{
+  float x; float y;
 
+  GameObject_Basic(size_t my_id)
+  {
+    type = GameObject_TYPE_BASIC;
+    id = my_id;
+  }
 
+  void toPacket(NUDPWritePacket& p)
+  {
+    p << id << type;
+    p << x << y;
+  }
+  void fromPacket(NUDPReadPacket& p)
+  {
+    // id and type already read.
+    p >> x >> y;
+  }
+
+  void draw(sf::RenderWindow &window)
+  {
+    DrawDot(x,y, window, sf::Color(10*id % 256,255,30*id % 256));
+  }
+
+  void updateServer()
+  {
+    // server only!
+    x+= ((float) rand() / (RAND_MAX))-0.5;
+    y+= ((float) rand() / (RAND_MAX))-0.5;
+  }
+};
+
+GameObject* new_GameObject_implementation(size_t id, uint16_t type)
+{
+  switch (type) {
+    case 0: // test objects
+    {
+      GameObject_Basic* obj = new GameObject_Basic(id);
+      obj->x = ((float) rand() / (RAND_MAX)) * 400 + 200;
+      obj->y = ((float) rand() / (RAND_MAX)) * 400 + 100;
+      return obj;
+    }
+    case GameObject_TYPE_BASIC:
+    {
+      return new GameObject_Basic(id);
+    }
+    default:
+    {
+      std::cout << "(will crash) Object type not found: " << type << std::endl;
+      return NULL;
+    }
+  }
+}
 // ############################## MAIN ##############################
 // ############################## MAIN ##############################
 // ############################## MAIN ##############################
 int main(int argc, char** argv)
 {
+    new_GameObject = new_GameObject_implementation;
     // ----------------------------- Handle Commandline Input
     NET_SERVER_MODE = false;
     if(argc > 1)
