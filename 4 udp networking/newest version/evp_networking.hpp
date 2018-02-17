@@ -76,7 +76,7 @@ rest taken care of by system!
 // ###############   DEBUG   #############
 // ###############   DEBUG   #############
 // ###############   DEBUG   #############
-#define EVP_DEBUG // will make send more unreliable.
+//#define EVP_DEBUG // will make send more unreliable.
 float EVP_DEBUG_IMPAIRMENT = 0.9;
 
 // ############### DECLARATIONS #############
