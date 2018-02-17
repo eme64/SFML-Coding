@@ -89,7 +89,7 @@ struct PolyMapCell
   sf::Color color;
 
   std::vector<_EPPos> corners;
-  std::vector<size_t> neighbors;
+  std::vector<uint16_t> neighbors;
 
   /* --- game properies:
   land -> land, air
@@ -107,12 +107,11 @@ struct PolyMap
    --- this is basically a graph
    V : the center of each polygon/cell (contains cell and edges)
    E : connections between cells
-
   */
 
   float spread_x; // more or less ...
   float spread_y;
-  size_t num_cells;
+  uint16_t num_cells;
   std::vector<PolyMapCell> cells;
 
   std::vector<sf::Vertex> mesh;
@@ -120,7 +119,7 @@ struct PolyMap
   char* networkData = NULL;
   size_t networkData_size = 0;
 
-  PolyMap(size_t n_cells, float s_x, float s_y)
+  PolyMap(uint16_t n_cells, float s_x, float s_y)
   {
     num_cells = n_cells;
     spread_x = s_x;
@@ -130,7 +129,7 @@ struct PolyMap
     jcv_point* points = NULL;
     points = (jcv_point*)malloc( sizeof(jcv_point) * (size_t)num_cells);
 
-    for(size_t i = 0; i<num_cells; i++)
+    for(uint16_t i = 0; i<num_cells; i++)
     {
       points[i].x = spread_x*((float) rand() / (RAND_MAX));
       points[i].y = spread_y*((float) rand() / (RAND_MAX));
@@ -264,7 +263,7 @@ struct PolyMap
 
 
     // get positions
-    for(size_t i = 0; i<num_cells; i++)
+    for(uint16_t i = 0; i<num_cells; i++)
     {
       cells[i].pos.x = points[i].x;
       cells[i].pos.y = points[i].y;
@@ -337,7 +336,7 @@ struct PolyMap
 
     cells.resize(num_cells);
 
-    for(size_t i = 0; i< num_cells; i++)
+    for(uint16_t i = 0; i< num_cells; i++)
     {
       // per cell:
       p >> cells[i].pos.x >> cells[i].pos.y;
@@ -347,6 +346,11 @@ struct PolyMap
       cells[i].color.r = cr;
       cells[i].color.g = cg;
       cells[i].color.b = cb;
+
+      char flags;
+      p >> flags;
+      cells[i].isLand = (flags & 0x1);
+      cells[i].isWater = (flags & 0x2);
 
       uint16_t size_corners;
       p >> size_corners;
@@ -381,7 +385,7 @@ struct PolyMap
     p << spread_x << spread_y;
     p << num_cells;
 
-    for(size_t i = 0; i< num_cells; i++)
+    for(uint16_t i = 0; i< num_cells; i++)
     {
       // per cell:
       p << cells[i].pos.x << cells[i].pos.y;
@@ -390,6 +394,9 @@ struct PolyMap
       char cg = cells[i].color.g;
       char cb = cells[i].color.b;
       p << cr << cg << cb;
+
+      char flags = ((char)cells[i].isLand) || ((char)cells[i].isWater << 1);
+      p << flags;
 
       uint16_t size_corners = cells[i].corners.size();
       p << size_corners;
@@ -416,7 +423,7 @@ struct PolyMap
   {
     mesh.clear();
 
-    for(size_t i = 0; i<num_cells; i++)
+    for(uint16_t i = 0; i<num_cells; i++)
     {
       int nc = cells[i].corners.size();
 
@@ -436,11 +443,11 @@ struct PolyMap
     }
   }
 
-  size_t getCell(float x, float y, size_t guess_cell)
+  uint16_t getCell(float x, float y, uint16_t guess_cell)
   {
     size_t number_iterations = 0;
     // supposed to speed up, because could be close:
-    size_t res = guess_cell;
+    uint16_t res = guess_cell;
 
     float dx = cells[guess_cell].pos.x - x;
     float dy = cells[guess_cell].pos.y - y;
@@ -456,7 +463,7 @@ struct PolyMap
 
       for(int i=0; i<nc; i++)
       {
-        size_t n = cells[res].neighbors[i];
+        uint16_t n = cells[res].neighbors[i];
         dx = cells[n].pos.x - x;
         dy = cells[n].pos.y - y;
 
@@ -475,12 +482,12 @@ struct PolyMap
     return res;
   }
 
-  size_t getCell(float x, float y)
+  uint16_t getCell(float x, float y)
   {
-    size_t res = 0;
+    uint16_t res = 0;
     float squaredist = spread_x*spread_x + spread_y*spread_y; // max dist on map !
 
-    for(size_t i = 0; i<num_cells; i++)
+    for(uint16_t i = 0; i<num_cells; i++)
     {
       float dx = cells[i].pos.x - x;
       float dy = cells[i].pos.y - y;
@@ -497,7 +504,7 @@ struct PolyMap
     return res;
   }
 
-  void bfs(size_t root, std::vector<size_t> &parents)
+  void bfs(uint16_t root, std::vector<uint16_t> &parents)
   {
     if(! cells[root].isLand)
     {
@@ -507,7 +514,7 @@ struct PolyMap
       size_t nn = cells[root].neighbors.size();
       for(size_t nec = 0; nec<nn; nec++)
       {
-        size_t ne = cells[root].neighbors[nec];
+        uint16_t ne = cells[root].neighbors[nec];
         parents[ne] = ne;
       }
       return; // early abort
@@ -515,7 +522,7 @@ struct PolyMap
 
     // creates a rooted tree from a bfs traversal
     bool marked[num_cells] = {false};
-    std::queue<size_t> q;
+    std::queue<uint16_t> q;
 
     parents[root] = root;
     marked[root] = true;
@@ -523,7 +530,7 @@ struct PolyMap
 
     while(!q.empty())
     {
-      size_t c = q.front();
+      uint16_t c = q.front();
       q.pop();
 
       marked[c] = true;
@@ -532,7 +539,7 @@ struct PolyMap
       size_t nn = cells[c].neighbors.size();
       for(size_t nec = 0; nec<nn; nec++)
       {
-        size_t ne = cells[c].neighbors[nec];
+        uint16_t ne = cells[c].neighbors[nec];
         if(!marked[ne] && cells[ne].isLand)
         {
           parents[ne] = c;
@@ -546,6 +553,31 @@ struct PolyMap
     }
   }
 
+  bool calculatePath(const uint16_t start,const uint16_t goal, std::vector<uint16_t> &path,const size_t STEP_BOUND = 1000)
+  {
+    path.clear();
+    std::vector<uint16_t> parents(num_cells);
+    bfs(goal, parents);
+
+    size_t step_counter = 0;
+    uint16_t current = start;
+    while (current != goal && step_counter < STEP_BOUND) {
+      uint16_t next = parents[current];
+
+      path.push_back(next);
+      current = next;
+      step_counter++;
+    }
+
+    if(! (step_counter< STEP_BOUND))
+    {
+      path.clear();
+      path.push_back(start);
+    }
+
+    return (step_counter< STEP_BOUND);
+  }
+
   void draw(float x, float y, float zoom, sf::RenderWindow &window)
   {
     sf::Transform t;
@@ -556,25 +588,9 @@ struct PolyMap
 
     window.draw(&mesh[0], mesh.size(), sf::Triangles, t);
 
-    /*
-    std::vector<size_t> parents(num_cells);
-    bfs(0, parents);
-
-    // draw connections
-    for(size_t i = 0; i<num_cells; i++)
-    {
-      DrawLine(
-                (cells[i].pos.x - x)*zoom+ SCREEN_SIZE_X*0.5,
-                (cells[i].pos.y - y)*zoom+ SCREEN_SIZE_Y*0.5,
-                (cells[parents[i]].pos.x - x)*zoom+ SCREEN_SIZE_X*0.5,
-                (cells[parents[i]].pos.y - y)*zoom+ SCREEN_SIZE_Y*0.5,
-                window);
-    }
-    */
-
     return;
 
-    for(size_t i = 0; i<num_cells; i++)
+    for(uint16_t i = 0; i<num_cells; i++)
     {
       // draw cells
       sf::ConvexShape convex;
@@ -608,12 +624,25 @@ struct GameObjectContext
   float screen_x;
   float screen_y;
   float screen_zoom;
+
+  sf::Int32 time;
+  float dt; // in secs
 };
 
 const uint16_t GameObject_TYPE_BASIC = 1;
 struct GameObject_Basic:public GameObject
 {
   float x; float y;
+
+  // navigation:
+  uint16_t cell = 0;
+  std::vector<uint16_t> path;
+  uint16_t path_it = 0;
+
+  // for client:
+  float server_last_x; float server_last_y;
+  sf::Int32 server_last;
+  float server_dx; float server_dy;
 
   GameObject_Basic(size_t my_id)
   {
@@ -629,7 +658,26 @@ struct GameObject_Basic:public GameObject
   void fromPacket(NUDPReadPacket& p)
   {
     // id and type already read.
-    p >> x >> y;
+    //p >> x >> y;
+    float slx = server_last_x;
+    float sly = server_last_y;
+    sf::Int32 sl = server_last;
+
+    p >> server_last_x >> server_last_y;
+
+    server_last = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+    float s_dt = ((float)(server_last - sl))/1000.0;
+    server_dx = (server_last_x - slx)/s_dt;
+    server_dy = (server_last_y - sly)/s_dt;
+
+    if(std::abs(server_dx) > 100 || std::abs(server_dy) > 100)
+    {
+      server_dx = 0;
+      server_dy = 0;
+      x = server_last_x;
+      y = server_last_y;
+    }
   }
 
   void draw(void* context, sf::RenderWindow &window)
@@ -642,13 +690,47 @@ struct GameObject_Basic:public GameObject
   void updateServer(void* context)
   {
     // server only!
-    x+= ((float) rand() / (RAND_MAX))-0.5;
-    y+= ((float) rand() / (RAND_MAX))-0.5;
+    GameObjectContext* ctxt = (GameObjectContext*)context;
+
+    cell = ctxt->map->getCell(x,y, cell);
+
+    if (! ctxt->map->cells[cell].isLand) {
+      // something went bad, must relocate...
+      cell = ctxt->map->num_cells * ((float) rand() / (RAND_MAX));
+      x = ctxt->map->cells[cell].pos.x;
+      y = ctxt->map->cells[cell].pos.y;
+    }
+
+    if (path.size() == 0 || path_it >= path.size()) {
+      uint16_t goal = ctxt->map->num_cells * ((float) rand() / (RAND_MAX));
+      ctxt->map->calculatePath(cell, goal, path);
+      path_it = 0;
+    }
+
+    uint16_t next_cell = path[path_it];
+    float dx = ctxt->map->cells[next_cell].pos.x - x;
+    float dy = ctxt->map->cells[next_cell].pos.y - y;
+    float d = std::sqrt(dx*dx + dy*dy);
+    dx/= d;
+    dy/= d;
+
+    x+= dx*60.0*ctxt->dt;
+    y+= dy*60.0*ctxt->dt;
+
+    if (cell == next_cell) {
+      path_it++;
+    }
   }
 
   void updateClient(void* context)
   {
     // client only: nothing for now
+    GameObjectContext* ctxt = (GameObjectContext*)context;
+
+    float now_sl_dt = ((float)(ctxt->time - server_last))/1000.0;
+
+    x = 0.9 * x + 0.1*(server_last_x + now_sl_dt*server_dx);
+    y = 0.9 * y + 0.1*(server_last_y + now_sl_dt*server_dy);
   }
 };
 
@@ -973,6 +1055,10 @@ int main(int argc, char** argv)
     float screen_y = 0;
     float screen_zoom = 1.0;
 
+    // ------------------------------------ TIME
+    sf::Int32 current_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+    float dt = 0.01;
+
     // --------------------------- Render Loop
     while (window.isOpen())
     {
@@ -1091,7 +1177,11 @@ int main(int argc, char** argv)
       // MAIN LOOP:
       window.clear();
 
-      GameObjectContext context = GameObjectContext{map, screen_x, screen_y, screen_zoom};
+      GameObjectContext context = GameObjectContext{
+        map,
+        screen_x, screen_y, screen_zoom,
+        current_time, dt
+      };
 
       if(NET_SERVER_MODE)
       {
@@ -1125,6 +1215,11 @@ int main(int argc, char** argv)
       chat.draw(0,600, window);
 
       window.display();
+
+      // TIME:
+      sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+      float dt = (float)(now_time - current_time)/1000.0;
+      current_time = now_time;
     }
 
     if(map != NULL)

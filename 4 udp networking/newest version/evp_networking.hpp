@@ -3,6 +3,9 @@
  - differing send speeds for different clients?
  - datagram Size check ??? -> some seem to be too big... - from sent-> chech size!
  - react to benchmark data?
+ -> what we need for better control:
+    - RTT
+    - num packets received lately -> can then increase per rcvd.
 
 - check memory leeks
 - user names
@@ -74,6 +77,7 @@ rest taken care of by system!
 // ###############   DEBUG   #############
 // ###############   DEBUG   #############
 #define EVP_DEBUG // will make send more unreliable.
+float EVP_DEBUG_IMPAIRMENT = 0.5;
 
 // ############### DECLARATIONS #############
 // ############### DECLARATIONS #############
@@ -1022,7 +1026,10 @@ struct NClient
 struct GameObject
 {
   size_t id;
-  uint16_t type;
+  uint16_t type; // 0 -> dead.
+  sf::Int32 last_server_update; // for timeout.
+
+  asdf -> make death possible !
 
   virtual void toPacket(NUDPWritePacket& p) = 0;
   virtual void fromPacket(NUDPReadPacket& p) = 0;
@@ -1647,11 +1654,11 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
       if( (now_time - sent_time) > it->second.timeout)
       {
         #ifdef EVP_DEBUG
-          if( ((float) rand() / (RAND_MAX)) < 0.8 )
+          if( ((float) rand() / (RAND_MAX)) > EVP_DEBUG_IMPAIRMENT )
           {
             periodicPacket << it->second.seq << it->second.tag << it->second.data;
 
-            if( ((float) rand() / (RAND_MAX)) < 0.1 )
+            if( ((float) rand() / (RAND_MAX)) < EVP_DEBUG_IMPAIRMENT )
             {
               periodicPacket << it->second.seq << it->second.tag << it->second.data; // send double!
             }
@@ -1677,11 +1684,11 @@ void NPacketSendHandler::update(NPacketRcvHandler &np_rcv, sf::UdpSocket &socket
 
       #ifdef EVP_DEBUG
         // artificially loose and double some packets:
-        if( ((float) rand() / (RAND_MAX)) < 0.8 )
+        if( ((float) rand() / (RAND_MAX)) > EVP_DEBUG_IMPAIRMENT )
         {
           periodicPacket << np.seq << np.tag << np.data;
 
-          if( ((float) rand() / (RAND_MAX)) < 0.1 )
+          if( ((float) rand() / (RAND_MAX)) < EVP_DEBUG_IMPAIRMENT )
           {
             periodicPacket << np.seq << np.tag << np.data; // send double!
           }
@@ -1900,8 +1907,14 @@ void NPacketSendHandler::drawDataRequests(float x, float y, sf::RenderWindow &wi
 	for (it=requestMap.begin(); it!=requestMap.end(); ++it)
 	{
 		NPacketDataRequest_Send* req = it->second;
+
+    std::string statusComment = "";
+    if(req->status == 3)
+    {
+      statusComment = ", " + std::to_string(req->num_packages_rcvd) + " of " + std::to_string(req->num_packages);
+    }
     DrawText(x,y,
-      "ID: " + std::to_string(req->id) + ", status:" + std::to_string(req->status),
+      "ID: " + std::to_string(req->id) + ", name: " + req->fileName + ", status:" + std::to_string(req->status) + statusComment,
       12, window, sf::Color(100,100,100)
     );
 
@@ -1933,7 +1946,7 @@ void NPacketSendHandler::drawBenchmarking(float x, float y, sf::RenderWindow &wi
   );
 
   DrawText(x+480,y,
-      "NP eff.cy: " + std::to_string(1.0 - (float)num_NPackets_resent /(float)num_NPackets_sent),
+      "NP eff.cy: " + std::to_string(1.0 - (float)num_NPackets_resent /(float)(num_NPackets_sent + num_NPackets_resent)),
       12, window, sf::Color(255,255,255)
   );
 }
