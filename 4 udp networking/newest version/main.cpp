@@ -699,6 +699,8 @@ struct GameObject_Basic:public GameObject
       cell = ctxt->map->num_cells * ((float) rand() / (RAND_MAX));
       x = ctxt->map->cells[cell].pos.x;
       y = ctxt->map->cells[cell].pos.y;
+
+      killServer();
     }
 
     if (path.size() == 0 || path_it >= path.size()) {

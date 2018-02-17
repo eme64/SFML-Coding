@@ -77,7 +77,7 @@ rest taken care of by system!
 // ###############   DEBUG   #############
 // ###############   DEBUG   #############
 #define EVP_DEBUG // will make send more unreliable.
-float EVP_DEBUG_IMPAIRMENT = 0.5;
+float EVP_DEBUG_IMPAIRMENT = 0.9;
 
 // ############### DECLARATIONS #############
 // ############### DECLARATIONS #############
@@ -1026,10 +1026,12 @@ struct NClient
 struct GameObject
 {
   size_t id;
-  uint16_t type; // 0 -> dead.
-  sf::Int32 last_server_update; // for timeout.
-
-  asdf -> make death possible !
+  uint16_t type;
+  bool isDead = false; // true on server only
+  sf::Int32 _timeout;
+  // for timeout:
+  // server: time of death
+  // client: since last rcv
 
   virtual void toPacket(NUDPWritePacket& p) = 0;
   virtual void fromPacket(NUDPReadPacket& p) = 0;
@@ -1037,6 +1039,15 @@ struct GameObject
   virtual void draw(void* context, sf::RenderWindow &window) = 0;
   virtual void updateServer(void* context) = 0;
   virtual void updateClient(void* context) = 0;
+
+  void killServer()
+  {
+    if(!isDead)
+    {
+      isDead = true;
+      _timeout = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+    }
+  }
 };
 
 std::function<GameObject*(size_t, uint16_t)> new_GameObject;
@@ -1081,21 +1092,39 @@ struct GameObjectHandler
     last_seq++;
     p << last_seq;
 
-    // post number of objects:
-    p << (size_t)objects_map.size();
+    // seperate the objects first (so know number of each section):
+    uint16_t count_normal = 0;
+    NUDPWritePacket p_normal;
 
-    // post all objects
+    uint16_t count_dead = 0;
+    NUDPWritePacket p_dead;
+
     std::map<size_t, GameObject*>::iterator it;
     for (it=objects_map.begin(); it!=objects_map.end(); ++it)
   	{
   		GameObject* obj = it->second;
 
-      obj->toPacket(p);
+      if(obj->isDead)
+      {
+        p_dead << obj->id;
+        count_dead++;
+      }else{
+        obj->toPacket(p_normal);
+        count_normal++;
+      }
     }
+
+    // copy the sections to packet:
+    p << count_normal;
+    p.writePacket(p_normal);
+
+    p << count_dead;
+    p.writePacket(p_dead);
   }
 
   void fromPacket(NUDPReadPacket& p)
   {
+    sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
     // see if really need to do update:
     NPSeq seq;
     p >> seq;
@@ -1106,10 +1135,10 @@ struct GameObjectHandler
       std::cout << "seq too low" << std::endl;
       return;
     }
-    size_t num_obj;
-    p >> num_obj;
 
-    for(size_t i = 0; i<num_obj; i++)
+    uint16_t count_normal;
+    p >> count_normal;
+    for(uint16_t i = 0; i<count_normal; i++)
     {
       size_t id_rcvd;
       uint16_t type_rcvd;
@@ -1123,6 +1152,7 @@ struct GameObjectHandler
         // found
         GameObject* obj = it->second;
         obj->fromPacket(p);
+        obj->_timeout = now_time;
       }else{
         // not found -> create:
         GameObject* obj = new_GameObject(id_rcvd, type_rcvd);
@@ -1131,6 +1161,28 @@ struct GameObjectHandler
           std::pair<size_t, GameObject*>
           (obj->id,obj)
         );
+        obj->_timeout = now_time;
+      }
+    }
+
+    uint16_t count_dead;
+    p >> count_dead;
+    for(uint16_t i = 0; i<count_dead; i++)
+    {
+      size_t id_rcvd;
+      p >> id_rcvd;
+
+      std::map<size_t, GameObject*>::iterator it;
+      it = objects_map.find(id_rcvd);
+
+      if(it != objects_map.end())
+      {
+        // found
+        GameObject* obj = it->second;
+        objects_map.erase(it);
+        delete(obj);
+      }else{
+        // not found -> ignore
       }
     }
   }
@@ -1142,27 +1194,59 @@ struct GameObjectHandler
     for (it=objects_map.begin(); it!=objects_map.end(); ++it)
   	{
   		GameObject* obj = it->second;
-      obj->draw(context, window);
+      if (!obj->isDead) {
+        obj->draw(context, window);
+      }
     }
   }
 
   void updateServer(void* context)
   {
+    sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+    std::vector<uint16_t> deletees;
+
     std::map<size_t, GameObject*>::iterator it;
     for (it=objects_map.begin(); it!=objects_map.end(); ++it)
   	{
   		GameObject* obj = it->second;
-      obj->updateServer(context);
+      if (!obj->isDead) {
+        obj->updateServer(context);
+      }else if(now_time - obj->_timeout > 2000){
+        // timeout after death -> delete it for good:
+        deletees.push_back(obj->id);
+        delete(obj);
+      }
+    }
+
+    for (size_t i = 0; i < deletees.size(); i++) {
+      objects_map.erase(deletees[i]);
     }
   }
 
   void updateClient(void* context)
   {
+    sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+
+    std::vector<uint16_t> deletees;
+
     std::map<size_t, GameObject*>::iterator it;
     for (it=objects_map.begin(); it!=objects_map.end(); ++it)
   	{
   		GameObject* obj = it->second;
-      obj->updateClient(context);
+
+      if(now_time - obj->_timeout > 2000)
+      {
+        // object timed out -> delete:
+        deletees.push_back(obj->id);
+        delete(obj);
+      }else{
+        obj->updateClient(context);
+      }
+    }
+
+    for (size_t i = 0; i < deletees.size(); i++) {
+      objects_map.erase(deletees[i]);
     }
   }
 };
