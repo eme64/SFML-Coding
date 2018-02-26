@@ -409,6 +409,14 @@ struct EChat
 
   void push(std::string line)
   {
+    std::vector<std::string> parts = split(line, '\n');
+    for (size_t i = 0; i < parts.size(); i++) {
+      push_single(parts[i]);
+    }
+  }
+
+  void push_single(std::string line)
+  {
     lines.push_front(line);
     while(lines.size() > num_lines_max)
     {

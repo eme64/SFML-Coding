@@ -17,12 +17,25 @@
 
 account
 
+
 game
--> lobby
+-> /startgame <gamefile> [list of names]
+  -> load gamefile
+  -> inform players
+  -> wait until all give ack -> start game
+  -> on login: player ask if game is running -> load.
 -> player (account or ai) -> id, color
 -> teams
 
 */
+
+const uint16_t GAME_COMMAND_TEST = 1;
+const uint16_t GAME_COMMAND_REQ_SERVERSTATUS = 2;
+const uint16_t GAME_COMMAND_ANS_SERVERSTATUS = 3;
+const uint16_t GAME_COMMAND_REQ_PLAYERINFO = 4;
+const uint16_t GAME_COMMAND_ANS_PLAYERINFO = 5;
+const uint16_t GAME_COMMAND_ACK_PLAYER_READY = 6;
+const uint16_t GAME_COMMAND_ACK_LOGIN = 7;
 
 // ################### STATIC VARIABLES ############
 // ################### STATIC VARIABLES ############
@@ -766,7 +779,7 @@ struct AccountHandler_Server
           std::pair<uint16_t, Account*>
           (acc->NSC_id,acc)
         );
-
+        std::cout << "login again: " << acc->name << " " << acc->id << " " << acc->NSC_id << std::endl;
         return 0;
       }else{
         // other logged in with same name
@@ -794,7 +807,316 @@ struct AccountHandler_Server
       (acc->NSC_id,acc)
     );
 
+    std::cout << "first login: " << acc->name << " " << acc->id << " " << acc->NSC_id << std::endl;
+
     return 0;
+  }
+};
+
+// ################### GAME HANDLER ############
+// ################### GAME HANDLER ############
+// ################### GAME HANDLER ############
+struct GameHandler
+{
+  // -------------- status server
+  /*
+  0 - loading / configuring
+  1 - ready for transmission / wait for player ack
+  2 - running
+  */
+  uint16_t status_server = 0;
+  // ------------- status client
+  /*
+  0 - server not ready
+  1 - server ready -> wait for data
+  2 - server ready -> have all data
+  3 - running
+  4 - unexpected failure ! -> abort and restart ?
+  */
+  uint16_t status_client = 0;
+  bool asking_for_server_status = false;
+  sf::Int32 last_asking_for_server_status = 0;
+
+  // -------------- map
+  PolyMap *map = NULL;
+
+  // -------------- AccountHandler_Server
+  AccountHandler_Server* acc_handler_s; // set on setPlayersServer
+
+  // -------------- player
+  uint16_t num_players = 0;
+  std::vector<uint16_t> player_accId;
+  std::vector<std::string> player_name;
+  std::vector<sf::Color> player_color;
+  uint16_t num_teams = 0;
+  std::vector<uint16_t> player_team;
+
+  uint16_t my_accId; // for clients:
+  uint16_t my_index;
+  asdfasdfasdf -> save name here ?
+
+  GameHandler()
+  {
+    auto f_com = [this](NServerClient* client, NPacket &np)
+    {
+      // read np into p:
+      NUDPReadPacket p;
+      p.setFromVector(np.data);
+
+      // read p
+      uint16_t game_command;
+      p >> game_command;
+      switch (game_command) {
+        case GAME_COMMAND_TEST:
+        {
+          std::cout << "just got a command! -> test command" << std::endl;
+          break;
+        }
+        case GAME_COMMAND_REQ_SERVERSTATUS:
+        {
+          NUDPWritePacket sp;
+          sp << GAME_COMMAND_ANS_SERVERSTATUS;
+          sp << status_server;
+          client->np_send.enqueue(NPacket_TAG_COMMAND, sp.data);
+          break;
+        }
+        case GAME_COMMAND_ANS_SERVERSTATUS:
+        {
+          p >> status_server;
+          asking_for_server_status = false;
+          break;
+        }
+        case GAME_COMMAND_REQ_PLAYERINFO:
+        {
+          NUDPWritePacket sp;
+          sp << GAME_COMMAND_ANS_PLAYERINFO;
+          playerInfo_toPacket(sp, client);
+          client->np_send.enqueue(NPacket_TAG_COMMAND, sp.data);
+          break;
+        }
+        case GAME_COMMAND_ANS_PLAYERINFO:
+        {
+          playerInfo_fromPacket(p);
+          break;
+        }
+        case GAME_COMMAND_ACK_PLAYER_READY:
+        {
+          // find player id ...
+          std::cout << "a player is ready ! (do somethig here !)" << std::endl;
+          break;
+        }
+
+        case GAME_COMMAND_ACK_LOGIN:
+        {
+          // read my accId and Name:
+          asdasddfasdd
+          break;
+        }
+        default:
+        {
+          std::cout << "just got a command! -> unknown: " << game_command << std::endl;
+          break;
+        }
+      }
+    };
+
+    NPacketCommandHandler = f_com;
+  }
+  ~GameHandler()
+  {
+    if (map != NULL) {
+      delete(map);
+    }
+  }
+
+  void setPlayersServer(std::vector<uint16_t> &p_accId, AccountHandler_Server* accHandler_s)
+  {
+    // id's must be verified first !
+    acc_handler_s = accHandler_s;
+
+    // for now all in their own team:
+    num_players = p_accId.size();
+
+    player_accId.resize(num_players);
+    player_color.resize(num_players);
+    player_team.resize(num_players);
+    player_name.resize(num_players);
+    player_accId = p_accId;
+
+    num_teams = num_players;
+    for (size_t i = 0; i < num_players; i++) {
+      player_color[i] = sf::Color((30*i+250)%256, (100*i+250)%256, (200*i+250)%256);
+      player_team[i] = i;
+      player_name[i] = accHandler_s->get_id(p_accId[i])->name;
+    }
+  }
+
+  void playerInfo_toPacket(NUDPWritePacket& p, NServerClient* client)
+  {
+    p << num_players;
+    p << num_teams;
+    for (size_t i = 0; i < num_players; i++) {
+      p << player_accId[i];
+      char cr = player_color[i].r;
+      char cg = player_color[i].g;
+      char cb = player_color[i].b;
+      p << cr << cg << cb;
+      p << player_team[i];
+      p << player_name[i];
+    }
+  }
+
+  void playerInfo_fromPacket(NUDPReadPacket& p)
+  {
+    p >> num_players;
+    p >> num_teams;
+    player_accId.resize(num_players);
+    player_color.resize(num_players);
+    player_team.resize(num_players);
+    player_name.resize(num_players);
+    for (size_t i = 0; i < num_players; i++) {
+      p >> player_accId[i];
+      char cr; char cg; char cb;
+      p >> cr >> cg >> cb;
+      player_color[i].r = cr;
+      player_color[i].g = cg;
+      player_color[i].b = cb;
+      p >> player_team[i];
+      p >> player_name[i];
+    }
+  }
+
+  void setMap(PolyMap *new_map)
+  {
+    if (map != NULL) {
+      delete(map);
+    }
+    map = new_map;
+  }
+
+  void requestMapClient()
+  {
+    auto f_success = [this](char* data, size_t size)
+    {
+      std::cout << "[]map received! size: " << std::to_string(size) << std::endl;
+
+      if(data == NULL){return;}
+
+      setMap(new PolyMap(data, size));
+
+      std::free(data);
+      data = NULL;
+    };
+
+    auto f_failure = [this](bool noTimeout, std::string errorMsg)
+    {
+      if (errorMsg == "map_not_ready") {
+        std::cout << "[]map_not_ready" << std::endl;
+        return;
+      }
+
+      std::cout << "[]map loading failed:" << std::endl;
+      std::cout << "[]ERROR: " << errorMsg << std::endl;
+      if(noTimeout)
+      {
+        std::cout << "[]not even timeout" << std::endl;
+      }else{
+        std::cout << "[]timeout" << std::endl;
+      }
+
+      status_client = 3;
+      std::cout << "[]must reset client !" << std::endl;
+    };
+
+    NET_CLIENT->np_send.issueDataRequest("game_map", f_success, f_failure);
+  }
+
+  void updateClient()
+  {
+    sf::Int32 now_time = PROGRAM_CLOCK.getElapsedTime().asMilliseconds();
+    switch (status_client) {
+      case 0: // not ready
+      {
+        if (status_server > 0) {
+          status_client = 1;
+
+          // request data:
+          requestMapClient();
+
+          NUDPWritePacket p;
+          p << GAME_COMMAND_REQ_PLAYERINFO;
+          NET_CLIENT->np_send.enqueue(NPacket_TAG_COMMAND, p.data);
+        }else{
+          // ask status and wait:
+          if (!asking_for_server_status) {
+            // issue new request:
+            if (now_time - last_asking_for_server_status > 2000) {
+              last_asking_for_server_status = now_time;
+
+              asking_for_server_status = true;
+
+              NUDPWritePacket p;
+              p << GAME_COMMAND_REQ_SERVERSTATUS;
+              NET_CLIENT->np_send.enqueue(NPacket_TAG_COMMAND, p.data);
+            }
+          }
+        }
+        break;
+      }
+      case 1: // server ready -> data wait
+      {
+        if (map != NULL && num_players > 0) {
+          status_client = 2;
+
+          // tell server I am ready:
+          NUDPWritePacket p;
+          p << GAME_COMMAND_ACK_PLAYER_READY;
+          NET_CLIENT->np_send.enqueue(NPacket_TAG_COMMAND, p.data);
+        }
+        break;
+      }
+      case 2: // server ready -> data ok
+      {
+        if(status_server == 2)
+        {
+          status_client = 3;
+          std::cout << "game now running !" << std::endl;
+        }
+        break;
+      }
+      case 3: // running
+      {
+        break;
+      }
+      case 4: // unexpected failure ! -> abort and restart ?
+      {
+        break;
+      }
+      default:
+      {
+        std::cout << "unknown client game status !" << std::endl;
+        break;
+      }
+    }
+  }
+
+  void drawServer(float x, float y, sf::RenderWindow &window)
+  {
+    DrawText(x, y, "game. status: " + std::to_string(status_server), 12, window, sf::Color(255,255,255));
+    if (num_players > 0) {
+      for (size_t i = 0; i < num_players; i++) {
+        DrawText(x, y+20+15*i, "n: " + player_name[i] + ", id: " + std::to_string(player_accId[i]), 12, window, player_color[i]);
+      }
+    }
+  }
+  void drawClient(float x, float y, sf::RenderWindow &window)
+  {
+    DrawText(x, y, "game. server: " + std::to_string(status_server) + ", client: " + std::to_string(status_client) + ", my_id: " + std::to_string(my_accId) + ", my_ndex: " + std::to_string(my_index), 12, window, sf::Color(255,255,255));
+    if (num_players > 0) {
+      for (size_t i = 0; i < num_players; i++) {
+        DrawText(x, y+20+15*i, "n: " + player_name[i] + ", id: " + std::to_string(player_accId[i]), 12, window, player_color[i]);
+      }
+    }
   }
 };
 
@@ -807,7 +1129,7 @@ struct GameObjectContext
   // GameObjects will get it
   // info about map, screen, ...
   // it will be passed by pointer -> as (void *)
-  PolyMap *map;
+  GameHandler *game_handler;
 
   float screen_x;
   float screen_y;
@@ -881,27 +1203,28 @@ struct GameObject_Basic:public GameObject
   {
     // server only!
     GameObjectContext* ctxt = (GameObjectContext*)context;
+    PolyMap* map = ctxt->game_handler->map;
 
-    cell = ctxt->map->getCell(x,y, cell);
+    cell = map->getCell(x,y, cell);
 
-    if (! ctxt->map->cells[cell].isLand) {
+    if (! map->cells[cell].isLand) {
       // something went bad, must relocate...
-      cell = ctxt->map->num_cells * ((float) rand() / (RAND_MAX));
-      x = ctxt->map->cells[cell].pos.x;
-      y = ctxt->map->cells[cell].pos.y;
+      cell = map->num_cells * ((float) rand() / (RAND_MAX));
+      x = map->cells[cell].pos.x;
+      y = map->cells[cell].pos.y;
 
       killServer();
     }
 
     if (path.size() == 0 || path_it >= path.size()) {
-      uint16_t goal = ctxt->map->num_cells * ((float) rand() / (RAND_MAX));
-      ctxt->map->calculatePath(cell, goal, path);
+      uint16_t goal = map->num_cells * ((float) rand() / (RAND_MAX));
+      map->calculatePath(cell, goal, path);
       path_it = 0;
     }
 
     uint16_t next_cell = path[path_it];
-    float dx = ctxt->map->cells[next_cell].pos.x - x;
-    float dy = ctxt->map->cells[next_cell].pos.y - y;
+    float dx = map->cells[next_cell].pos.x - x;
+    float dy = map->cells[next_cell].pos.y - y;
     float d = std::sqrt(dx*dx + dy*dy);
     dx/= d;
     dy/= d;
@@ -950,11 +1273,8 @@ GameObject* new_GameObject_implementation(size_t id, uint16_t type)
 
 void NPacketCommandHandler_implementation(NServerClient* client, NPacket &np)
 {
-  std::cout << "just got a command!" << std::endl;
+  std::cout << "just got a command! -> this should be handled elsewhere !" << std::endl;
 }
-
-
-
 // ############################## MAIN ##############################
 // ############################## MAIN ##############################
 // ############################## MAIN ##############################
@@ -962,7 +1282,7 @@ int main(int argc, char** argv)
 {
     // necessary initialization for GameObjects
     new_GameObject = new_GameObject_implementation;
-    NPacketCommandHandler = NPacketCommandHandler_implementation;
+    NPacketCommandHandler = NPacketCommandHandler_implementation;// to be overwritten elsewhere
 
     // ----- network config:
     unsigned short net_conf_port = 54000;
@@ -1015,8 +1335,8 @@ int main(int argc, char** argv)
     // --------------------------- EChat
     EChat chat;
 
-    // --------------------------- Map
-    PolyMap* map = NULL;
+    // --------------------------- Game Handler
+    GameHandler* game_handler = new GameHandler();
 
     // --------------------------- Accounts
     AccountHandler_Server* accountHandler_s;
@@ -1031,7 +1351,7 @@ int main(int argc, char** argv)
     {
       // -------------- SERVER:
       // chat handler:
-      auto f_chat = [accountHandler_s](NServerClient* client, const std::string &s)
+      auto f_chat = [accountHandler_s, game_handler](NServerClient* client, const std::string &s)
       {
         std::string line;
         std::vector<std::string> input_parts = split(s, ' ');
@@ -1042,9 +1362,10 @@ int main(int argc, char** argv)
 
           if(input_parts[0] == "/help")
           {
-
-            std::string txt= "%16%[help]%% use the percent symbol to get all the %0%R%16%G%32%B%rand% colors!";
-            client->np_send.enqueueChat(txt);
+            std::string help_text = "%16%[help]%% use the percent symbol to get all the %0%R%16%G%32%B%rand% colors!";
+            help_text+= "\n /login <name>";
+            help_text+= "\n /logout";
+            client->np_send.enqueueChat(help_text);
             return;
           }else if (input_parts[0] == "/login") {
 
@@ -1110,7 +1431,11 @@ int main(int argc, char** argv)
 
           if(input_parts[0] == "/help")
           {
-            NET_SERVER->chat->push("%16%[help]%% use the percent symbol to get all the %0%R%16%G%32%B%rand% colors!");
+            std::string help_text = "%16%[help]%% use the percent symbol to get all the %0%R%16%G%32%B%rand% colors!";
+            help_text+= "\n /data";
+            help_text+= "\n /cmd";
+            help_text+= "\n /start_game [list of players]";
+            NET_SERVER->chat->push(help_text);
             return;
           }else if(input_parts[0] == "/data"){
             NET_SERVER->chat->push("%16%[data]%% request some data...");
@@ -1158,17 +1483,44 @@ int main(int argc, char** argv)
           }else if(input_parts[0] == "/cmd"){
             NET_SERVER->chat->push("%16%[cmd]%% sent a cmd...");
 
-            std::vector<char> v;
-            v.push_back(0);
-            v.push_back(1);
-            v.push_back(2);
+            NUDPWritePacket p;
+            p << GAME_COMMAND_TEST;
 
             std::map<int, NServerClient*>::iterator it;
           	for (it=NET_SERVER->map_id.begin(); it!=NET_SERVER->map_id.end(); ++it)
           	{
           		NServerClient* c = it->second;
-              c->np_send.enqueue(NPacket_TAG_COMMAND, v);
+              c->np_send.enqueue(NPacket_TAG_COMMAND, p.data);
             }
+            return;
+          }else if(input_parts[0] == "/start_game"){
+            if (input_parts.size() == 1) {
+              NET_SERVER->chat->push("%0%[start_game]%% write %0%/start_game [list of names]");
+              return;
+            }
+            if(game_handler->status_server != 0)
+            {
+              NET_SERVER->chat->push("%0%[start_game] a game was already started!");
+              return;
+            }
+
+            std::vector<uint16_t> acc_ids;
+            for (size_t i = 1; i < input_parts.size(); i++) {
+              Account* acc = accountHandler_s->get_name(input_parts[i]);
+              if (acc != NULL) {
+                acc_ids.push_back(acc->id);
+              } else {
+                NET_SERVER->chat->push("%0%[start_game]%% name not found: " + input_parts[i]);
+                return;
+              }
+            }
+
+            game_handler->setPlayersServer(acc_ids, accountHandler_s);
+            game_handler->status_server = 1;
+
+            line = "%0,255,0%[start_game]%% a game was started";
+            NET_SERVER->chat->push(line);
+            NET_SERVER->broadcastChat(line);
             return;
           }
         }
@@ -1178,7 +1530,7 @@ int main(int argc, char** argv)
       };
 
       // data request handler:
-      auto f_dataReq = [&map](std::string fileName, NServerClient* client, bool& success, char* &data, size_t &data_size, std::string& errorMsg)
+      auto f_dataReq = [&game_handler](std::string fileName, NServerClient* client, bool& success, char* &data, size_t &data_size, std::string& errorMsg)
       {
         std::cout << "[RH]DATA REQUEST:" << std::endl;
         if(client!=NULL)
@@ -1200,13 +1552,19 @@ int main(int argc, char** argv)
           }
 
           success = true;
-        }else if(fileName == "map"){
-          // set dummy data here:
-          data_size = map->networkData_size;
-          data = (char*)std::malloc(map->networkData_size);
-          std::memcpy(data, map->networkData, map->networkData_size);
+        }else if(fileName == "game_map"){
+          // check if game_handler ready:
+          if (game_handler->status_server > 0) {
+            data_size = game_handler->map->networkData_size;
+            data = (char*)std::malloc(game_handler->map->networkData_size);
+            std::memcpy(data, game_handler->map->networkData, game_handler->map->networkData_size);
 
-          success = true;
+            success = true;
+          }else{
+            success = false;
+            errorMsg = "map_not_ready";
+          }
+
         }else{
           // we will now just send error instead:
           success = false;
@@ -1231,81 +1589,17 @@ int main(int argc, char** argv)
 
       // client:
       NET_CLIENT = new NClient(net_conf_ip, net_conf_port, &chat, f_dataReq);
-
-      /*
-      // test data request:
-      auto f_success = [](char* data, size_t size)
-      {
-        std::cout << "[]data received! size: " << std::to_string(size) << std::endl;
-
-        if(data == NULL){return;}
-
-        for(size_t i = 0; i<size; i++)
-        {
-          char c = i;
-
-          if(data[i] != c)
-          {
-            std::cout << "[]off at " << i << std::endl;
-          }
-        }
-        std::cout << "[]check complete" << std::endl;
-        std::free(data);
-        data = NULL;
-      };
-
-      auto f_failure = [](bool noTimeout, std::string errorMsg)
-      {
-        std::cout << "[].test file name. failed" << std::endl;
-        std::cout << "[]ERROR: " << errorMsg << std::endl;
-        if(noTimeout)
-        {
-          std::cout << "[]not even timeout" << std::endl;
-        }else{
-          std::cout << "[]timeout" << std::endl;
-        }
-      };
-
-      for(int i=0; i<3; i++)
-      {
-        NET_CLIENT->np_send.issueDataRequest("testdata", f_success, f_failure);
-      }
-      */
     }
     std::string textInput;
 
     // ------------------------------------ MAP creation:
     if (NET_SERVER_MODE) {
       // server:
-      map = new PolyMap(30000, 1000, 1000);
-      //map = new PolyMap(300, 100, 100);
+      game_handler->setMap(new PolyMap(30000, 1000, 1000));
+      game_handler->status_server = 0;
     }else{
-      // request map:
-      auto f_success = [&map](char* data, size_t size)
-      {
-        std::cout << "[]map received! size: " << std::to_string(size) << std::endl;
-
-        if(data == NULL){return;}
-
-        map = new PolyMap(data, size);
-
-        std::free(data);
-        data = NULL;
-      };
-
-      auto f_failure = [](bool noTimeout, std::string errorMsg)
-      {
-        std::cout << "[]map loading failed:" << std::endl;
-        std::cout << "[]ERROR: " << errorMsg << std::endl;
-        if(noTimeout)
-        {
-          std::cout << "[]not even timeout" << std::endl;
-        }else{
-          std::cout << "[]timeout" << std::endl;
-        }
-      };
-
-      NET_CLIENT->np_send.issueDataRequest("map", f_success, f_failure);
+      // ask server about game ?
+      std::cout << "!! ask server about game !!" << std::endl;
     }
 
     // ------------------------------------ SCEEN
@@ -1436,7 +1730,7 @@ int main(int argc, char** argv)
       window.clear();
 
       GameObjectContext context = GameObjectContext{
-        map,
+        game_handler,
         screen_x, screen_y, screen_zoom,
         current_time, dt,
       };
@@ -1448,13 +1742,14 @@ int main(int argc, char** argv)
         NET_SERVER->update(&context);
       }else{
         // client
+        game_handler->updateClient();
         NET_CLIENT->update(&context);
       }
 
       // draw GAME
-      if(map != NULL)
+      if(game_handler->map != NULL)
       {
-        map->draw(screen_x, screen_y, screen_zoom, window);
+        game_handler->map->draw(screen_x, screen_y, screen_zoom, window);
       }
 
       DrawDot(MOUSE_X, MOUSE_Y, window, sf::Color(255*MOUSE_RIGHT_DOWN,255*MOUSE_LEFT_DOWN,255));
@@ -1464,9 +1759,11 @@ int main(int argc, char** argv)
       {
         // server
         NET_SERVER->draw(&context, window);
+        game_handler->drawServer(400,5, window);
       }else{
         // client
         NET_CLIENT->draw(&context, window);
+        game_handler->drawClient(400,5, window);
       }
 
       chat.update();
@@ -1481,10 +1778,10 @@ int main(int argc, char** argv)
       current_time = now_time;
     }
 
-    if(map != NULL)
+    if(game_handler != NULL)
     {
-      delete(map);
-      map = NULL;
+      delete(game_handler);
+      game_handler = NULL;
     }
 
     if(NET_SERVER_MODE)
