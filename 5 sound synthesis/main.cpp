@@ -5,38 +5,100 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <vector>
+#include <forward_list>
+#include <mutex>
 
 class Instrument
 {
 public:
-  Instrument(double frequency)
-  :frequency(frequency), isOn(false)
+  bool isAlive = true;
+
+  Instrument(double frequency, std::function<double(double, double)> oscillator)
+  :frequency(frequency), oscillator(oscillator)
   {
     // empty
   }
 
-  double sample(double t)
+  static double oscillator_sin(double t, double freq)
   {
-    if (isOn) {
-      //return std::sin(t * frequency * 2.0 * M_PI + 1*std::sin(t * 5.0 * 2.0 * M_PI));
-      return 2.0*std::fmod(t * frequency + 0.1*std::sin(t * 5.0 * 2.0 * M_PI), 1.0)-1;
-    }
-    return 0;
+    return std::sin(t * freq*2.0*M_PI + 0.1*std::sin(t * 5.0 * 2.0 * M_PI));
   }
 
-  void press()
+  static double oscillator_mod(double t, double freq)
   {
-    isOn = true;
+    return 2.0*std::fmod(t * freq + 0.1*std::sin(t * 5.0 * 2.0 * M_PI), 1.0)-1.0;
+  }
+
+  static double oscillator_tria(double t, double freq)
+  {
+    double saw = std::fmod(t * freq + 0.1*std::sin(t * 5.0 * 2.0 * M_PI), 1.0);
+    return std::abs(saw-0.5)*2.0;
+  }
+
+  double sample(double t)
+  {
+    if (attacked == false) { // first time playing:
+      attacked = true;
+      when_attacked = t;
+    }
+
+    double res = oscillator(t, frequency);
+
+    if(attacked)
+    {
+      res *= attack_envelope(t - when_attacked);
+    }
+
+    if(released)
+    {
+      res *= release_envelope(t - when_released);
+    }
+
+    t_last = t;
+    return res;
   }
 
   void release()
   {
-    isOn = false;
+    released = true;
+    when_released = t_last;
   }
 
 private:
-  bool isOn;
+  std::function<double(double, double)> oscillator; // t, freq
+
+  double t_last;
+  bool attacked = false;
+  bool released = false;
+  double when_attacked;
+  double when_released;
   double frequency;
+
+  double attack_envelope(double t)// t since attack:
+  {
+    const double attack_time = 0.005;
+    const double decay_time = 0.01;
+    const double sustain_level = 0.3;
+
+    if (t < attack_time) {
+      return t/attack_time;
+    }
+    t-=attack_time;
+    if (t < decay_time) {
+      return (1.0-t/decay_time) *(1.0-sustain_level) + sustain_level;
+    }
+
+    return sustain_level;
+  }
+
+  double release_envelope(double t) // t since release
+  {
+    double res = std::max(0.0, 1.0-t/0.2);
+    if (res < 0.001) {
+      isAlive = false;
+    }
+    return res;
+  }
 };
 
 // custom audio stream that plays a loaded buffer
@@ -50,12 +112,25 @@ public:
     initialize(1, mySampleRate);
   }
 
-  void addInstrument(Instrument *instrument)
+  void playInstrument(Instrument *instrument)
   {
-    instruments.push_back(instrument);
+    std::lock_guard<std::mutex> lock(instruments_mutex);
+    instruments.push_front(instrument);
+  }
+
+  void stopInstrument(Instrument *instrument)
+  {
+    instrument->release();
+  }
+
+  void setTicker(std::function<void()> ticker)
+  {
+    this->ticker = ticker;
   }
 
 private:
+  std::function<void()> ticker = [](){};
+
   const unsigned mySampleRate;
   const unsigned mySampleSize;
   const unsigned myAmplitude;
@@ -64,7 +139,8 @@ private:
 
   size_t ticks;
 
-  std::vector<Instrument*> instruments;
+  std::mutex instruments_mutex;
+  std::forward_list<Instrument*> instruments;
 
   virtual bool onGetData(Chunk& data)
   {
@@ -72,12 +148,26 @@ private:
 
     for (size_t i = 0; i < mySampleSize; i++) {
       ticks++;
+      ticker();
       double t = (double)(ticks) / (double)mySampleRate;
 
       double res = 0.0;
 
+      std::vector<Instrument*> delete_vec;
+
+      std::lock_guard<std::mutex> lock(instruments_mutex);
       for (Instrument *i : instruments) {
-        res += i->sample(t)*0.5;
+        res += i->sample(t)*0.05;
+
+        if(!i->isAlive)
+        {
+          delete_vec.push_back(i);
+        }
+      }
+
+      for (Instrument *i : delete_vec) {
+        instruments.remove(i);
+        delete(i);
       }
 
       samples.push_back(myAmplitude * res);
@@ -94,143 +184,196 @@ private:
   }
 };
 
-struct Node
+
+class MusicBoard
 {
-  float x; float y; float r; float a;
-  sf::Color color;
-
-  Node *parent;
-
-  Node(float xpos, float ypos, float radius, float alpha, sf::Color drawcolor, Node *myparent)
+public:
+  MusicBoard(MyStream &stream, double size_x, double size_y, int n_x, int n_y)
+  :size_x(size_x), size_y(size_y), n_x(n_x), n_y(n_y),
+  dx(size_x/n_x), dy(size_y/n_y),
+  stream(stream),
+  oscillator(Instrument::oscillator_sin)
   {
-    x = xpos;
-    y = ypos;
-    color = drawcolor;
-    r = radius;
-    a = alpha;
-    parent = myparent;
+    grid.resize(n_x);
+    instruments.resize(n_x);
+    for (size_t i = 0; i < n_x; i++) {
+      grid[i].resize(n_y);
+      instruments[i].resize(n_y);
+    }
+
+    resetFrequencies();
   }
 
-  void update()
+  void resize(int n_x, int n_y)
   {
-    if(parent != NULL)
-    {
-      float pfac = 0.3;
-      float cfac = 0.5;
+    clear();
 
-      a = (1.0-pfac)*a + pfac*parent->a;
-      x = (1.0-pfac)*x + pfac*parent->x;
-      y = (1.0-pfac)*y + pfac*parent->y;
+    this->n_x = n_x;
+    this->n_y = n_y;
 
 
-      color.r = (1.0-cfac)*color.r + cfac*parent->color.r;
-      color.g = (1.0-cfac)*color.g + cfac*parent->color.g;
-      color.b = (1.0-cfac)*color.b + cfac*parent->color.b;
+    dx = size_x/n_x;
+    dy = size_y/n_y;
 
-    }else{
-      // Independent movement
-      float da = (((float) rand() / (RAND_MAX))-0.5)*0.9;
-      float speed = 4.0;
-
-      a+=da;
-      x+=std::cos(a)*speed;
-      y+=std::sin(a)*speed;
-
-      if(x<0){x=0; a=0;}
-      if(y<0){y=0; a=M_PI*0.5;}
-
-      if(x>800){x=800; a=M_PI;}
-      if(y>600){y=600; a=M_PI*1.5;}
-
-      if(((float) rand() / (RAND_MAX)) < 0.1){
-        color.r = 50 + 206*((float) rand() / (RAND_MAX));
-        color.g = 50 + 206*((float) rand() / (RAND_MAX));
-        color.b = 50 + 206*((float) rand() / (RAND_MAX));
-      }
+    grid.resize(n_x);
+    instruments.resize(n_x);
+    for (size_t i = 0; i < n_x; i++) {
+      grid[i].resize(n_y);
+      instruments[i].resize(n_y);
     }
+
+    clear();
+
+    resetFrequencies();
+
+    active_column = 0;
+    count_ticks = 0;
+  }
+
+  void setFrequencies(std::vector<double> freq)
+  {
+    for (size_t j = 0; j < n_y; j++) {
+      int octave = j/freq.size() + 1;
+      size_t offset = j % freq.size();
+      frequencies[n_y-j-1] = freq[offset]*std::pow(2.0,octave);
+    }
+  }
+
+  void resetFrequencies()
+  {
+    frequencies.resize(n_y);
+    for (size_t j = 0; j < n_y; j++) {
+      frequencies[j] = 110*std::pow(2.0,(double)(n_y-j)/12.0);
+    }
+  }
+
+  void setOscillator(std::function<double(double, double)> o)
+  {
+    oscillator = o;
   }
 
   void draw(sf::RenderWindow &window)
   {
-    sf::CircleShape shape(r*2);
-    shape.setFillColor(color);
-    shape.setPosition(x-r, y-r);
-    window.draw(shape, sf::BlendAdd);
+    for (size_t i = 0; i < n_x; i++) {
+      for (size_t j = 0; j < n_y; j++) {
+        sf::RectangleShape rectangle;
+        rectangle.setSize(sf::Vector2f(dx-1, dy-1));
+        rectangle.setPosition(i*dx, j*dy);
+        if(grid[i][j])
+        {
+          if (i == active_column) {
+            rectangle.setFillColor(sf::Color(200,0,0));
+          }else{
+            rectangle.setFillColor(sf::Color(100,0,0));
+          }
+        }else{
+          if (i == active_column) {
+            rectangle.setFillColor(sf::Color(0,150,200));
+          }else{
+            rectangle.setFillColor(sf::Color(0,100,150));
+          }
+        }
+        window.draw(rectangle);
+      }
+    }
   }
+
+  void set(bool value, double x, double y)
+  {
+    int i = std::min(n_x-1.0, std::max(0.0, x / dx));
+    int j = std::min(n_y-1.0, std::max(0.0, y / dy));
+
+    grid[i][j] = value;
+  }
+
+  void tick()
+  {
+    count_ticks++;
+    if (count_ticks>=ticks_per_column) {
+      count_ticks = 0;
+
+      size_t old_col = active_column;
+      active_column++;
+      if (active_column>=n_x) {
+        active_column = 0;
+      }
+
+      for (size_t j = 0; j < n_y; j++) {
+        if (instruments[old_col][j] == NULL) {
+          // start new if needed:
+          if (grid[active_column][j]) {
+            instruments[active_column][j] = new Instrument(frequencies[j], oscillator);
+            stream.playInstrument(instruments[active_column][j]);
+          }
+        }else{
+          if (grid[active_column][j]) {
+            // move instrument:
+            instruments[active_column][j] = instruments[old_col][j];
+            instruments[old_col][j] = NULL;
+          }else{
+            // stop old.
+            stream.stopInstrument(instruments[old_col][j]);
+            instruments[old_col][j] = NULL;
+          }
+        }
+      }
+    }
+  }
+
+  void clear()
+  {
+    for (size_t i = 0; i < n_x; i++) {
+      for (size_t j = 0; j < n_y; j++) {
+        grid[i][j] = false;
+        if (instruments[i][j] != NULL) {
+          stream.stopInstrument(instruments[i][j]);
+          instruments[i][j] = NULL;
+        }
+      }
+    }
+  }
+private:
+  MyStream &stream;
+
+  double size_x; // screen
+  double size_y;
+
+  double dx;
+  double dy;
+
+  int n_x; // grid units
+  int n_y;
+
+  std::vector<std::vector<bool>> grid;
+  std::vector<std::vector<Instrument*>> instruments;
+  size_t active_column = 0;
+  size_t ticks_per_column = 5000;
+  size_t count_ticks = 0;
+
+  std::vector<double> frequencies;
+
+  std::function<double(double, double)> oscillator;
 };
 
 int main()
 {
-    sf::RenderWindow window(sf::VideoMode(800, 600), "first attempts");
+    sf::RenderWindow window(sf::VideoMode(1200, 900), "Music Board");
     window.setVerticalSyncEnabled(true);
 
-
-    std::list<Node*> node_list;
-
-    Node *last_node = NULL;
-    for(int i=0; i<1000; i++)
+    sf::Font font;
+    if (!font.loadFromFile("arial.ttf"))
     {
-      float xx = 800*((float) rand() / (RAND_MAX));
-      float yy = 600*((float) rand() / (RAND_MAX));
-
-      int r = 100 + 156*((float) rand() / (RAND_MAX));
-      int g = 100 + 156*((float) rand() / (RAND_MAX));
-      int b = 100 + 156*((float) rand() / (RAND_MAX));
-
-      float radius;
-      if(last_node !=NULL){
-        radius = 2;
-        xx = last_node->x;
-        yy = last_node->y;
-      }else{
-        radius = 3;
-      }
-
-      Node* n = new Node(xx,yy, radius, 0, sf::Color(r,g,b), last_node);
-      node_list.push_back(n);
-
-      if( ((float) rand() / (RAND_MAX)) < 0.05)
-      {
-        last_node = NULL;
-      }else{
-        last_node = n;
-      }
+        // error...
     }
-
-
-    // ############## SOUND STUFF:
-    /*
-    const unsigned SAMPLE_RATE = 44100;
-    const unsigned AMPLITUDE = 30000;
-    std::vector<sf::Int16> samples;
-
-    double frequency = 440.0;
-
-    for (size_t i = 0; i < SAMPLE_RATE; i++) {
-      double t = (double)i / (double)SAMPLE_RATE;
-      samples.push_back(AMPLITUDE * std::sin(t * frequency * 2.0 * M_PI));
-    }
-
-    sf::SoundBuffer buffer;
-    if (!buffer.loadFromSamples(&samples[0], SAMPLE_RATE, 1, SAMPLE_RATE)) {
-  		std::cerr << "Loading failed!" << std::endl;
-  		return 1;
-  	}
-    sf::Sound sound;
-  	sound.setBuffer(buffer);
-  	sound.setLoop(true);
-  	sound.play();
-    */
 
     MyStream stream;
     stream.play();
 
-    std::vector<Instrument*> instruments(10);
+    MusicBoard board(stream, 1200, 900, 32, 32);
+    stream.setTicker([&board](){board.tick();});
 
-    for (size_t i = 0; i < instruments.size(); i++) {
-      instruments[i] = new Instrument(440*std::pow(2.0,(double)i/12.0)); // std::pow(2.0/12.0,i)
-      stream.addInstrument(instruments[i]);
-    }
+    bool MouseDown_left = false;
+    bool MouseDown_right = false;
 
     while (window.isOpen())
     {
@@ -241,79 +384,112 @@ int main()
             {
                 // window closed
                 case sf::Event::Closed:
-                    window.close();
-                    break;
+                  window.close();
+                  break;
+                case sf::Event::MouseButtonPressed:
+                  if (event.mouseButton.button == sf::Mouse::Left)
+                  {
+                    MouseDown_left = true;
+                  }else if (event.mouseButton.button == sf::Mouse::Right) {
+                    MouseDown_right = true;
+                  }
+                  break;
+                case sf::Event::MouseButtonReleased:
+                  if (event.mouseButton.button == sf::Mouse::Left)
+                  {
+                    MouseDown_left = false;
+                  }else if (event.mouseButton.button == sf::Mouse::Right) {
+                    MouseDown_right = false;
+                  }
+                  break;
                 // we don't process other types of events
                 default:
-                    break;
+                  break;
             }
         }
+
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape)){
           window.close();
         }
 
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)){
-          instruments[0]->press();
-        }else{
-          instruments[0]->release();
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)){
+          board.clear();
         }
 
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)){
-          instruments[1]->press();
-        }else{
-          instruments[1]->release();
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)){
+          board.resetFrequencies();
         }
 
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)){
-          instruments[2]->press();
-        }else{
-          instruments[2]->release();
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)){
+          board.setFrequencies(std::vector<double>{30,36,40,45,54});
         }
 
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)){
-          instruments[3]->press();
-        }else{
-          instruments[3]->release();
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)){
+          board.setFrequencies(std::vector<double>{24,27,30,36,40});
         }
 
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Num5)){
-          instruments[4]->press();
-        }else{
-          instruments[4]->release();
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)){
+          board.setFrequencies(std::vector<double>{24,27,32,36,42});
         }
 
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Num6)){
-          instruments[5]->press();
-        }else{
-          instruments[5]->release();
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num5)){
+          board.setFrequencies(std::vector<double>{15,18,20,24,27});
         }
 
-        /*
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Left)){
-          pos_x-= 1.0;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num6)){
+          board.setFrequencies(std::vector<double>{24,27,32,36,40});
         }
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Right)){
-          pos_x+= 1.0;
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num7)){
+          board.setFrequencies(std::vector<double>{32.70,36.71,41.20,43.65,49.00,55.00,61.74});
         }
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Up)){
-          pos_y-= 1.0;
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num8)){
+          board.setFrequencies(std::vector<double>{32.70,36.71,38.89,43.65,49.00,51.91,58.27});
         }
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Down)){
-          pos_y+= 1.0;
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)){
+          board.setOscillator(Instrument::oscillator_sin);
         }
-        */
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)){
+          board.setOscillator(Instrument::oscillator_mod);
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)){
+          board.setOscillator(Instrument::oscillator_tria);
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)){
+          board.resize(16, 32);
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)){
+          board.resize(32, 32);
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)){
+          board.resize(64, 32);
+        }
+
+        if (MouseDown_left) {
+          board.set(true, sf::Mouse::getPosition(window).x, sf::Mouse::getPosition(window).y);
+        }
+        if (MouseDown_right) {
+          board.set(false, sf::Mouse::getPosition(window).x, sf::Mouse::getPosition(window).y);
+        }
+
         window.clear();
 
-        for (std::list<Node*>::iterator it = node_list.begin(); it != node_list.end(); it++)
-        {
-            (**it).update();
-        }
+        board.draw(window);
 
-        for (std::list<Node*>::iterator it = node_list.begin(); it != node_list.end(); it++)
-        {
-            (**it).draw(window);
-        }
+        // -------------- draw text:
+        sf::Text text;
+        text.setFont(font);
+        text.setString("[1-8] Frequency Set (Harmony)\n\n[QWE] Wave forms\n\n[Space] Clear\n\n[ASD] Resolution");
+        text.setCharacterSize(20);
+        window.draw(text);
 
         window.display();
     }
