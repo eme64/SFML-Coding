@@ -3,8 +3,7 @@
 
 
 /* TODO:
-
-
+asdfasdfasdfasdf
 */
 
 int main(int argc, char** argv)
@@ -44,13 +43,13 @@ int main(int argc, char** argv)
       std::cout << " [INPUT HELP] use 'server' as argument to start a server!" << std::endl;
     }
 
-    // ---------------------------- Start Connection
-    evp::Connection *con = NULL;
+    // ---------------------------- Start Connector
+    evp::Connector *con = NULL;
     if(isServer)
     {
-      con = new evp::Connection(net_conf_port);
+      con = new evp::Connector(net_conf_port);
     }else{
-      con = new evp::Connection(net_conf_port, net_conf_ip);
+      con = new evp::Connector(net_conf_port, net_conf_ip);
     }
 
     while(true)

@@ -12,6 +12,7 @@
 #include <cstring>
 #include <functional>
 #include <climits>
+#include <cassert>
 
 #include <SFML/Network.hpp>
 #include <list>
@@ -63,23 +64,98 @@ namespace evp
   class Connection
   {
   private:
-    const bool isServer;
-    const unsigned short serverPort;
-    sf::UdpSocket socket;
-
-    // --- Server
-
-    // --- Client
-    const sf::IpAddress serverIP;
-    unsigned short localPort;
+    sf::Int32 lastRcvTime; // ms
+    sf::Int32 lastSendTime; // ms
 
   public:
-    Connection(unsigned short serverPort) // create Server
+    const unsigned short remotePort;
+    const sf::IpAddress remoteIP;
+
+    Connection(unsigned short remotePort, sf::IpAddress remoteIP)
+    : remotePort(remotePort),
+      remoteIP(remoteIP)
+    {
+      lastRcvTime = 0;
+      lastSendTime = 0;
+    }
+
+    void setLastRcvTime(sf::Int32 timeNow)
+    {
+      lastRcvTime = timeNow;
+    }
+
+    void setLastSendTime(sf::Int32 timeNow)
+    {
+      lastSendTime = timeNow;
+    }
+
+    bool timeoutLastRcvTime(sf::Int32 timeNow, sf::Int32 timeout = 10000)
+    {
+      return lastRcvTime + timeout < timeNow;
+    }
+
+    bool timeoutLastSendTime(sf::Int32 timeNow, sf::Int32 timeout = 2000)
+    {
+      return lastSendTime + timeout < timeNow;
+    }
+  };
+
+  class ConnectionIdentifyer
+  {
+  public:
+    const sf::IpAddress remoteIp;
+    const unsigned short remotePort;
+
+    ConnectionIdentifyer(unsigned short remotePort, sf::IpAddress remoteIP)
+    : remotePort(remotePort),
+      remoteIp(remoteIP)
+    {
+    }
+
+    ConnectionIdentifyer(evp::Connection *con)
+    : remotePort(con->remotePort),
+      remoteIp(con->remoteIP)
+    {
+    }
+  };
+
+  class cmpConnectionIdentifyer
+  {
+  public:
+    bool operator() (const ConnectionIdentifyer& lhs, const ConnectionIdentifyer& rhs) const
+    {
+      if(lhs.remotePort == rhs.remotePort)
+      {
+        return lhs.remoteIp < rhs.remoteIp;
+      }else{
+        return lhs.remotePort < rhs.remotePort;
+      }
+    }
+  };
+
+  class Connector
+  {
+  private:
+    const bool isServer;
+    unsigned short localPort;
+    sf::UdpSocket socket;
+
+    std::map<ConnectionIdentifyer, Connection*, cmpConnectionIdentifyer> connections;
+
+    sf::Clock clock;
+
+    sf::Int32 getTime()
+    {
+      clock.getElapsedTime().asMilliseconds();
+    }
+
+  public:
+    Connector(unsigned short serverPort) // create Server
     : isServer(true),
-      serverPort(serverPort)
+      localPort(serverPort)
     {
       // bind socket:
-      if(socket.bind(serverPort) != sf::Socket::Done)
+      if(socket.bind(localPort) != sf::Socket::Done)
       {
         std::cout << "could not bind socket!" << std::endl;
         return;
@@ -88,10 +164,8 @@ namespace evp
       std::cout << "Server Created." << std::endl;
     }
 
-    Connection(unsigned short serverPort, sf::IpAddress serverIP) // connect client to server
-    : isServer(false),
-      serverPort(serverPort),
-      serverIP(serverIP)
+    Connector(unsigned short serverPort, sf::IpAddress serverIP) // connect client to server
+    : isServer(false)
     {
       if(socket.bind(sf::Socket::AnyPort) != sf::Socket::Done)
       {
@@ -101,23 +175,78 @@ namespace evp
       socket.setBlocking(false);
       localPort = socket.getLocalPort();
 
-      send();
+      addConnection(serverPort, serverIP);
+      send(getServer());
     }
 
-    void send(){
+    evp::Connection* addConnection(unsigned short remotePort, sf::IpAddress remoteIP)
+    {
+      evp::Connection* con = NULL;
+      // try find.
+      con = getConnection(remotePort, remoteIP);
+      if (con != NULL) {
+        return con;
+      }
+
+      // create.
+      con = new evp::Connection(remotePort, remoteIP);
+
+      // add.
+      connections.insert(
+        std::pair<ConnectionIdentifyer, Connection*>
+        (ConnectionIdentifyer(con), con)
+      );
+
+      return con;
+    }
+
+    evp::Connection* getConnection(unsigned short remotePort, sf::IpAddress remoteIP){
+  		std::map<ConnectionIdentifyer, Connection*>::iterator it;
+
+  		it = connections.find(ConnectionIdentifyer(remotePort, remoteIP));
+
+  		if(it != connections.end()){
+  			return it->second;
+  		}else{
+  			return NULL;
+  		}
+  	}
+
+    evp::Connection* getServer()
+    {
+      assert(not isServer);
+
+      evp::Connection* ret = NULL;
+      for (auto const& x : connections)
+      {
+          ret = x.second;
+      }
+      return ret;
+    }
+
+    void send(evp::Connection* con){
+      con->setLastSendTime(getTime());
+
       sf::Packet p;
-      int i = 101;
+      sf::Uint8 i = 'A';
       p << i;
 
-      if (socket.send(p, serverIP, serverPort) != sf::Socket::Done)
+      if (socket.send(p, con->remoteIP, con->remotePort) != sf::Socket::Done)
       {
           std::cout << "Error on send !" << std::endl;
       }
     }
 
-    void update(){
-      // update connection
+    void rcvPacket(sf::Packet &p, evp::Connection* con)
+    {
+      con->setLastRcvTime(getTime());
 
+      sf::Uint8 i;
+      p >> i;
+      std::cout << con->remoteIP << ":" << con->remotePort << "->" << (int)i << std::endl;
+    }
+
+    void update(){
       // listen:
       bool repeat = false;
       do
@@ -131,12 +260,32 @@ namespace evp
         if(status == sf::Socket::Done)
         {
           repeat = true;
-          int i;
-          p >> i;
-          std::cout << remoteIp << ":" << remotePort << "->" << i << std::endl;
+          evp::Connection* con = addConnection(remotePort, remoteIp);
+          rcvPacket(p, con);
         }
       }
       while(repeat);
+
+      // check all Connections:
+      std::vector<evp::Connection*> delVec;
+      for (auto const& x : connections)
+      {
+          evp::Connection* con = x.second;
+
+          if (con->timeoutLastRcvTime(getTime())) {
+            delVec.push_back(con);
+            std::cout << "timeout " << con->remoteIP << ":" << con->remotePort << std::endl;
+          }
+          if (con->timeoutLastSendTime(getTime())) {
+            send(con);
+            std::cout << "hartbeat to " << con->remoteIP << ":" << con->remotePort << std::endl;
+          }
+      }
+      for (evp::Connection* con : delVec) {
+        connections.erase(evp::ConnectionIdentifyer(con));
+        delete(con);
+      }
+
     }
   };
 }
