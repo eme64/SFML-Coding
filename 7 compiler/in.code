@@ -1,5 +1,8 @@
-hello
-world
-how
-are
-you
+print("hello") # some comment here
+variable = 12345 + 56789 - 256.7689
+print(variable)
+print(
+  variable.str(),
+  "hello world",
+  1.234,
+)
