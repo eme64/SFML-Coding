@@ -7,132 +7,71 @@ class Token{
 public:
   enum Type {
     None,
-    Space,NewLine,Comment,Name,
+    Space,//used to separate tokens
+    Sequencer,//used to separate steps
+    Comment,//used to cut away rest of line
+    Name,
     BracketOpen,BracketClose,
     String,Float,Integer,
-    Assign,Minus,Plus,Comma,Dot,
+    Assign,BinaryOperator,Comma,Dot,
   };
+  const char* typeString() const {
+    switch (_type) {
+      case Type::None: return "None";
+      case Type::Space: return "Space";
+      case Type::Sequencer: return "Sequencer";
+      case Type::Comment: return "Comment";
+      case Type::Name: return "Name";
+      case Type::BracketOpen: return "BracketOpen";
+      case Type::BracketClose: return "BracketClose";
+      case Type::String: return "String";
+      case Type::Float: return "Float";
+      case Type::Integer: return "Integer";
+      case Type::Assign: return "Assign";
+      case Type::BinaryOperator: return "BinaryOperator";
+      case Type::Comma: return "Comma";
+      case Type::Dot: return "Dot";
+      default: return "Unknown";
+    }
+  }
+  const char* findCloseBracket() const {// for BracketOpen
+    if (_content=="(") {return ")";}
+    if (_content=="[") {return "]";}
+    if (_content=="{") {return "}";}
+    return "Unknown";
+  }
 
-  Token() : _content("generic"), _type(Token::Type::None) {}
-  Token(std::string content, Token::Type type)
-  : _content(content), _type(type) {}
+  Token() : _content("generic"), _type(Token::Type::None), _file("None"), _line(0), _lineNum(0), _column(0){}
+  Token(
+    std::string content, Token::Type type,
+    std::string file, std::string line,
+    int lineNum, int column
+  ):  _content(content), _type(type), _file(file), _line(line), _lineNum(lineNum), _column(column){}
 
   std::string toString() const {
     return _content;
   }
   Token::Type type() const {return _type;}
-private:
-  std::string _content;
-  Type _type;
-};
-
-class Tree{
-public:
-  virtual void print(int const indent=0) const{
-    std::cout << "[Tree] " << std::string(indent, ' ') << "Tree" << std::endl;
+  void printContext()const {
+    std::cout <<_file<<":"<<_lineNum<<":"<<_column<< ": Token \'" << _content << "\' of type " << typeString() << std::endl;
+    std::cout << _line << std::endl;
+    std::cout << std::string(_column,' ') << "^" << std::endl;
   }
 private:
+  const std::string _content;
+  const Type _type;
+
+  // token origin:
+  const std::string _file;
+  const std::string _line;
+  const int _lineNum;
+  const int _column;
 };
 
-class TreeStatement : Tree{
+class Tokenizer{
 public:
-  virtual void print(int const indent=0) const{
-    std::cout << "[Tree] " << std::string(indent, ' ') << "TreeStatement" << std::endl;
-  }
-private:
-};
-
-class TreeStatementSequence : TreeStatement{
-public:
-  virtual void print(int const indent=0) const {
-    std::cout << "[Tree] " << std::string(indent, ' ') << "TreeStatementSequence" << std::endl;
-    for (auto s : _sequence) {
-      s->print(indent+2);
-    }
-  }
-private:
-  std::vector<TreeStatement*> _sequence;
-};
-
-class TreeFactory{
-public:
-  static Tree* makeSequence(
-    std::vector<Token> const &tokens,
-    int const from,
-    int const to
-  ){
-    int start = from;
-    TreeStatementSequence* tree = new TreeStatementSequence();
-    /*
-    while(start<to){
-      if(to-start<2){
-        delete tree;
-        return NULL;
-      }
-
-      switch (tokens[start].type()) {
-        case Token::Type::Name:{
-          switch (tokens[from+1].type()) {
-            case Token::Type::BracketOpen:{
-              const int bracketEnd = findMatchingBracket(tokens,1,to);
-              if(bracketEnd==to){
-                delete tree;
-                return NULL;
-              }
-
-              children.push_back(Tree(tokens,2,bracketEnd));
-              break;
-            }
-            case Token::Type::Assign:{
-              type=Type::Assign;
-              break;
-            }
-          }
-          break;
-        }
-        default:{
-          delete tree;
-          return NULL;
-          break;
-        }
-
-
-    }
-    */
-    return tree;
-  }
-
-  int findMatchingBracket(
-    std::vector<Token> const &tokens,
-    int const from,
-    int const to
-  )
-  {
-    int counter = 0;
-    for(int i = from; i < to; ++i) {
-      switch (tokens[i].type()) {
-        case Token::Type::BracketOpen:
-          counter++;
-          break;
-        case Token::Type::BracketClose:
-          if (counter==1) {
-            return i;
-          }
-          counter--;
-          break;
-        default:
-          break;
-      }
-    }
-    return to;//failed.
-  }
-private:
-};
-
-class CodeParser{
-public:
-  CodeParser(std::string fileName){
-    std::cout << "[CodeParser] init from file: " << fileName << std::endl;
+  Tokenizer(std::string fileName):_file(fileName){
+    std::cout << "[Tokenizer] init from file: " << fileName << std::endl;
     std::ifstream file(fileName);
     codeLines.resize(0);
     std::string line;
@@ -149,45 +88,49 @@ public:
     }
   }
   void tokenize(){
-    tokens.resize(0);
+    _tokens.resize(0);
     tokenErrors.resize(0);
     int i=0;
     for(auto const& line: codeLines) {
-      std::pair<std::vector<Token>,std::string> res = tokenize(line);
-      std::vector<Token> tVec = res.first;
+      std::pair<std::vector<Token*>,std::string> res = tokenize(line,i);
+      std::vector<Token*> tVec = res.first;
       std::string text = res.second;
       if (text!="") {
         std::string error = std::to_string(i)+":"+text;
         tokenErrors.push_back(error);
         std::cout << "[tokenize] [Error] " << error << std::endl;
       }
-      tokens.reserve(tokens.size() + tVec.size());
-      tokens.insert(tokens.end(),tVec.begin(),tVec.end());
-      tokens.push_back(Token("",Token::Type::NewLine));
+      _tokens.reserve(_tokens.size() + tVec.size());
+      _tokens.insert(_tokens.end(),tVec.begin(),tVec.end());
       i++;
     }
   }
 
-  std::pair<std::vector<Token>,std::string> tokenize(std::string const line){
+  std::pair<std::vector<Token*>,std::string> tokenize(std::string const &line, int const lineNum){
     std::string text = line;
+
+    bool lineHasEndSeparator = true;
+    if(text[text.size()-1]=='\\'){
+        lineHasEndSeparator = false;
+        text = text.substr(0,text.size()-1);
+    }
 
     std::vector<std::pair<Token::Type,std::regex>> reList {
       {Token::Type::Space, std::regex("^(\\s+)(.*)")},
       {Token::Type::Comment, std::regex("^(#)(.*)")},
       {Token::Type::Name, std::regex("^([a-zA-Z][\\w]*)(.*)")},
-      {Token::Type::BracketOpen, std::regex("^(\\()(.*)")},
-      {Token::Type::BracketClose, std::regex("^(\\))(.*)")},
+      {Token::Type::BracketOpen, std::regex("^(\\(|\\[|\\{)(.*)")},
+      {Token::Type::BracketClose, std::regex("^(\\)|\\]|\\})(.*)")},
       {Token::Type::String, std::regex("^\"(.*)\"(.*)")},
       {Token::Type::Float, std::regex("^(\\d+\\.\\d*)(.*)")},
       {Token::Type::Integer, std::regex("^(\\d+)(.*)")},
       {Token::Type::Assign, std::regex("^(=)(.*)")},
-      {Token::Type::Minus, std::regex("^(-)(.*)")},
-      {Token::Type::Plus, std::regex("^(\\+)(.*)")},
+      {Token::Type::BinaryOperator, std::regex("^(-|\\+)(.*)")},
       {Token::Type::Comma, std::regex("^(,)(.*)")},
       {Token::Type::Dot, std::regex("^(\\.)(.*)")},
     };
 
-    std::vector<Token> tVec;
+    std::vector<Token*> tVec;
     std::smatch m;
 
     bool someMatch;
@@ -195,46 +138,133 @@ public:
       someMatch = false;
 
       for(auto const& re: reList){
+        int parsePos = line.size()-text.size()-(lineHasEndSeparator?0:1);
         if (std::regex_search(text,m,re.second)){
           someMatch = true;
           std::string t = m[1];
           text = m[2];
           if(re.first==Token::Type::Space){break;}
           if(re.first==Token::Type::Comment){return std::make_pair(tVec,"");}
-          tVec.push_back(Token(t,re.first));
+          tVec.push_back(new Token(t,re.first,_file,line,lineNum,parsePos));
           break;// restart for
         }
       }
     } while(someMatch);
+
+    if(lineHasEndSeparator){
+      tVec.push_back(new Token("",Token::Type::Sequencer,_file,line,lineNum,line.size()));
+    }
 
     return std::make_pair(tVec,text);
   }
 
   void printTokens() const {
     int i=0;
-    for(auto const& token: tokens) {
-      std::cout << "[printTokens] "<< i << ": " << token.toString() << std::endl;
+    for(const Token* token: _tokens) {
+      token->printContext();
+      //std::cout << "[printTokens] "<< i << ": " << token->typeString() << ": "<< token->toString() << std::endl;
       i++;
     }
   }
 
-  void makeTree(){
-    tree = TreeFactory::makeSequence(tokens,0,tokens.size());
-  }
-
-  void printTree(){
-    if(tree==NULL){
-      std::cout << "[printTree] no tree" << std::endl;
-    }else{
-      std::cout << "[printTree]" << std::endl;
-      tree->print();
-    }
-  }
+  const std::vector<Token*> tokens(){return _tokens;}
 private:
   std::vector<std::string> codeLines;
-  std::vector<Token> tokens;
+  std::vector<Token*> _tokens;
   std::vector<std::string> tokenErrors;
-  Tree* tree = NULL;
+  const std::string _file;
+};
+
+class TokenTree{
+public:
+  TokenTree(Token* const token)
+  :_token(token),_isTerminal(true){}
+  TokenTree(std::vector<Token*> const &tokens)
+  :_token(NULL),_isTerminal(false){
+    _children.resize(0);
+    _children.reserve(tokens.size());
+    for (size_t i = 0; i < tokens.size(); i++) {
+      _children.push_back(new TokenTree(tokens[i]));
+    }
+  }
+  TokenTree(std::vector<TokenTree*> const &children)
+  :_token(NULL),_isTerminal(false),_children(children){}
+
+  bool process(){
+    if (_children.size()<=1) {return true;}
+
+    // bracket scan:
+    std::stack<std::vector<TokenTree*>> childrenStack;
+    std::stack<TokenTree*> openTokenStack;
+    childrenStack.push(std::vector<TokenTree*>());
+
+    for (size_t i = 0; i < _children.size(); i++) {
+      TokenTree* t = _children[i];
+      if (t->token() and t->token()->type()==Token::Type::BracketOpen) {
+        std::cout << "open " << t->token()->toString() << std::endl;
+        childrenStack.push(std::vector<TokenTree*>());
+        openTokenStack.push(t);
+      }else if (t->token() and t->token()->type()==Token::Type::BracketClose) {
+        std::cout << "close " << t->token()->toString() << std::endl;
+        if (openTokenStack.empty()) {
+          std::cout << "[TokenTree][process][Error] too many close brackets." << std::endl;
+          t->token()->printContext();
+          return false;
+        }
+        TokenTree* openMatch = openTokenStack.top();
+        openTokenStack.pop();
+        if (openMatch->token()->findCloseBracket()==t->token()->toString()) {
+          TokenTree* innerNode = new TokenTree(childrenStack.top());
+          childrenStack.pop();
+          innerNode->process();
+          TokenTree* outerNode = new TokenTree(std::vector<TokenTree*>{
+            openMatch,innerNode,t
+          });
+          childrenStack.top().push_back(outerNode);
+        }else{
+          std::cout << "[TokenTree][process][Error] Bracket mismatch." << std::endl;
+          std::cout << "[TokenTree][process][Error] opened: " << openMatch->token()->toString() << std::endl;
+          openMatch->token()->printContext();
+          std::cout << "[TokenTree][process][Error] close expect: " << openMatch->token()->findCloseBracket() << std::endl;
+          std::cout << "[TokenTree][process][Error] close given: " << t->token()->toString() << std::endl;
+          t->token()->printContext();
+          return false;
+        }
+      }else{
+        std::cout << "o" << std::endl;
+        childrenStack.top().push_back(t);
+      }
+    }
+
+    if (not openTokenStack.empty()) {
+      std::cout << "[TokenTree][process][Error] Finished with opened brackets." << std::endl;
+      while(not openTokenStack.empty()){
+        TokenTree* openMatch = openTokenStack.top();
+        openTokenStack.pop();
+        openMatch->token()->printContext();
+      }
+      return false;
+    }
+
+    _children = childrenStack.top();
+
+    return true;
+  }
+
+  void print(int const indent=0){
+    if (_isTerminal) {
+      std::cout << "[TokenTree] " << std::string(indent,' ') << _token->toString() << ": " << _token->typeString() << std::endl;
+    } else {
+      for(auto const& tree: _children){
+        tree->print(indent+4);
+      }
+    }
+  }
+  const Token* token(){return _token;};
+private:
+  bool const _isTerminal;
+  Token* const  _token;//NULL if not terminal.
+  std::vector<TokenTree*> _children;
 };
 
 int main(int argc, char** argv)
@@ -254,12 +284,16 @@ int main(int argc, char** argv)
     std::cout << "[config] read from: " << inFileName << std::endl;
     std::cout << "[config] write to: " << outFileName << std::endl;
 
-    CodeParser parser(inFileName);
-    parser.printLines();
-    parser.tokenize();
-    parser.printTokens();
-    parser.makeTree();
-    parser.printTree();
+    Tokenizer tokenizer(inFileName);
+    tokenizer.printLines();
+    tokenizer.tokenize();
+    tokenizer.printTokens();
+
+    TokenTree* tree = new TokenTree(tokenizer.tokens());
+    tree->print();
+    if (tree->process()) {
+      tree->print();
+    }
   }
 
   std::cout << "[fin]" << std::endl;

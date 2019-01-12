@@ -1,8 +1,8 @@
-print("hello") # some comment here
-variable = 12345 + 56789 - 256.7689
-print(variable)
-print(
-  variable.str(),
-  "hello world",
-  1.234,
-)
+print\
+"hello"
+l = [1,2,3,4,5]
+print l
+map l (+ 1)
+print l
+
+(()()()()(((hello(())))))
