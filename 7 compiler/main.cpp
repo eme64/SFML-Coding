@@ -13,10 +13,15 @@ public:
     Name,
     BracketOpen,BracketClose,
     String,Float,Integer,
-    Assign,BinaryOperator,Comma,Dot,
+    Assign,Comma,Dot,
+    BinaryOperator,
   };
   const char* typeString() const {
-    switch (_type) {
+    typeString(_type);
+  }
+
+  static const char* typeString(Token::Type const type) {
+    switch (type) {
       case Type::None: return "None";
       case Type::Space: return "Space";
       case Type::Sequencer: return "Sequencer";
@@ -128,6 +133,7 @@ public:
       {Token::Type::BinaryOperator, std::regex("^(-|\\+)(.*)")},
       {Token::Type::Comma, std::regex("^(,)(.*)")},
       {Token::Type::Dot, std::regex("^(\\.)(.*)")},
+      {Token::Type::Sequencer, std::regex("^(;)(.*)")},
     };
 
     std::vector<Token*> tVec;
@@ -190,10 +196,31 @@ public:
   TokenTree(std::vector<TokenTree*> const &children)
   :_token(NULL),_isTerminal(false),_children(children){}
 
-  bool process(){
-    if (_children.size()<=1) {return true;}
+  bool process(int const step=0) {
+    if (step>2) {return true;}
+    if (_children.size()==0) {return true;}
+    //std::cout << "[TokenTree][processGo] pre "<< step << std::endl;
+    //print(0);
+    for (TokenTree* const t:_children) {
+      bool res = t->process(step+1);
+      if (not res) {return false;}
+    }
+    bool res = processStep(step);
+    if (not res) {return false;}
+    //std::cout << "[TokenTree][processGo] post "<< step << std::endl;
+    //print(0);
+    return process(step+1);
+  }
 
-    // bracket scan:
+  bool processStep(int const step){
+    switch (step) {
+      case 0: return processBrackets();
+      case 1: return processBinaryOperator(Token::Type::Sequencer);
+      case 2: return processBinaryOperator(Token::Type::Assign);
+    }
+  }
+
+  bool processBrackets(){
     std::stack<std::vector<TokenTree*>> childrenStack;
     std::stack<TokenTree*> openTokenStack;
     childrenStack.push(std::vector<TokenTree*>());
@@ -201,11 +228,11 @@ public:
     for (size_t i = 0; i < _children.size(); i++) {
       TokenTree* t = _children[i];
       if (t->token() and t->token()->type()==Token::Type::BracketOpen) {
-        std::cout << "open " << t->token()->toString() << std::endl;
+        //std::cout << "open " << t->token()->toString() << std::endl;
         childrenStack.push(std::vector<TokenTree*>());
         openTokenStack.push(t);
       }else if (t->token() and t->token()->type()==Token::Type::BracketClose) {
-        std::cout << "close " << t->token()->toString() << std::endl;
+        //std::cout << "close " << t->token()->toString() << std::endl;
         if (openTokenStack.empty()) {
           std::cout << "[TokenTree][process][Error] too many close brackets." << std::endl;
           t->token()->printContext();
@@ -231,7 +258,6 @@ public:
           return false;
         }
       }else{
-        std::cout << "o" << std::endl;
         childrenStack.top().push_back(t);
       }
     }
@@ -245,8 +271,48 @@ public:
       }
       return false;
     }
-
     _children = childrenStack.top();
+    return true;
+  }
+
+  bool processBinaryOperator(Token::Type const type){
+    std::stack<std::vector<TokenTree*>> childrenStack;
+    std::stack<TokenTree*> sequencerTokenStack;
+    childrenStack.push(std::vector<TokenTree*>());
+    for (size_t i = 0; i < _children.size(); i++) {
+      TokenTree* t = _children[i];
+      if (t->token() and t->token()->type()==type) {
+        //std::cout << "[TokenTree][process] Sequencer" << std::endl;
+        childrenStack.push(std::vector<TokenTree*>());
+        sequencerTokenStack.push(t);
+      }else{
+        //std::cout << "[TokenTree][process] non-Sequencer" << std::endl;
+        childrenStack.top().push_back(t);
+      }
+    }
+    if (sequencerTokenStack.empty()) {
+      std::cout << "[TokenTree][process][" << Token::typeString(type) << "] NO SEQ" << std::endl;
+    }else{
+      std::cout << "[TokenTree][process][" << Token::typeString(type) << "] SEQ: " << sequencerTokenStack.size() << std::endl;
+      TokenTree* innerNode = new TokenTree(childrenStack.top());
+      childrenStack.pop();
+
+      while (not sequencerTokenStack.empty()) {
+        TokenTree* sequencer = sequencerTokenStack.top();
+        sequencerTokenStack.pop();
+        TokenTree* secondNode = new TokenTree(childrenStack.top());
+        childrenStack.pop();
+        if (sequencerTokenStack.empty()) {
+          _children = std::vector<TokenTree*>{
+            secondNode,sequencer,innerNode
+          };
+        }else{
+          innerNode = new TokenTree(std::vector<TokenTree*>{
+            secondNode,sequencer,innerNode
+          });
+        }
+      }
+    }
 
     return true;
   }

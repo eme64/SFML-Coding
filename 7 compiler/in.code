@@ -1,8 +1,1 @@
-print\
-"hello"
-l = [1,2,3,4,5]
-print l
-map l (+ 1)
-print l
-
-(()()()()(((hello(())))))
+(a a=b b);(c c=d d;e e=f f)
