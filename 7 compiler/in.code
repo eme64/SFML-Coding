@@ -1,1 +1,18 @@
-(a a=b b);(c c=d d;e e=f f)
+(a*a=b-a+b*c/d);(c c=d d;e e=f f)
+
+
+a > b == c
+b < c == c
+c >= d == c
+d <= e == c != c
+a && b || c
+
+def a = b and c
+
+hello = (+) a b
+
+hello = (+) a b
+
+hello = (+) a b
+
+hello = (+) a b

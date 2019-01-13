@@ -14,7 +14,9 @@ public:
     BracketOpen,BracketClose,
     String,Float,Integer,
     Assign,Comma,Dot,
-    BinaryOperator,
+    BinOpMult,BinOpAdd,BinOpRelation,BinOpEqual,
+    BinOpAnd,BinOpOr,
+    KeyWord,
   };
   const char* typeString() const {
     typeString(_type);
@@ -33,9 +35,15 @@ public:
       case Type::Float: return "Float";
       case Type::Integer: return "Integer";
       case Type::Assign: return "Assign";
-      case Type::BinaryOperator: return "BinaryOperator";
+      case Type::BinOpMult: return "BinOpMult";
+      case Type::BinOpAdd: return "BinOpAdd";
+      case Type::BinOpRelation: return "BinOpRelation";
+      case Type::BinOpEqual: return "BinOpEqual";
+      case Type::BinOpAnd: return "BinOpAnd";
+      case Type::BinOpOr: return "BinOpOr";
       case Type::Comma: return "Comma";
       case Type::Dot: return "Dot";
+      case Type::KeyWord: return "KeyWord";
       default: return "Unknown";
     }
   }
@@ -129,11 +137,23 @@ public:
       {Token::Type::String, std::regex("^\"(.*)\"(.*)")},
       {Token::Type::Float, std::regex("^(\\d+\\.\\d*)(.*)")},
       {Token::Type::Integer, std::regex("^(\\d+)(.*)")},
+      {Token::Type::BinOpEqual, std::regex("^(==|!=)(.*)")},
       {Token::Type::Assign, std::regex("^(=)(.*)")},
-      {Token::Type::BinaryOperator, std::regex("^(-|\\+)(.*)")},
+      {Token::Type::BinOpMult, std::regex("^(\\*|/)(.*)")},
+      {Token::Type::BinOpAdd, std::regex("^(-|\\+)(.*)")},
+      {Token::Type::BinOpRelation, std::regex("^(<=|>=)(.*)")},
+      {Token::Type::BinOpRelation, std::regex("^(<|>)(.*)")},
+      {Token::Type::BinOpAnd, std::regex("^(&&)(.*)")},
+      {Token::Type::BinOpOr, std::regex("^(\\|\\|)(.*)")},
       {Token::Type::Comma, std::regex("^(,)(.*)")},
       {Token::Type::Dot, std::regex("^(\\.)(.*)")},
       {Token::Type::Sequencer, std::regex("^(;)(.*)")},
+    };
+
+    std::vector<std::pair<std::string,Token::Type>> keyWordList {
+      {"and", Token::Type::BinOpAdd},
+      {"or", Token::Type::BinOpAdd},
+      {"def", Token::Type::KeyWord},
     };
 
     std::vector<Token*> tVec;
@@ -151,6 +171,17 @@ public:
           text = m[2];
           if(re.first==Token::Type::Space){break;}
           if(re.first==Token::Type::Comment){return std::make_pair(tVec,"");}
+          if(re.first==Token::Type::Name){
+            bool keyWordFound=false;
+            for(auto const& kw: keyWordList){
+              if (kw.first==t) {
+                tVec.push_back(new Token(t,kw.second,_file,line,lineNum,parsePos));
+                keyWordFound = true;
+                break;// inner for
+              }
+            }
+            if (keyWordFound) {break;}// restart for
+          }
           tVec.push_back(new Token(t,re.first,_file,line,lineNum,parsePos));
           break;// restart for
         }
@@ -197,18 +228,20 @@ public:
   :_token(NULL),_isTerminal(false),_children(children){}
 
   bool process(int const step=0) {
-    if (step>2) {return true;}
+    if (step>8) {return true;}
+    //std::cout << "[TokenTree][processGo] "<< step << std::endl;
     if (_children.size()==0) {return true;}
     //std::cout << "[TokenTree][processGo] pre "<< step << std::endl;
     //print(0);
     for (TokenTree* const t:_children) {
-      bool res = t->process(step+1);
+      bool res = t->process(step);
       if (not res) {return false;}
     }
     bool res = processStep(step);
     if (not res) {return false;}
     //std::cout << "[TokenTree][processGo] post "<< step << std::endl;
     //print(0);
+    //std::cout << "[TokenTree][processGo] post "<< step << std::endl;
     return process(step+1);
   }
 
@@ -216,7 +249,13 @@ public:
     switch (step) {
       case 0: return processBrackets();
       case 1: return processBinaryOperator(Token::Type::Sequencer);
-      case 2: return processBinaryOperator(Token::Type::Assign);
+      case 2: return processBinaryOperator(Token::Type::BinOpMult);
+      case 3: return processBinaryOperator(Token::Type::BinOpAdd);
+      case 4: return processBinaryOperator(Token::Type::BinOpRelation);
+      case 5: return processBinaryOperator(Token::Type::BinOpEqual);
+      case 6: return processBinaryOperator(Token::Type::BinOpAnd);
+      case 7: return processBinaryOperator(Token::Type::BinOpOr);
+      case 8: return processBinaryOperator(Token::Type::Assign);
     }
   }
 
@@ -276,6 +315,17 @@ public:
   }
 
   bool processBinaryOperator(Token::Type const type){
+    bool hasType = false;
+    for (size_t i = 0; i < _children.size(); i++) {
+      TokenTree* t = _children[i];
+      if (t->token() and t->token()->type()==type) {
+        hasType = true;
+        break;
+      }
+    }
+    if(not hasType){return true;}
+
+
     std::stack<std::vector<TokenTree*>> childrenStack;
     std::stack<TokenTree*> sequencerTokenStack;
     childrenStack.push(std::vector<TokenTree*>());
@@ -291,16 +341,26 @@ public:
       }
     }
     if (sequencerTokenStack.empty()) {
-      std::cout << "[TokenTree][process][" << Token::typeString(type) << "] NO SEQ" << std::endl;
+      //std::cout << "[TokenTree][process][" << Token::typeString(type) << "] NO SEQ" << std::endl;
     }else{
-      std::cout << "[TokenTree][process][" << Token::typeString(type) << "] SEQ: " << sequencerTokenStack.size() << std::endl;
-      TokenTree* innerNode = new TokenTree(childrenStack.top());
+      //std::cout << "[TokenTree][process][" << Token::typeString(type) << "] SEQ: " << sequencerTokenStack.size() << std::endl;
+      TokenTree* innerNode;
+      if (childrenStack.top().size()==1) {
+        innerNode = childrenStack.top()[0];
+      }else{
+        innerNode = new TokenTree(childrenStack.top());
+      }
       childrenStack.pop();
 
       while (not sequencerTokenStack.empty()) {
         TokenTree* sequencer = sequencerTokenStack.top();
         sequencerTokenStack.pop();
-        TokenTree* secondNode = new TokenTree(childrenStack.top());
+        TokenTree* secondNode;
+        if (childrenStack.top().size()==1) {
+          secondNode = childrenStack.top()[0];
+        }else{
+          secondNode = new TokenTree(childrenStack.top());
+        }
         childrenStack.pop();
         if (sequencerTokenStack.empty()) {
           _children = std::vector<TokenTree*>{
@@ -318,9 +378,13 @@ public:
   }
 
   void print(int const indent=0){
+    if (indent==0) {
+      std::cout << "[TokenTree] ------- print:" << std::endl;
+    }
     if (_isTerminal) {
       std::cout << "[TokenTree] " << std::string(indent,' ') << _token->toString() << ": " << _token->typeString() << std::endl;
     } else {
+      std::cout << "[TokenTree] " << std::string(indent,' ') << "Node: " << _children.size() << std::endl;
       for(auto const& tree: _children){
         tree->print(indent+4);
       }
