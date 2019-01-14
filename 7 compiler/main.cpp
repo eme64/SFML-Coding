@@ -3,6 +3,8 @@
 #include <vector>
 #include <regex>
 
+// left vs right binding binary tokens.
+
 class Token{
 public:
   enum Type {
@@ -227,35 +229,34 @@ public:
   TokenTree(std::vector<TokenTree*> const &children)
   :_token(NULL),_isTerminal(false),_children(children){}
 
-  bool process(int const step=0) {
-    if (step>8) {return true;}
-    //std::cout << "[TokenTree][processGo] "<< step << std::endl;
-    if (_children.size()==0) {return true;}
-    //std::cout << "[TokenTree][processGo] pre "<< step << std::endl;
-    //print(0);
-    for (TokenTree* const t:_children) {
-      bool res = t->process(step);
+  bool process() {
+    for (size_t step = 0; step < 9; step++) {
+      bool res = processStep(step);
       if (not res) {return false;}
     }
-    bool res = processStep(step);
-    if (not res) {return false;}
-    //std::cout << "[TokenTree][processGo] post "<< step << std::endl;
-    //print(0);
-    //std::cout << "[TokenTree][processGo] post "<< step << std::endl;
-    return process(step+1);
+    return true;
   }
 
-  bool processStep(int const step){
+  bool processStep(int const step) {
+    if (_children.size()==0) {return true;}
+    for (TokenTree* const t:_children) {
+      bool res = t->processStep(step);
+      if (not res) {return false;}
+    }
+    return processStepExec(step);
+  }
+
+  bool processStepExec(int const step){
     switch (step) {
       case 0: return processBrackets();
       case 1: return processBinaryOperator(Token::Type::Sequencer);
-      case 2: return processBinaryOperator(Token::Type::BinOpMult);
-      case 3: return processBinaryOperator(Token::Type::BinOpAdd);
-      case 4: return processBinaryOperator(Token::Type::BinOpRelation);
+      case 2: return processBinaryOperator(Token::Type::Assign);
+      case 3: return processBinaryOperator(Token::Type::BinOpOr);
+      case 4: return processBinaryOperator(Token::Type::BinOpAnd);
       case 5: return processBinaryOperator(Token::Type::BinOpEqual);
-      case 6: return processBinaryOperator(Token::Type::BinOpAnd);
-      case 7: return processBinaryOperator(Token::Type::BinOpOr);
-      case 8: return processBinaryOperator(Token::Type::Assign);
+      case 6: return processBinaryOperator(Token::Type::BinOpRelation);
+      case 7: return processBinaryOperator(Token::Type::BinOpAdd);
+      case 8: return processBinaryOperator(Token::Type::BinOpMult);
     }
   }
 
@@ -390,11 +391,271 @@ public:
       }
     }
   }
-  const Token* token(){return _token;};
+  const Token* token() const {return _token;};
+  const bool isTerminal() const {return _isTerminal;};
+  const std::vector<TokenTree*>& children() const {return _children;}
 private:
   bool const _isTerminal;
   Token* const  _token;//NULL if not terminal.
   std::vector<TokenTree*> _children;
+};
+
+class AST{
+public:
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] ------- print:" << std::endl;
+  }
+private:
+};
+
+
+
+class ASTNone : public AST{
+public:
+  ASTNone(){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "None."<< std::endl;
+  }
+private:
+};
+
+class ASTSequencer : public AST{
+public:
+  ASTSequencer(const Token* token):_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "Sequencer: " << _token->toString() << std::endl;
+  }
+  const Token* token() const {return _token;}
+private:
+  const Token* _token;
+};
+
+class ASTAssign : public AST{
+public:
+  ASTAssign(const Token* token):_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "Assign: " << _token->toString() << std::endl;
+  }
+  const Token* token() const {return _token;}
+private:
+  const Token* _token;
+};
+
+class ASTExpression : public AST{
+public:
+private:
+};
+
+class ASTExpressionValue : public ASTExpression{
+public:
+private:
+};
+
+class ASTExpressionValueVariable : public ASTExpressionValue{
+public:
+  ASTExpressionValueVariable(const Token* token):_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionValueVariable: " << _token->toString() << std::endl;
+  }
+private:
+  const Token* _token;
+};
+
+class ASTExpressionValueConst : public ASTExpressionValue{
+public:
+  ASTExpressionValueConst(const Token* token):_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionValueConst: " << _token->toString() << std::endl;
+  }
+private:
+  const Token* _token;
+};
+
+class ASTExpressionBinOp : public ASTExpression{
+public:
+  ASTExpressionBinOp(const Token* token):_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionBinOp: " << _token->toString() << std::endl;
+  }
+private:
+  const Token* _token;
+};
+
+class ASTExpressionAssign : public ASTExpression{
+public:
+  ASTExpressionAssign(
+    const Token* token,
+    const ASTExpression* left,
+    const ASTExpression* right
+  ):_token(token),_left(left),_right(right){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionAssign: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "left:" << std::endl;
+    _left->print(indent+3);
+    std::cout << "[AST] " << std::string(indent,' ') << "right:" << std::endl;
+    _right->print(indent+3);
+  }
+private:
+  const Token* _token;
+  const ASTExpression* _left;
+  const ASTExpression* _right;
+};
+
+class ASTExpressionApply : public ASTExpression{
+public:
+  ASTExpressionApply(
+    const ASTExpression* function,
+    const ASTExpression* argument
+  ):_function(function),_argument(argument){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "ASTExpressionApply: " << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "function:" << std::endl;
+    _function->print(indent+3);
+    std::cout << "[AST] " << std::string(indent,' ') << "argument:" << std::endl;
+    _argument->print(indent+3);
+  }
+private:
+  const ASTExpression* _function;
+  const ASTExpression* _argument;
+};
+
+class ASTExpressionSequence : public ASTExpression{
+public:
+  ASTExpressionSequence(
+    const Token* token,
+    const ASTExpression* left,
+    const ASTExpression* right
+  ):_token(token),_left(left),_right(right){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionSequence: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "left:" << std::endl;
+    _left->print(indent+3);
+    std::cout << "[AST] " << std::string(indent,' ') << "right:" << std::endl;
+    _right->print(indent+3);
+  }
+private:
+  const Token* _token;
+  const ASTExpression* _left;
+  const ASTExpression* _right;
+};
+
+class ASTFactory{
+public:
+  static const AST* map(TokenTree* const tokenTree){
+    if (tokenTree->isTerminal()) {
+      if (not tokenTree->token()) {
+        std::cout << "[ASTFactory] Error: terminal TokenTree has no token." << std::endl;
+        return NULL;
+      } else {
+        switch (tokenTree->token()->type()) {
+          case Token::Type::BinOpMult: return new ASTExpressionBinOp(tokenTree->token());
+          case Token::Type::BinOpAdd: return new ASTExpressionBinOp(tokenTree->token());
+          case Token::Type::Name: return new ASTExpressionValueVariable(tokenTree->token());
+          case Token::Type::Integer: return new ASTExpressionValueConst(tokenTree->token());
+          case Token::Type::Float: return new ASTExpressionValueConst(tokenTree->token());
+          case Token::Type::String: return new ASTExpressionValueConst(tokenTree->token());
+          case Token::Type::Sequencer: return new ASTSequencer(tokenTree->token());
+          case Token::Type::Assign: return new ASTAssign(tokenTree->token());
+          default: {
+            std::cout << "[ASTFactory] Error: did not know what to with terminal token: " << std::endl;
+            tokenTree->token()->printContext();
+          }
+        }
+      }
+    }else{
+      // --------- transform
+      const std::vector<TokenTree*> &children = tokenTree->children();
+      std::vector<const AST*> transformedChildren;
+      transformedChildren.reserve(children.size());
+      for (size_t i = 0; i < children.size(); i++) {
+        const AST* ast = ASTFactory::map(children[i]);
+        if (not ast) {return NULL;}
+        transformedChildren.push_back(ast);
+      }
+      // --------- find match
+      if (transformedChildren.size()==0) {
+        return new ASTNone();
+      }
+      if (transformedChildren.size()==3) {
+        const AST* first  = transformedChildren[0];
+        const AST* second = transformedChildren[1];
+        const AST* third  = transformedChildren[2];
+        if (const ASTExpressionBinOp* secondBinOp = dynamic_cast<const ASTExpressionBinOp*>(second)) {
+          if (const ASTExpression* firstExpression = dynamic_cast<const ASTExpression*>(first)) {
+            const ASTExpressionApply* inner = new ASTExpressionApply(secondBinOp,firstExpression);
+            if (const ASTExpression* thirdExpression = dynamic_cast<const ASTExpression*>(third)) {
+              return new ASTExpressionApply(inner,thirdExpression);
+            }else{
+              std::cout << "[ASTFactory] Error: could not apply BinOp (right):" << std::endl;
+              std::cout << "[ASTFactory] BinOp:" << std::endl;
+              first->print();
+              std::cout << "[ASTFactory] right:" << std::endl;
+              third->print();
+              return NULL;
+            }
+          }else{
+            std::cout << "[ASTFactory] Error: could not apply BinOp (left):" << std::endl;
+            std::cout << "[ASTFactory] BinOp:" << std::endl;
+            secondBinOp->print();
+            std::cout << "[ASTFactory] left:" << std::endl;
+            first->print();
+            std::cout << "[ASTFactory] right:" << std::endl;
+            third->print();
+            return NULL;
+          }
+        }else if (const ASTAssign* secondAssign = dynamic_cast<const ASTAssign*>(second)) {
+          if (const ASTExpressionValueVariable* firstVariable = dynamic_cast<const ASTExpressionValueVariable*>(first)) {
+            if (const ASTExpression* thirdExpression = dynamic_cast<const ASTExpression*>(third)) {
+              return new ASTExpressionAssign(secondAssign->token(),firstVariable,thirdExpression);
+            }else{
+              std::cout << "[ASTFactory] Error: could not assign variable to non-expression (right):" << std::endl;
+              secondAssign->token()->printContext();
+              return NULL;
+            }
+          }else{
+            std::cout << "[ASTFactory] Error: could not assign to non-variable (left):" << std::endl;
+            secondAssign->token()->printContext();
+            return NULL;
+          }
+        }else if (const ASTSequencer* secondSequencer = dynamic_cast<const ASTSequencer*>(second)) {
+          const ASTExpression* firstExpression = dynamic_cast<const ASTExpression*>(first);
+          const ASTExpression* thirdExpression = dynamic_cast<const ASTExpression*>(third);
+          if (firstExpression and thirdExpression) {
+            return new ASTExpressionSequence(secondSequencer->token(),firstExpression,thirdExpression);
+          }else if (firstExpression) {
+            if(const ASTNone* thirdNone = dynamic_cast<const ASTNone*>(third)){
+              return firstExpression;
+            }else{
+              std::cout << "[ASTFactory] Error: sequencer non-expression (right):" << std::endl;
+              secondSequencer->token()->printContext();
+              return NULL;
+            }
+          }else if (thirdExpression) {
+            if(const ASTNone* firstNone = dynamic_cast<const ASTNone*>(first)){
+              return thirdExpression;
+            }else{
+              std::cout << "[ASTFactory] Error: sequencer non-expression (left):" << std::endl;
+              secondSequencer->token()->printContext();
+              return NULL;
+            }
+          }
+
+        }
+      }
+      // --------- no match
+      std::cout << "[ASTFactory] Error: Could not build parent node from:" << std::endl;
+      for (size_t i = 0; i < children.size(); i++) {
+        std::cout << "[ASTFactory] child " << i << std::endl;
+        if (transformedChildren[i]) {
+          transformedChildren[i]->print();
+        }else{
+          std::cout << "[ASTFactory] NULL" << std::endl;
+        }
+      }
+      return NULL;
+    }
+  }
+private:
 };
 
 int main(int argc, char** argv)
@@ -423,6 +684,10 @@ int main(int argc, char** argv)
     tree->print();
     if (tree->process()) {
       tree->print();
+      const AST* ast = ASTFactory::map(tree);
+      if (ast) {
+        ast->print();
+      }
     }
   }
 
