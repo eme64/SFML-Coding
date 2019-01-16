@@ -3,7 +3,7 @@
 #include <vector>
 #include <regex>
 
-// left vs right binding binary tokens.
+// fix bracket use.
 
 class Token{
 public:
@@ -249,14 +249,14 @@ public:
   bool processStepExec(int const step){
     switch (step) {
       case 0: return processBrackets();
-      case 1: return processBinaryOperator(Token::Type::Sequencer);
-      case 2: return processBinaryOperator(Token::Type::Assign);
-      case 3: return processBinaryOperator(Token::Type::BinOpOr);
-      case 4: return processBinaryOperator(Token::Type::BinOpAnd);
-      case 5: return processBinaryOperator(Token::Type::BinOpEqual);
-      case 6: return processBinaryOperator(Token::Type::BinOpRelation);
-      case 7: return processBinaryOperator(Token::Type::BinOpAdd);
-      case 8: return processBinaryOperator(Token::Type::BinOpMult);
+      case 1: return processBinaryOperator(Token::Type::Sequencer,false);
+      case 2: return processBinaryOperator(Token::Type::Assign,false);
+      case 3: return processBinaryOperator(Token::Type::BinOpOr,true);
+      case 4: return processBinaryOperator(Token::Type::BinOpAnd,true);
+      case 5: return processBinaryOperator(Token::Type::BinOpEqual,true);
+      case 6: return processBinaryOperator(Token::Type::BinOpRelation,true);
+      case 7: return processBinaryOperator(Token::Type::BinOpAdd,true);
+      case 8: return processBinaryOperator(Token::Type::BinOpMult,true);
     }
   }
 
@@ -315,7 +315,7 @@ public:
     return true;
   }
 
-  bool processBinaryOperator(Token::Type const type){
+  bool processBinaryOperator(Token::Type const type, bool const leftToRight){
     bool hasType = false;
     for (size_t i = 0; i < _children.size(); i++) {
       TokenTree* t = _children[i];
@@ -345,6 +345,21 @@ public:
       //std::cout << "[TokenTree][process][" << Token::typeString(type) << "] NO SEQ" << std::endl;
     }else{
       //std::cout << "[TokenTree][process][" << Token::typeString(type) << "] SEQ: " << sequencerTokenStack.size() << std::endl;
+      if (leftToRight) {// reverse both stacks.
+        std::stack<std::vector<TokenTree*>> tmp_childrenStack;
+        std::stack<TokenTree*> tmp_sequencerTokenStack;
+        while (not sequencerTokenStack.empty()) {
+          tmp_sequencerTokenStack.push(sequencerTokenStack.top());
+          sequencerTokenStack.pop();
+        }
+        while (not childrenStack.empty()) {
+          tmp_childrenStack.push(childrenStack.top());
+          childrenStack.pop();
+        }
+        childrenStack.swap(tmp_childrenStack);
+        sequencerTokenStack.swap(tmp_sequencerTokenStack);
+      }
+
       TokenTree* innerNode;
       if (childrenStack.top().size()==1) {
         innerNode = childrenStack.top()[0];
@@ -364,13 +379,17 @@ public:
         }
         childrenStack.pop();
         if (sequencerTokenStack.empty()) {
-          _children = std::vector<TokenTree*>{
-            secondNode,sequencer,innerNode
-          };
+          if (leftToRight) {
+            _children = std::vector<TokenTree*>{innerNode,sequencer,secondNode};
+          } else {
+            _children = std::vector<TokenTree*>{secondNode,sequencer,innerNode};
+          }
         }else{
-          innerNode = new TokenTree(std::vector<TokenTree*>{
-            secondNode,sequencer,innerNode
-          });
+          if (leftToRight) {
+            innerNode = new TokenTree(std::vector<TokenTree*>{innerNode,sequencer,secondNode});
+          } else {
+            innerNode = new TokenTree(std::vector<TokenTree*>{secondNode,sequencer,innerNode});
+          }
         }
       }
     }
