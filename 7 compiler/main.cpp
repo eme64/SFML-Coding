@@ -156,6 +156,9 @@ public:
       {"and", Token::Type::BinOpAdd},
       {"or", Token::Type::BinOpAdd},
       {"def", Token::Type::KeyWord},
+      {"if", Token::Type::KeyWord},
+      {"elif", Token::Type::KeyWord},
+      {"else", Token::Type::KeyWord},
     };
 
     std::vector<Token*> tVec;
@@ -449,6 +452,28 @@ private:
   const Token* _token;
 };
 
+class ASTBracketOpen : public AST{
+public:
+  ASTBracketOpen(const Token* token):_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "BracketOpen: " << _token->toString() << std::endl;
+  }
+  const Token* token() const {return _token;}
+private:
+  const Token* _token;
+};
+
+class ASTBracketClose : public AST{
+public:
+  ASTBracketClose(const Token* token):_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "BracketClose: " << _token->toString() << std::endl;
+  }
+  const Token* token() const {return _token;}
+private:
+  const Token* _token;
+};
+
 class ASTAssign : public AST{
 public:
   ASTAssign(const Token* token):_token(token){}
@@ -456,6 +481,17 @@ public:
     std::cout << "[AST] " << std::string(indent,' ') << "Assign: " << _token->toString() << std::endl;
   }
   const Token* token() const {return _token;}
+private:
+  const Token* _token;
+};
+
+class ASTKeyWord : public AST{
+public:
+  ASTKeyWord(const Token* token):_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "KeyWord: " << _token->toString() << std::endl;
+  }
+  Token const* token() const {return _token;}
 private:
   const Token* _token;
 };
@@ -538,6 +574,37 @@ private:
   const ASTExpression* _argument;
 };
 
+class ASTExpressionIf : public ASTExpression{
+public:
+  ASTExpressionIf(
+    const ASTExpression* condition,
+    const ASTExpression* ifTrue,
+    const ASTExpression* ifFalse
+  ):_condition(condition),_ifTrue(ifTrue),_ifFalse(ifFalse){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionIf " << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "condition:" << std::endl;
+    _condition->print(indent+3);
+    std::cout << "[AST] " << std::string(indent,' ') << "ifTrue:" << std::endl;
+    _ifTrue->print(indent+3);
+    std::cout << "[AST] " << std::string(indent,' ') << "ifFalse:" << std::endl;
+    _ifFalse->print(indent+3);
+  }
+private:
+  const ASTExpression* _condition;
+  const ASTExpression* _ifTrue;
+  const ASTExpression* _ifFalse;
+};
+
+class ASTExpressionNone : public ASTExpression{
+public:
+  ASTExpressionNone(){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "None " << std::endl;
+  }
+private:
+};
+
 class ASTExpressionSequence : public ASTExpression{
 public:
   ASTExpressionSequence(
@@ -569,12 +636,19 @@ public:
         switch (tokenTree->token()->type()) {
           case Token::Type::BinOpMult: return new ASTExpressionBinOp(tokenTree->token());
           case Token::Type::BinOpAdd: return new ASTExpressionBinOp(tokenTree->token());
+          case Token::Type::BinOpEqual: return new ASTExpressionBinOp(tokenTree->token());
+          case Token::Type::BinOpRelation: return new ASTExpressionBinOp(tokenTree->token());
+          case Token::Type::BinOpAnd: return new ASTExpressionBinOp(tokenTree->token());
+          case Token::Type::BinOpOr: return new ASTExpressionBinOp(tokenTree->token());
           case Token::Type::Name: return new ASTExpressionValueVariable(tokenTree->token());
           case Token::Type::Integer: return new ASTExpressionValueConst(tokenTree->token());
           case Token::Type::Float: return new ASTExpressionValueConst(tokenTree->token());
           case Token::Type::String: return new ASTExpressionValueConst(tokenTree->token());
           case Token::Type::Sequencer: return new ASTSequencer(tokenTree->token());
           case Token::Type::Assign: return new ASTAssign(tokenTree->token());
+          case Token::Type::BracketOpen: return new ASTBracketOpen(tokenTree->token());
+          case Token::Type::BracketClose: return new ASTBracketClose(tokenTree->token());
+          case Token::Type::KeyWord: return new ASTKeyWord(tokenTree->token());
           default: {
             std::cout << "[ASTFactory] Error: did not know what to with terminal token: " << std::endl;
             tokenTree->token()->printContext();
@@ -595,8 +669,8 @@ public:
       if (transformedChildren.size()==0) {
         return new ASTNone();
       }
+      const AST* first  = transformedChildren[0];
       if (transformedChildren.size()==3) {
-        const AST* first  = transformedChildren[0];
         const AST* second = transformedChildren[1];
         const AST* third  = transformedChildren[2];
         if (const ASTExpressionBinOp* secondBinOp = dynamic_cast<const ASTExpressionBinOp*>(second)) {
@@ -658,9 +732,103 @@ public:
               return NULL;
             }
           }
-
+        }else if (const ASTBracketOpen* firstBracket = dynamic_cast<const ASTBracketOpen*>(first)) {
+          if (const ASTBracketClose* thirdBracket = dynamic_cast<const ASTBracketClose*>(third)) {
+              return second;
+          }
         }
       }
+      if (const ASTKeyWord* firstKeyWord = dynamic_cast<const ASTKeyWord*>(first)) {
+        std::string const firstString(firstKeyWord->token()->toString());
+        if (firstString == "if") {
+          std::vector<const ASTExpression*> conditions;
+          std::vector<const ASTExpression*> ifTrue;
+          ASTExpression const* ifFalse = NULL;
+          int i = 1;
+          bool expectCondition = true;//true: cond, ifTrue. false: ifFalse, end
+          Token const* lastKeyWord = firstKeyWord->token();
+          while (true) {
+            if (expectCondition) {
+              std::cout << "[ASTFactory] go: if/elif " << i << std::endl;
+              if (transformedChildren.size()<i+2) {
+                std::cout << "[ASTFactory] Error: if/elif: require condition and expression:" << std::endl;
+                lastKeyWord->printContext();
+                return NULL;
+              }
+              const ASTExpression* cond = dynamic_cast<const ASTExpression*>(transformedChildren[i]);
+              if (not cond) {
+                std::cout << "[ASTFactory] Error: if/elif: bad condition:" << std::endl;
+                lastKeyWord->printContext();
+                return NULL;
+              }
+              const ASTExpression* ifT = dynamic_cast<const ASTExpression*>(transformedChildren[i+1]);
+              if (not ifT) {
+                std::cout << "[ASTFactory] Error: if/elif: bad expression:" << std::endl;
+                lastKeyWord->printContext();
+                return NULL;
+              }
+              // success:
+              conditions.push_back(cond);
+              ifTrue.push_back(ifT);
+              if (transformedChildren.size()==i+2) {
+                // keef ifFalse=NULL
+                break;
+              }else{
+                bool elifElseSuccess=false;
+                if(const ASTKeyWord* nextKeyWord = dynamic_cast<const ASTKeyWord*>(transformedChildren[i+2])){
+                  std::string nextString = nextKeyWord->token()->toString();
+                  if (nextString=="elif") {
+                    elifElseSuccess = true;
+                    lastKeyWord = nextKeyWord->token();
+                  }else if (nextString=="else") {
+                    elifElseSuccess = true;
+                    expectCondition = false;
+                    lastKeyWord = nextKeyWord->token();
+                  }
+                  i+=3;
+                }
+                if (not elifElseSuccess) {
+                  std::cout << "[ASTFactory] Error: if/elif: failed to find next elif/else/end:" << std::endl;
+                  lastKeyWord->printContext();
+                  return NULL;
+                }
+              }
+            }else{// expect only one ifFalse expression:
+              std::cout << "[ASTFactory] go: else " << i << std::endl;
+              if (transformedChildren.size()<i+1) {
+                std::cout << "[ASTFactory] Error: else: expression:" << std::endl;
+                lastKeyWord->printContext();
+                return NULL;
+              }
+              if (transformedChildren.size()>i+1) {
+                std::cout << "[ASTFactory] Error: else: only require one expression after else:" << std::endl;
+                lastKeyWord->printContext();
+                return NULL;
+              }
+              const ASTExpression* ifF = dynamic_cast<const ASTExpression*>(transformedChildren[i]);
+              if (not ifF) {
+                std::cout << "[ASTFactory] Error: else: bad expression:" << std::endl;
+                lastKeyWord->printContext();
+                return NULL;
+              }
+              // success:
+              ifFalse = ifF;
+              break;
+            }
+          }
+          std::cout << "[ASTFactory] success: if/elif " << std::endl;
+          ASTExpression const* insideNode = ifFalse;
+          if (ifFalse==NULL) {
+            insideNode = new ASTExpressionNone();
+          }
+          for (int i = conditions.size()-1; i >= 0; i--) {
+            std::cout << "[ASTFactory] success: if/elif " << i << std::endl;
+            insideNode = new ASTExpressionIf(conditions[i], ifTrue[i], insideNode);
+          }
+          return insideNode;
+        }
+      }
+
       // --------- no match
       std::cout << "[ASTFactory] Error: Could not build parent node from:" << std::endl;
       for (size_t i = 0; i < children.size(); i++) {
