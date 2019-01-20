@@ -15,7 +15,7 @@ public:
     Name,
     BracketOpen,BracketClose,
     String,Float,Integer,
-    Assign,Comma,Dot,
+    Assign,Comma,Dot,Colon,DoubleColon,
     BinOpMult,BinOpAdd,BinOpRelation,BinOpEqual,
     BinOpAnd,BinOpOr,
     KeyWord,
@@ -44,6 +44,8 @@ public:
       case Type::BinOpAnd: return "BinOpAnd";
       case Type::BinOpOr: return "BinOpOr";
       case Type::Comma: return "Comma";
+      case Type::Colon: return "Colon";
+      case Type::DoubleColon: return "DoubleColon";
       case Type::Dot: return "Dot";
       case Type::KeyWord: return "KeyWord";
       default: return "Unknown";
@@ -111,7 +113,7 @@ public:
       std::vector<Token*> tVec = res.first;
       std::string text = res.second;
       if (text!="") {
-        std::string error = std::to_string(i)+":"+text;
+        std::string error = std::to_string(i)+": "+text;
         tokenErrors.push_back(error);
         std::cout << "[tokenize] [Error] " << error << std::endl;
       }
@@ -133,7 +135,7 @@ public:
     std::vector<std::pair<Token::Type,std::regex>> reList {
       {Token::Type::Space, std::regex("^(\\s+)(.*)")},
       {Token::Type::Comment, std::regex("^(#)(.*)")},
-      {Token::Type::Name, std::regex("^([a-zA-Z][\\w]*)(.*)")},
+      {Token::Type::Name, std::regex("^([a-zA-Z_][\\w]*(?:::[a-zA-Z_][\\w]*)*)(.*)")},
       {Token::Type::BracketOpen, std::regex("^(\\(|\\[|\\{)(.*)")},
       {Token::Type::BracketClose, std::regex("^(\\)|\\]|\\})(.*)")},
       {Token::Type::String, std::regex("^\"(.*)\"(.*)")},
@@ -149,6 +151,8 @@ public:
       {Token::Type::BinOpOr, std::regex("^(\\|\\|)(.*)")},
       {Token::Type::Comma, std::regex("^(,)(.*)")},
       {Token::Type::Dot, std::regex("^(\\.)(.*)")},
+      {Token::Type::DoubleColon, std::regex("^(::)(.*)")},
+      {Token::Type::Colon, std::regex("^(:)(.*)")},
       {Token::Type::Sequencer, std::regex("^(;)(.*)")},
     };
 
@@ -159,6 +163,11 @@ public:
       {"if", Token::Type::KeyWord},
       {"elif", Token::Type::KeyWord},
       {"else", Token::Type::KeyWord},
+      {"local", Token::Type::KeyWord},
+      {"global", Token::Type::KeyWord},
+      {"const", Token::Type::KeyWord},
+      {"function", Token::Type::KeyWord},
+      {"class", Token::Type::KeyWord},
     };
 
     std::vector<Token*> tVec;
@@ -233,7 +242,7 @@ public:
   :_token(NULL),_isTerminal(false),_children(children){}
 
   bool process() {
-    for (size_t step = 0; step < 9; step++) {
+    for (size_t step = 0; step < 11; step++) {
       bool res = processStep(step);
       if (not res) {return false;}
     }
@@ -251,18 +260,19 @@ public:
 
   bool processStepExec(int const step){
     switch (step) {
-      case 0: return processBrackets();
-      case 1: return processBinaryOperator(Token::Type::Sequencer,false);
-      case 2: return processBinaryOperator(Token::Type::Assign,false);
-      case 3: return processBinaryOperator(Token::Type::BinOpOr,true);
-      case 4: return processBinaryOperator(Token::Type::BinOpAnd,true);
-      case 5: return processBinaryOperator(Token::Type::BinOpEqual,true);
-      case 6: return processBinaryOperator(Token::Type::BinOpRelation,true);
-      case 7: return processBinaryOperator(Token::Type::BinOpAdd,true);
-      case 8: return processBinaryOperator(Token::Type::BinOpMult,true);
+      case 0:  return processBrackets();
+      case 1:  return processBinaryOperator(Token::Type::Sequencer,false);
+      case 2:  return processBinaryOperator(Token::Type::Assign,false);
+      case 3:  return processBinaryOperator(Token::Type::BinOpOr,true);
+      case 4:  return processBinaryOperator(Token::Type::BinOpAnd,true);
+      case 5:  return processBinaryOperator(Token::Type::BinOpEqual,true);
+      case 6:  return processBinaryOperator(Token::Type::BinOpRelation,true);
+      case 7:  return processBinaryOperator(Token::Type::BinOpAdd,true);
+      case 8:  return processBinaryOperator(Token::Type::BinOpMult,true);
+      case 9:  return processBinaryOperator(Token::Type::Colon,true);
+      case 10: return processBinaryOperator(Token::Type::DoubleColon,true);
     }
   }
-
   bool processBrackets(){
     std::stack<std::vector<TokenTree*>> childrenStack;
     std::stack<TokenTree*> openTokenStack;
@@ -427,58 +437,73 @@ public:
   virtual void print(int const indent=0) const {
     std::cout << "[AST] ------- print:" << std::endl;
   }
+  virtual bool writeable() const {return false;}
+  virtual bool evaluable() const {return false;}
 private:
 };
 
-
-
 class ASTNone : public AST{
 public:
-  ASTNone(){}
   virtual void print(int const indent=0) const {
     std::cout << "[AST] " << std::string(indent,' ') << "None."<< std::endl;
   }
 private:
 };
 
-class ASTSequencer : public AST{
+class ASTSequencerSymbol : public AST{
 public:
-  ASTSequencer(const Token* token):_token(token){}
+  ASTSequencerSymbol(const Token* token)
+  :_token(token){}
   virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "Sequencer: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "Sequencer Symbol: " << _token->toString() << std::endl;
   }
   const Token* token() const {return _token;}
 private:
   const Token* _token;
 };
 
-class ASTBracketOpen : public AST{
+class ASTBracketOpenSymbol : public AST{
 public:
-  ASTBracketOpen(const Token* token):_token(token){}
+  ASTBracketOpenSymbol(const Token* token)
+  :_token(token){}
   virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "BracketOpen: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "BracketOpen Symbol: " << _token->toString() << std::endl;
   }
   const Token* token() const {return _token;}
 private:
   const Token* _token;
 };
 
-class ASTBracketClose : public AST{
+class ASTBracketCloseSymbol : public AST{
 public:
-  ASTBracketClose(const Token* token):_token(token){}
+  ASTBracketCloseSymbol(const Token* token)
+  :_token(token){}
   virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "BracketClose: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "BracketClose Symbol: " << _token->toString() << std::endl;
   }
   const Token* token() const {return _token;}
 private:
   const Token* _token;
 };
 
-class ASTAssign : public AST{
+class ASTAssignSymbol : public AST{
 public:
-  ASTAssign(const Token* token):_token(token){}
+  ASTAssignSymbol(const Token* token)
+  :_token(token){}
   virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "Assign: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "Assign Symbol: " << _token->toString() << std::endl;
+  }
+  const Token* token() const {return _token;}
+private:
+  const Token* _token;
+};
+
+class ASTColonSymbol : public AST{
+public:
+  ASTColonSymbol(const Token* token)
+  :_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "Colon Symbol: " << _token->toString() << std::endl;
   }
   const Token* token() const {return _token;}
 private:
@@ -487,7 +512,8 @@ private:
 
 class ASTKeyWord : public AST{
 public:
-  ASTKeyWord(const Token* token):_token(token){}
+  ASTKeyWord(const Token* token)
+  :_token(token){}
   virtual void print(int const indent=0) const {
     std::cout << "[AST] " << std::string(indent,' ') << "KeyWord: " << _token->toString() << std::endl;
   }
@@ -496,91 +522,131 @@ private:
   const Token* _token;
 };
 
-class ASTExpression : public AST{
+class ASTName : public AST{
 public:
-private:
-};
-
-class ASTExpressionValue : public ASTExpression{
-public:
-private:
-};
-
-class ASTExpressionValueVariable : public ASTExpressionValue{
-public:
-  ASTExpressionValueVariable(const Token* token):_token(token){}
+  ASTName(const Token* token)
+  :_token(token){}
   virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionValueVariable: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "Name: " << _token->toString() << std::endl;
+  }
+  virtual bool writeable() const {return true;}
+  virtual bool evaluable() const {return true;}
+private:
+  const Token* _token;
+};
+
+class ASTVariableDefinition : public AST{
+public:
+  ASTVariableDefinition(const bool global,const bool constant, const ASTName* name)
+  :_global(global),_constant(constant),_name(name),_type(NULL){}
+  ASTVariableDefinition(const ASTVariableDefinition* vd)
+  :_global(vd->global()),_constant(vd->constant()),_name(vd->name()),_type(vd->type()){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "VariableDefinition: " << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "global: " << _global << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "constant: " << _constant << std::endl;
+    _name->print(indent+3);
+    if (_type) {
+      std::cout << "[AST] " << std::string(indent,' ') << "Type: " << std::endl;
+      _type->print(indent+3);
+    }else{
+      std::cout << "[AST] " << std::string(indent,' ') << "Type: No type" << std::endl;
+    }
+  }
+  virtual bool writeable() const {return true;}
+  virtual bool evaluable() const {return false;}
+  ASTName const* type() const {return _type;}
+  bool typeIs(const ASTName* type){
+    if (_type) {
+      return false;
+    }else{
+      _type = type;
+      return true;
+    }
+  }
+  bool global() const {return _global;}
+  bool constant() const {return _constant;}
+  const ASTName* name() const {return _name;}
+private:
+  const bool _global;
+  const bool _constant;
+  const ASTName* _name;
+  ASTName const* _type;
+};
+
+class ASTConst : public AST{
+public:
+  ASTConst(const Token* token)
+  :_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "Const: " << _token->toString() << std::endl;
+  }
+  virtual bool evaluable() const {return true;}
+private:
+  const Token* _token;
+};
+
+class ASTBinOp : public AST{
+public:
+  ASTBinOp(const Token* token)
+  :_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "BinOp: " << _token->toString() << std::endl;
   }
 private:
   const Token* _token;
 };
 
-class ASTExpressionValueConst : public ASTExpressionValue{
+class ASTAssign : public AST{
 public:
-  ASTExpressionValueConst(const Token* token):_token(token){}
-  virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionValueConst: " << _token->toString() << std::endl;
-  }
-private:
-  const Token* _token;
-};
-
-class ASTExpressionBinOp : public ASTExpression{
-public:
-  ASTExpressionBinOp(const Token* token):_token(token){}
-  virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionBinOp: " << _token->toString() << std::endl;
-  }
-private:
-  const Token* _token;
-};
-
-class ASTExpressionAssign : public ASTExpression{
-public:
-  ASTExpressionAssign(
+  ASTAssign(
     const Token* token,
-    const ASTExpression* left,
-    const ASTExpression* right
-  ):_token(token),_left(left),_right(right){}
+    const AST* left,
+    const AST* right
+  )
+  :_token(token),_left(left),_right(right){}
   virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionAssign: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "Assign: " << _token->toString() << std::endl;
     std::cout << "[AST] " << std::string(indent,' ') << "left:" << std::endl;
     _left->print(indent+3);
     std::cout << "[AST] " << std::string(indent,' ') << "right:" << std::endl;
     _right->print(indent+3);
   }
+  virtual bool evaluable() const {return true;}
 private:
   const Token* _token;
-  const ASTExpression* _left;
-  const ASTExpression* _right;
+  const AST* _left;
+  const AST* _right;
 };
 
-class ASTExpressionApply : public ASTExpression{
+class ASTApply : public AST{
 public:
-  ASTExpressionApply(
-    const ASTExpression* function,
-    const ASTExpression* argument
-  ):_function(function),_argument(argument){}
+  ASTApply(
+    const AST* function,
+    const AST* argument
+  )
+  :_function(function),_argument(argument){}
   virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "ASTExpressionApply: " << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "ASTApply: " << std::endl;
     std::cout << "[AST] " << std::string(indent,' ') << "function:" << std::endl;
     _function->print(indent+3);
     std::cout << "[AST] " << std::string(indent,' ') << "argument:" << std::endl;
     _argument->print(indent+3);
   }
+  virtual bool evaluable() const {return true;}
 private:
-  const ASTExpression* _function;
-  const ASTExpression* _argument;
+  const AST* _function;
+  const AST* _argument;
 };
 
-class ASTExpressionIf : public ASTExpression{
+class ASTIf : public AST{
 public:
-  ASTExpressionIf(
-    const ASTExpression* condition,
-    const ASTExpression* ifTrue,
-    const ASTExpression* ifFalse
-  ):_condition(condition),_ifTrue(ifTrue),_ifFalse(ifFalse){}
+  ASTIf(
+    const AST* condition,
+    const AST* ifTrue,
+    const AST* ifFalse
+  )
+  :_condition(condition),_ifTrue(ifTrue),_ifFalse(ifFalse){}
   virtual void print(int const indent=0) const {
     std::cout << "[AST] " << std::string(indent,' ') << "ExpressionIf " << std::endl;
     std::cout << "[AST] " << std::string(indent,' ') << "condition:" << std::endl;
@@ -590,39 +656,33 @@ public:
     std::cout << "[AST] " << std::string(indent,' ') << "ifFalse:" << std::endl;
     _ifFalse->print(indent+3);
   }
+  virtual bool evaluable() const {return true;}
 private:
-  const ASTExpression* _condition;
-  const ASTExpression* _ifTrue;
-  const ASTExpression* _ifFalse;
+  const AST* _condition;
+  const AST* _ifTrue;
+  const AST* _ifFalse;
 };
 
-class ASTExpressionNone : public ASTExpression{
+class ASTSequence : public AST{
 public:
-  ASTExpressionNone(){}
-  virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "None " << std::endl;
-  }
-private:
-};
-
-class ASTExpressionSequence : public ASTExpression{
-public:
-  ASTExpressionSequence(
+  ASTSequence(
     const Token* token,
-    const ASTExpression* left,
-    const ASTExpression* right
-  ):_token(token),_left(left),_right(right){}
+    const AST* left,
+    const AST* right
+  )
+  :_token(token),_left(left),_right(right){}
   virtual void print(int const indent=0) const {
-    std::cout << "[AST] " << std::string(indent,' ') << "ExpressionSequence: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "Sequence: " << _token->toString() << std::endl;
     std::cout << "[AST] " << std::string(indent,' ') << "left:" << std::endl;
     _left->print(indent+3);
     std::cout << "[AST] " << std::string(indent,' ') << "right:" << std::endl;
     _right->print(indent+3);
   }
+  virtual bool evaluable() const {return true;}
 private:
   const Token* _token;
-  const ASTExpression* _left;
-  const ASTExpression* _right;
+  const AST* _left;
+  const AST* _right;
 };
 
 class ASTFactory{
@@ -634,23 +694,24 @@ public:
         return NULL;
       } else {
         switch (tokenTree->token()->type()) {
-          case Token::Type::BinOpMult: return new ASTExpressionBinOp(tokenTree->token());
-          case Token::Type::BinOpAdd: return new ASTExpressionBinOp(tokenTree->token());
-          case Token::Type::BinOpEqual: return new ASTExpressionBinOp(tokenTree->token());
-          case Token::Type::BinOpRelation: return new ASTExpressionBinOp(tokenTree->token());
-          case Token::Type::BinOpAnd: return new ASTExpressionBinOp(tokenTree->token());
-          case Token::Type::BinOpOr: return new ASTExpressionBinOp(tokenTree->token());
-          case Token::Type::Name: return new ASTExpressionValueVariable(tokenTree->token());
-          case Token::Type::Integer: return new ASTExpressionValueConst(tokenTree->token());
-          case Token::Type::Float: return new ASTExpressionValueConst(tokenTree->token());
-          case Token::Type::String: return new ASTExpressionValueConst(tokenTree->token());
-          case Token::Type::Sequencer: return new ASTSequencer(tokenTree->token());
-          case Token::Type::Assign: return new ASTAssign(tokenTree->token());
-          case Token::Type::BracketOpen: return new ASTBracketOpen(tokenTree->token());
-          case Token::Type::BracketClose: return new ASTBracketClose(tokenTree->token());
+          case Token::Type::BinOpMult: return new ASTBinOp(tokenTree->token());
+          case Token::Type::BinOpAdd: return new ASTBinOp(tokenTree->token());
+          case Token::Type::BinOpEqual: return new ASTBinOp(tokenTree->token());
+          case Token::Type::BinOpRelation: return new ASTBinOp(tokenTree->token());
+          case Token::Type::BinOpAnd: return new ASTBinOp(tokenTree->token());
+          case Token::Type::BinOpOr: return new ASTBinOp(tokenTree->token());
+          case Token::Type::Name: return new ASTName(tokenTree->token());
+          case Token::Type::Integer: return new ASTConst(tokenTree->token());
+          case Token::Type::Float: return new ASTConst(tokenTree->token());
+          case Token::Type::String: return new ASTConst(tokenTree->token());
+          case Token::Type::Sequencer: return new ASTSequencerSymbol(tokenTree->token());
+          case Token::Type::Assign: return new ASTAssignSymbol(tokenTree->token());
+          case Token::Type::BracketOpen: return new ASTBracketOpenSymbol(tokenTree->token());
+          case Token::Type::BracketClose: return new ASTBracketCloseSymbol(tokenTree->token());
           case Token::Type::KeyWord: return new ASTKeyWord(tokenTree->token());
+          case Token::Type::Colon: return new ASTColonSymbol(tokenTree->token());
           default: {
-            std::cout << "[ASTFactory] Error: did not know what to with terminal token: " << std::endl;
+            std::cout << "[ASTFactory] Error: did not know what to do with terminal token: " << std::endl;
             tokenTree->token()->printContext();
           }
         }
@@ -673,11 +734,11 @@ public:
       if (transformedChildren.size()==3) {
         const AST* second = transformedChildren[1];
         const AST* third  = transformedChildren[2];
-        if (const ASTExpressionBinOp* secondBinOp = dynamic_cast<const ASTExpressionBinOp*>(second)) {
-          if (const ASTExpression* firstExpression = dynamic_cast<const ASTExpression*>(first)) {
-            const ASTExpressionApply* inner = new ASTExpressionApply(secondBinOp,firstExpression);
-            if (const ASTExpression* thirdExpression = dynamic_cast<const ASTExpression*>(third)) {
-              return new ASTExpressionApply(inner,thirdExpression);
+        if (const ASTBinOp* secondBinOp = dynamic_cast<const ASTBinOp*>(second)) {
+          if (first->evaluable()) {
+            const ASTApply* inner = new ASTApply(secondBinOp,first);
+            if (third->evaluable()) {
+              return new ASTApply(inner,third);
             }else{
               std::cout << "[ASTFactory] Error: could not apply BinOp (right):" << std::endl;
               std::cout << "[ASTFactory] BinOp:" << std::endl;
@@ -696,10 +757,10 @@ public:
             third->print();
             return NULL;
           }
-        }else if (const ASTAssign* secondAssign = dynamic_cast<const ASTAssign*>(second)) {
-          if (const ASTExpressionValueVariable* firstVariable = dynamic_cast<const ASTExpressionValueVariable*>(first)) {
-            if (const ASTExpression* thirdExpression = dynamic_cast<const ASTExpression*>(third)) {
-              return new ASTExpressionAssign(secondAssign->token(),firstVariable,thirdExpression);
+        }else if (const ASTAssignSymbol* secondAssign = dynamic_cast<const ASTAssignSymbol*>(second)) {
+          if (first->writeable()) {
+            if (third->evaluable()) {
+              return new ASTAssign(secondAssign->token(),first,third);
             }else{
               std::cout << "[ASTFactory] Error: could not assign variable to non-expression (right):" << std::endl;
               secondAssign->token()->printContext();
@@ -710,40 +771,66 @@ public:
             secondAssign->token()->printContext();
             return NULL;
           }
-        }else if (const ASTSequencer* secondSequencer = dynamic_cast<const ASTSequencer*>(second)) {
-          const ASTExpression* firstExpression = dynamic_cast<const ASTExpression*>(first);
-          const ASTExpression* thirdExpression = dynamic_cast<const ASTExpression*>(third);
-          if (firstExpression and thirdExpression) {
-            return new ASTExpressionSequence(secondSequencer->token(),firstExpression,thirdExpression);
-          }else if (firstExpression) {
+        }else if (const ASTSequencerSymbol* secondSequencer = dynamic_cast<const ASTSequencerSymbol*>(second)) {
+          if (first->evaluable() and third->evaluable()) {
+            return new ASTSequence(secondSequencer->token(),first,third);
+          }else if (first->evaluable()) {
             if(const ASTNone* thirdNone = dynamic_cast<const ASTNone*>(third)){
-              return firstExpression;
+              return first;
             }else{
               std::cout << "[ASTFactory] Error: sequencer non-expression (right):" << std::endl;
               secondSequencer->token()->printContext();
               return NULL;
             }
-          }else if (thirdExpression) {
+          }else if (third->evaluable()) {
             if(const ASTNone* firstNone = dynamic_cast<const ASTNone*>(first)){
-              return thirdExpression;
+              return third;
             }else{
               std::cout << "[ASTFactory] Error: sequencer non-expression (left):" << std::endl;
               secondSequencer->token()->printContext();
               return NULL;
             }
           }
-        }else if (const ASTBracketOpen* firstBracket = dynamic_cast<const ASTBracketOpen*>(first)) {
-          if (const ASTBracketClose* thirdBracket = dynamic_cast<const ASTBracketClose*>(third)) {
+        }else if (const ASTBracketOpenSymbol* firstBracket = dynamic_cast<const ASTBracketOpenSymbol*>(first)) {
+          if (const ASTBracketCloseSymbol* thirdBracket = dynamic_cast<const ASTBracketCloseSymbol*>(third)) {
               return second;
+          }
+        }else if (const ASTColonSymbol* secondColon = dynamic_cast<const ASTColonSymbol*>(second)) {
+
+          if (const ASTName* thirdName = dynamic_cast<const ASTName*>(third)) {
+            if (const ASTName* firstName = dynamic_cast<const ASTName*>(first)) {
+              bool constant = false;
+              bool global = false;
+              ASTVariableDefinition* vd = new ASTVariableDefinition(global,constant,firstName);
+              vd->typeIs(thirdName);
+              return vd;
+            }else if (const ASTVariableDefinition* firstVarDef = dynamic_cast<const ASTVariableDefinition*>(first)) {
+              ASTVariableDefinition* vd = new ASTVariableDefinition(firstVarDef);
+              if (vd->typeIs(thirdName)) {
+                return vd;
+              }else{
+                std::cout << "[ASTFactory] Error: superfluous type assignment:" << std::endl;
+                secondColon->token()->printContext();
+                return NULL;
+              }
+            }else{
+              std::cout << "[ASTFactory] Error: bad item before colon:" << std::endl;
+              secondColon->token()->printContext();
+              return NULL;
+            }
+          }else{
+            std::cout << "[ASTFactory] Error: bad item after colon (need type name):" << std::endl;
+            secondColon->token()->printContext();
+            return NULL;
           }
         }
       }
       if (const ASTKeyWord* firstKeyWord = dynamic_cast<const ASTKeyWord*>(first)) {
         std::string const firstString(firstKeyWord->token()->toString());
         if (firstString == "if") {
-          std::vector<const ASTExpression*> conditions;
-          std::vector<const ASTExpression*> ifTrue;
-          ASTExpression const* ifFalse = NULL;
+          std::vector<const AST*> conditions;
+          std::vector<const AST*> ifTrue;
+          AST const* ifFalse = NULL;
           int i = 1;
           bool expectCondition = true;//true: cond, ifTrue. false: ifFalse, end
           Token const* lastKeyWord = firstKeyWord->token();
@@ -755,15 +842,15 @@ public:
                 lastKeyWord->printContext();
                 return NULL;
               }
-              const ASTExpression* cond = dynamic_cast<const ASTExpression*>(transformedChildren[i]);
-              if (not cond) {
-                std::cout << "[ASTFactory] Error: if/elif: bad condition:" << std::endl;
+              const AST* cond = transformedChildren[i];
+              if (not cond->evaluable()) {
+                std::cout << "[ASTFactory] Error: if/elif: condition not evaluable:" << std::endl;
                 lastKeyWord->printContext();
                 return NULL;
               }
-              const ASTExpression* ifT = dynamic_cast<const ASTExpression*>(transformedChildren[i+1]);
-              if (not ifT) {
-                std::cout << "[ASTFactory] Error: if/elif: bad expression:" << std::endl;
+              const AST* ifT = transformedChildren[i+1];
+              if (not ifT->evaluable()) {
+                std::cout << "[ASTFactory] Error: if/elif: if true statement not evaluable:" << std::endl;
                 lastKeyWord->printContext();
                 return NULL;
               }
@@ -805,9 +892,9 @@ public:
                 lastKeyWord->printContext();
                 return NULL;
               }
-              const ASTExpression* ifF = dynamic_cast<const ASTExpression*>(transformedChildren[i]);
-              if (not ifF) {
-                std::cout << "[ASTFactory] Error: else: bad expression:" << std::endl;
+              const AST* ifF = transformedChildren[i];
+              if (not ifF->evaluable()) {
+                std::cout << "[ASTFactory] Error: else: else statement not evaluable:" << std::endl;
                 lastKeyWord->printContext();
                 return NULL;
               }
@@ -817,15 +904,51 @@ public:
             }
           }
           std::cout << "[ASTFactory] success: if/elif " << std::endl;
-          ASTExpression const* insideNode = ifFalse;
+          AST const* insideNode = ifFalse;
           if (ifFalse==NULL) {
-            insideNode = new ASTExpressionNone();
+            insideNode = new ASTNone();
           }
           for (int i = conditions.size()-1; i >= 0; i--) {
             std::cout << "[ASTFactory] success: if/elif " << i << std::endl;
-            insideNode = new ASTExpressionIf(conditions[i], ifTrue[i], insideNode);
+            insideNode = new ASTIf(conditions[i], ifTrue[i], insideNode);
           }
           return insideNode;
+        }else if (firstString == "global" or firstString == "const") {
+          int i = 0;
+          std::vector<std::string> variableQualifiers;
+          ASTKeyWord const* nextKeyWord = NULL;
+          while (i<transformedChildren.size() and (nextKeyWord = dynamic_cast<const ASTKeyWord*>(transformedChildren[i]))) {
+            std::string nextString= nextKeyWord->token()->toString();
+            if (nextString == "global" or nextString == "const") {
+              variableQualifiers.push_back(nextString);
+              i++;
+            }else{
+              std::cout << "[ASTFactory] Error: bad keyword after variable definition qualifiers:" << std::endl;
+              nextKeyWord->token()->printContext();
+              return NULL;
+            }
+          }
+          if (not i==transformedChildren.size()-1) {
+            std::cout << "[ASTFactory] Error: incorrect variable definition (qualifiers):" << std::endl;
+            firstKeyWord->token()->printContext();
+            return NULL;
+          }
+          if (const ASTName* lastName = dynamic_cast<const ASTName*>(transformedChildren[i])) {
+            bool constant = false;
+            bool global = false;
+            for (auto &qualifier : variableQualifiers) {
+              if (qualifier=="global") {
+                global = true;
+              }else if (qualifier=="const") {
+                constant=true;
+              }
+            }
+            return new ASTVariableDefinition(global,constant,lastName);
+          }else{
+            std::cout << "[ASTFactory] Error: incorrect variable definition (name):" << std::endl;
+            firstKeyWord->token()->printContext();
+            return NULL;
+          }
         }
       }
 
@@ -865,7 +988,7 @@ int main(int argc, char** argv)
     Tokenizer tokenizer(inFileName);
     tokenizer.printLines();
     tokenizer.tokenize();
-    tokenizer.printTokens();
+    //tokenizer.printTokens();
 
     TokenTree* tree = new TokenTree(tokenizer.tokens());
     tree->print();

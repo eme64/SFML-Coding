@@ -1,9 +1,9 @@
-a = 2
-b = 0
-res = if(a==2){
-  b = 1
-}elif(a==3){
-  b = 2
-}elif[2==2]{
-  b = 3
-}else[b=4]
+global const a:a = 5
+b:int = 6 + a::b
+
+{
+  b:int = {
+    a = a+b
+    b=c::d::e
+  }
+}
