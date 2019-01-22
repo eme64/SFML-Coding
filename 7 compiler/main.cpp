@@ -18,6 +18,7 @@ public:
     Assign,Comma,Dot,Colon,DoubleColon,
     BinOpMult,BinOpAdd,BinOpRelation,BinOpEqual,
     BinOpAnd,BinOpOr,
+    BinOpArrow,
     KeyWord,
   };
   const char* typeString() const {
@@ -43,6 +44,7 @@ public:
       case Type::BinOpEqual: return "BinOpEqual";
       case Type::BinOpAnd: return "BinOpAnd";
       case Type::BinOpOr: return "BinOpOr";
+      case Type::BinOpArrow: return "BinOpArrow";
       case Type::Comma: return "Comma";
       case Type::Colon: return "Colon";
       case Type::DoubleColon: return "DoubleColon";
@@ -144,6 +146,7 @@ public:
       {Token::Type::BinOpEqual, std::regex("^(==|!=)(.*)")},
       {Token::Type::Assign, std::regex("^(=)(.*)")},
       {Token::Type::BinOpMult, std::regex("^(\\*|/)(.*)")},
+      {Token::Type::BinOpArrow, std::regex("^(->)(.*)")},
       {Token::Type::BinOpAdd, std::regex("^(-|\\+)(.*)")},
       {Token::Type::BinOpRelation, std::regex("^(<=|>=)(.*)")},
       {Token::Type::BinOpRelation, std::regex("^(<|>)(.*)")},
@@ -167,6 +170,7 @@ public:
       {"global", Token::Type::KeyWord},
       {"const", Token::Type::KeyWord},
       {"function", Token::Type::KeyWord},
+      {"return", Token::Type::KeyWord},
       {"class", Token::Type::KeyWord},
     };
 
@@ -242,7 +246,7 @@ public:
   :_token(NULL),_isTerminal(false),_children(children){}
 
   bool process() {
-    for (size_t step = 0; step < 11; step++) {
+    for (size_t step = 0; step < 12; step++) {
       bool res = processStep(step);
       if (not res) {return false;}
     }
@@ -269,8 +273,9 @@ public:
       case 6:  return processBinaryOperator(Token::Type::BinOpRelation,true);
       case 7:  return processBinaryOperator(Token::Type::BinOpAdd,true);
       case 8:  return processBinaryOperator(Token::Type::BinOpMult,true);
-      case 9:  return processBinaryOperator(Token::Type::Colon,true);
-      case 10: return processBinaryOperator(Token::Type::DoubleColon,true);
+      case 9:  return processBinaryOperator(Token::Type::BinOpArrow,false);
+      case 10:  return processBinaryOperatorTight(Token::Type::Colon,true);
+      case 11: return processBinaryOperator(Token::Type::DoubleColon,true);
     }
   }
   bool processBrackets(){
@@ -410,6 +415,122 @@ public:
     return true;
   }
 
+  bool processBinaryOperatorTight(Token::Type const type, bool const leftToRight){
+    bool hasType = false;
+    for (size_t i = 0; i < _children.size(); i++) {
+      TokenTree* t = _children[i];
+      if (t->token() and t->token()->type()==type) {
+        hasType = true;
+        break;
+      }
+    }
+    if(not hasType){return true;}
+
+    std::vector<TokenTree*> _tmpChildren;
+    int i = 0;
+    while (i<_children.size()) {
+      TokenTree* t = _children[i];
+      if (t->token() and t->token()->type()==type) {
+        TokenTree* leftNode;
+        TokenTree* rightNode;
+        if (i==0) {
+          leftNode = new TokenTree(std::vector<TokenTree*>{});
+        }else{
+          leftNode = _tmpChildren[_tmpChildren.size()-1];
+          _tmpChildren.resize(_tmpChildren.size()-1);
+        }
+        if (i+1<_children.size()) {
+          TokenTree* tNext = _children[i+1];
+          if (not tNext->token() or not tNext->token()->type()==type) {
+            rightNode = tNext;
+            i+=2;
+          }else{
+            rightNode = new TokenTree(std::vector<TokenTree*>{});
+            i++;
+          }
+        }else{
+          rightNode = new TokenTree(std::vector<TokenTree*>{});
+          i++;
+        }
+        _tmpChildren.push_back(new TokenTree(std::vector<TokenTree*>{leftNode,t,rightNode}));
+      }else{
+        _tmpChildren.push_back(t);
+        i++;
+      }
+    }
+    std::swap(_tmpChildren,_children);
+    return true;
+
+    std::stack<std::vector<TokenTree*>> childrenStack;
+    std::stack<TokenTree*> sequencerTokenStack;
+    childrenStack.push(std::vector<TokenTree*>());
+    for (size_t i = 0; i < _children.size(); i++) {
+      TokenTree* t = _children[i];
+      if (t->token() and t->token()->type()==type) {
+        //std::cout << "[TokenTree][process] Sequencer" << std::endl;
+        childrenStack.push(std::vector<TokenTree*>());
+        sequencerTokenStack.push(t);
+      }else{
+        //std::cout << "[TokenTree][process] non-Sequencer" << std::endl;
+        childrenStack.top().push_back(t);
+      }
+    }
+    if (sequencerTokenStack.empty()) {
+      //std::cout << "[TokenTree][process][" << Token::typeString(type) << "] NO SEQ" << std::endl;
+    }else{
+      //std::cout << "[TokenTree][process][" << Token::typeString(type) << "] SEQ: " << sequencerTokenStack.size() << std::endl;
+      if (leftToRight) {// reverse both stacks.
+        std::stack<std::vector<TokenTree*>> tmp_childrenStack;
+        std::stack<TokenTree*> tmp_sequencerTokenStack;
+        while (not sequencerTokenStack.empty()) {
+          tmp_sequencerTokenStack.push(sequencerTokenStack.top());
+          sequencerTokenStack.pop();
+        }
+        while (not childrenStack.empty()) {
+          tmp_childrenStack.push(childrenStack.top());
+          childrenStack.pop();
+        }
+        childrenStack.swap(tmp_childrenStack);
+        sequencerTokenStack.swap(tmp_sequencerTokenStack);
+      }
+
+      TokenTree* innerNode;
+      if (childrenStack.top().size()==1) {
+        innerNode = childrenStack.top()[0];
+      }else{
+        innerNode = new TokenTree(childrenStack.top());
+      }
+      childrenStack.pop();
+
+      while (not sequencerTokenStack.empty()) {
+        TokenTree* sequencer = sequencerTokenStack.top();
+        sequencerTokenStack.pop();
+        TokenTree* secondNode;
+        if (childrenStack.top().size()==1) {
+          secondNode = childrenStack.top()[0];
+        }else{
+          secondNode = new TokenTree(childrenStack.top());
+        }
+        childrenStack.pop();
+        if (sequencerTokenStack.empty()) {
+          if (leftToRight) {
+            _children = std::vector<TokenTree*>{innerNode,sequencer,secondNode};
+          } else {
+            _children = std::vector<TokenTree*>{secondNode,sequencer,innerNode};
+          }
+        }else{
+          if (leftToRight) {
+            innerNode = new TokenTree(std::vector<TokenTree*>{innerNode,sequencer,secondNode});
+          } else {
+            innerNode = new TokenTree(std::vector<TokenTree*>{secondNode,sequencer,innerNode});
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
   void print(int const indent=0){
     if (indent==0) {
       std::cout << "[TokenTree] ------- print:" << std::endl;
@@ -439,6 +560,7 @@ public:
   }
   virtual bool writeable() const {return false;}
   virtual bool evaluable() const {return false;}
+  virtual bool maybeType() const {return false;}
 private:
 };
 
@@ -510,6 +632,20 @@ private:
   const Token* _token;
 };
 
+class ASTArrowSymbol : public AST{
+public:
+  ASTArrowSymbol(const Token* token)
+  :_token(token){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "Arrow Symbol: " << _token->toString() << std::endl;
+  }
+  const Token* token() const {return _token;}
+private:
+  const Token* _token;
+};
+
+
+
 class ASTKeyWord : public AST{
 public:
   ASTKeyWord(const Token* token)
@@ -522,6 +658,27 @@ private:
   const Token* _token;
 };
 
+class ASTFunctionType : public AST{
+public:
+  ASTFunctionType(const Token* token,const AST* from,const AST* to)
+  :_token(token),_from(from),_to(to){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "Function Type: " << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "from: " << std::endl;
+    _from->print(indent+3);
+    std::cout << "[AST] " << std::string(indent,' ') << "to: " << std::endl;
+    _to->print(indent+3);
+  }
+  Token const* token() const {return _token;}
+  virtual bool maybeType() const {return true;}
+private:
+  const AST* _from;
+  const AST* _to;
+  const Token* _token;
+};
+
+
+
 class ASTName : public AST{
 public:
   ASTName(const Token* token)
@@ -531,6 +688,7 @@ public:
   }
   virtual bool writeable() const {return true;}
   virtual bool evaluable() const {return true;}
+  virtual bool maybeType() const {return true;}
 private:
   const Token* _token;
 };
@@ -555,8 +713,9 @@ public:
   }
   virtual bool writeable() const {return true;}
   virtual bool evaluable() const {return false;}
-  ASTName const* type() const {return _type;}
-  bool typeIs(const ASTName* type){
+  virtual bool maybeType() const {return true;}
+  AST const* type() const {return _type;}
+  bool typeIs(const AST* type){
     if (_type) {
       return false;
     }else{
@@ -571,7 +730,55 @@ private:
   const bool _global;
   const bool _constant;
   const ASTName* _name;
+  AST const* _type;
+};
+
+class ASTFunctionDefinition : public AST{
+public:
+  ASTFunctionDefinition(const ASTName* name)
+  :_name(name),_type(NULL){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "FunctionDefinition: " << std::endl;
+    _name->print(indent+3);
+    if (_type) {
+      std::cout << "[AST] " << std::string(indent,' ') << "Type: " << std::endl;
+      _type->print(indent+3);
+    }else{
+      std::cout << "[AST] " << std::string(indent,' ') << "Type: No type" << std::endl;
+    }
+  }
+  virtual bool writeable() const {return true;}
+  virtual bool evaluable() const {return true;}
+  ASTName const* type() const {return _type;}
+  bool typeIs(const ASTName* type){
+    if (_type) {
+      return false;
+    }else{
+      _type = type;
+      return true;
+    }
+  }
+  const ASTName* name() const {return _name;}
+private:
+  const ASTName* _name;
   ASTName const* _type;
+  std::vector<ASTVariableDefinition*> parameters;
+};
+
+
+class ASTReturn : public AST{
+public:
+  ASTReturn(const Token* token,const AST* value)
+  :_token(token),_value(value){}
+  virtual void print(int const indent=0) const {
+    std::cout << "[AST] " << std::string(indent,' ') << "Return: " << _token->toString() << std::endl;
+    std::cout << "[AST] " << std::string(indent,' ') << "value:" << std::endl;
+    _value->print(indent+3);
+  }
+  virtual bool evaluable() const {return true;}
+private:
+  const Token* _token;
+  const AST* _value;
 };
 
 class ASTConst : public AST{
@@ -710,6 +917,7 @@ public:
           case Token::Type::BracketClose: return new ASTBracketCloseSymbol(tokenTree->token());
           case Token::Type::KeyWord: return new ASTKeyWord(tokenTree->token());
           case Token::Type::Colon: return new ASTColonSymbol(tokenTree->token());
+          case Token::Type::BinOpArrow: return new ASTArrowSymbol(tokenTree->token());
           default: {
             std::cout << "[ASTFactory] Error: did not know what to do with terminal token: " << std::endl;
             tokenTree->token()->printContext();
@@ -729,6 +937,9 @@ public:
       // --------- find match
       if (transformedChildren.size()==0) {
         return new ASTNone();
+      }
+      if (transformedChildren.size()==1) {
+        return transformedChildren[0];
       }
       const AST* first  = transformedChildren[0];
       if (transformedChildren.size()==3) {
@@ -797,16 +1008,16 @@ public:
           }
         }else if (const ASTColonSymbol* secondColon = dynamic_cast<const ASTColonSymbol*>(second)) {
 
-          if (const ASTName* thirdName = dynamic_cast<const ASTName*>(third)) {
+          if (third->maybeType()) {
             if (const ASTName* firstName = dynamic_cast<const ASTName*>(first)) {
               bool constant = false;
               bool global = false;
               ASTVariableDefinition* vd = new ASTVariableDefinition(global,constant,firstName);
-              vd->typeIs(thirdName);
+              vd->typeIs(third);
               return vd;
             }else if (const ASTVariableDefinition* firstVarDef = dynamic_cast<const ASTVariableDefinition*>(first)) {
               ASTVariableDefinition* vd = new ASTVariableDefinition(firstVarDef);
-              if (vd->typeIs(thirdName)) {
+              if (vd->typeIs(third)) {
                 return vd;
               }else{
                 std::cout << "[ASTFactory] Error: superfluous type assignment:" << std::endl;
@@ -823,6 +1034,18 @@ public:
             secondColon->token()->printContext();
             return NULL;
           }
+        }else if (const ASTArrowSymbol* secondArrow = dynamic_cast<const ASTArrowSymbol*>(second)) {
+          if (not first->maybeType()) {
+            std::cout << "[ASTFactory] Error: need type info before arrow:" << std::endl;
+            secondArrow->token()->printContext();
+            return NULL;
+          }
+          if (not third->maybeType()) {
+            std::cout << "[ASTFactory] Error: need type info after arrow:" << std::endl;
+            secondArrow->token()->printContext();
+            return NULL;
+          }
+          return new ASTFunctionType(secondArrow->token(),first,third);
         }
       }
       if (const ASTKeyWord* firstKeyWord = dynamic_cast<const ASTKeyWord*>(first)) {
@@ -946,6 +1169,32 @@ public:
             return new ASTVariableDefinition(global,constant,lastName);
           }else{
             std::cout << "[ASTFactory] Error: incorrect variable definition (name):" << std::endl;
+            firstKeyWord->token()->printContext();
+            return NULL;
+          }
+        }else if (firstString == "function") {
+          if (not transformedChildren.size()==2) {
+            std::cout << "[ASTFactory] Error: bad function definition:" << std::endl;
+            firstKeyWord->token()->printContext();
+            return NULL;
+          }
+          if (const ASTName* secondName = dynamic_cast<const ASTName*>(transformedChildren[1])) {
+            return new ASTFunctionDefinition(secondName);
+          }else{
+            std::cout << "[ASTFactory] Error: require name after 'function':" << std::endl;
+            firstKeyWord->token()->printContext();
+            return NULL;
+          }
+        }else if (firstString == "return") {
+          if (not transformedChildren.size()==2) {
+            std::cout << "[ASTFactory] Error: return requires exactly one argument, "<< transformedChildren.size() <<" given:" << std::endl;
+            firstKeyWord->token()->printContext();
+            return NULL;
+          }
+          if (transformedChildren[1]->evaluable()) {
+            return new ASTReturn(firstKeyWord->token(),transformedChildren[1]);
+          }else{
+            std::cout << "[ASTFactory] Error: require evaluable after 'return':" << std::endl;
             firstKeyWord->token()->printContext();
             return NULL;
           }

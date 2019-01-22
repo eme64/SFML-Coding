@@ -1,9 +1,10 @@
+
 global const a:a = 5
 b:int = 6 + a::b
 
-{
-  b:int = {
-    a = a+b
-    b=c::d::e
-  }
+function exec:(a:int->b:int->int){
+  return (a+b)
 }
+
+e:(int->int->int) = exec
+e2:(int->int) = e
