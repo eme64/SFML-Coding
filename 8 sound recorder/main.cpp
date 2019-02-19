@@ -35,7 +35,7 @@ void cooleyTukeyFFT(SampleArray& values) {
 class MyRecorder : public sf::SoundRecorder {
     virtual bool onStart() {
         std::cout << "Start" << std::endl;
-        setProcessingInterval(sf::milliseconds(10));
+        setProcessingInterval(sf::milliseconds(0.1));
         return true;
     }
 
