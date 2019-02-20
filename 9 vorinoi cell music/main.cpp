@@ -5,6 +5,7 @@
 #include <SFML/Graphics.hpp>
 #include <list>
 #include <queue>
+#include <algorithm>
 
 #include "FastNoise/FastNoise.h"
 //https://github.com/Auburns/FastNoise/wiki
@@ -37,6 +38,35 @@ bool MOUSE_RIGHT_DOWN = false;
 
 
 // --------------------------------------------------------- DRAWING
+sf::Color HueToRGB(float hue) {
+  hue = fmod(hue,1.0);
+  hue*=6.0;
+  if (hue<1.0) {
+    return sf::Color(255.0,255.0*hue,0);
+  }
+  hue-=1.0;
+  if (hue<1.0) {
+    return sf::Color(255.0-255.0*hue,255.0,0);
+  }
+  hue-=1.0;
+  if (hue<1.0) {
+    return sf::Color(0,255.0,255.0*hue);
+  }
+  hue-=1.0;
+  if (hue<1.0) {
+    return sf::Color(0,255.0-255.0*hue,255.0);
+  }
+  hue-=1.0;
+  if (hue<1.0) {
+    return sf::Color(255.0*hue,0,255.0);
+  }
+  hue-=1.0;
+  if (hue<1.0) {
+    return sf::Color(255.0,0,255.0-255.0*hue);
+  }
+  return sf::Color(255,255,255);
+}
+
 void DrawDot(float x, float y, sf::RenderWindow &window, sf::Color color = sf::Color(255,0,0))
 {
   float r = 3;
@@ -167,7 +197,7 @@ struct PolyMapCellState {
   bool isSelect = false;
 
   void setPulsator(){
-    type = Type::Pulsator; value = 8; counter = 0;
+    type = Type::Pulsator; value = 32; counter = 0;
   }
 
   void setVoid(){
@@ -175,7 +205,7 @@ struct PolyMapCellState {
   }
 
   void setPulse(){
-    type = Type::Pulse; value = 5; counter = 0;
+    type = Type::Pulse; value = 12; counter = 0;
   }
 };
 
@@ -188,39 +218,74 @@ struct PolyMapCell
   std::vector<PolyMapCell*> neighbors;
 
   void computeColor(size_t time, size_t epoch, std::vector<FastNoise> noiseGen) {
-    float r = 200.0*(1.0+noiseGen[0].GetNoise(pos.x,pos.y,time*1))*0.5;
-    float g = 200.0*(1.0+noiseGen[1].GetNoise(pos.x,pos.y,time*1))*0.5;
-    float b = 200.0*(1.0+noiseGen[2].GetNoise(pos.x,pos.y,time*1))*0.5;
+    float hue0 = (1.0+noiseGen[0].GetNoise(pos.x,pos.y,time*1))*0.3;
+    float hue1 = (1.0+noiseGen[1].GetNoise(pos.x*0.1,pos.y*0.1,time*0.1))*1.0;
+    sf::Color rgb = HueToRGB(hue0+hue1);
+    float r=rgb.r, g=rgb.g, b=rgb.b;
+    float white = (1.0+noiseGen[2].GetNoise(pos.x,pos.y,time*1))*0.5;
+    float fraction = noiseGen[3].GetNoise(pos.x*0.1,pos.y*0.1,time*0.1)*10.0;
+    fraction = std::max(0.0f,std::min(1.0f,fraction));
+    r = fraction*r + (1.0-fraction)*255.0*white;
+    g = fraction*g + (1.0-fraction)*255.0*white;
+    b = fraction*b + (1.0-fraction)*255.0*white;
+    //float r = 255.0*(1.0+noiseGen[0].GetNoise(pos.x,pos.y,time*1))*0.5;
+    //float g = 255.0*(1.0+noiseGen[1].GetNoise(pos.x,pos.y,time*1))*0.5;
+    //float b = 255.0*(1.0+noiseGen[2].GetNoise(pos.x,pos.y,time*1))*0.5;
     PolyMapCellState& s = state(epoch);
     if (s.type == PolyMapCellState::Type::Pulsator) {
-      r/=(s.counter+1);g/=(s.counter+1);b/=(s.counter+1);
+      // full blast always
     }else if (s.type == PolyMapCellState::Type::Pulse) {
-      r+=50;g+=50;b+=50;
+      //float factor = 1.0 - 1.0*(float)s.counter/s.value;
+      float factor = std::pow(0.8,s.counter);
+      r*=factor;g*=factor;b*=factor;
+    } else {
+      r*=0.1;g*=0.1;b*=0.1;
     }
     color = sf::Color(r,g,b);
   }
 
   void calculateStep(size_t epoch, std::vector<FastNoise> noiseGen) {
     PolyMapCellState& oldState = state(epoch+1);
-    PolyMapCellState& newState = oldState;
+    PolyMapCellState newState = oldState;
 
     if (oldState.type == PolyMapCellState::Type::Pulsator) {
       newState.counter+=1;
       if (newState.counter >= oldState.value) {
         newState.counter = 0;
       }
-    }else{
+    } else if (oldState.type == PolyMapCellState::Type::Pulse) {
+      newState.counter+=1;
+      if (newState.counter >= oldState.value) {
+        newState.setVoid();
+      }
+    } else if (oldState.type == PolyMapCellState::Type::Void) {
+      bool makePulse = false;
+      bool denyPulse = false;
       for(auto n : neighbors) {
         PolyMapCellState& nOld = n->state(epoch+1);
         if (nOld.type == PolyMapCellState::Type::Pulsator) {
-          if (nOld.counter-1 == nOld.value) {
-            newState.setPulse();
+          if (epoch % nOld.value == 0) {
+            makePulse = true;
+          }
+        } else if (nOld.type == PolyMapCellState::Type::Pulse) {
+          if (nOld.counter==0) {
+            makePulse = true;
+          } else {
+            denyPulse = true;
           }
         }
+      }
+      if (makePulse and !denyPulse) {
+        newState.setPulse();
       }
     }
 
     state(epoch) = newState;
+  }
+
+  void clear() {
+    state0.setVoid();
+    state1.setVoid();
   }
 
   PolyMapCellState state0,state1;
@@ -288,7 +353,7 @@ struct PolyMap
     size_t generation_seed = 1000;
 
     // -------------------- noise functions
-    noiseGen.resize(3);
+    noiseGen.resize(6);
     for (size_t i = 0; i < noiseGen.size(); i++) {
       noiseGen[i].SetNoiseType(FastNoise::SimplexFractal);
       noiseGen[i].SetSeed(generation_seed + i);
@@ -420,7 +485,7 @@ struct PolyMap
   }
   void recolor() {
     time+=1;
-    size_t newEpoch = time/20;
+    size_t newEpoch = time/1;
     if(not (epoch==newEpoch)){
       epoch = newEpoch;
       calculateStep();
@@ -430,6 +495,13 @@ struct PolyMap
       cells[i].computeColor(time,epoch,noiseGen);
     }
     create_mesh();
+  }
+
+  void clear() {
+    for(size_t i = 0; i<num_cells; i++)
+    {
+      cells[i].clear();
+    }
   }
 
   void draw(float x, float y, float zoom, sf::RenderWindow &window)
@@ -471,7 +543,8 @@ int main()
     // ------------------------------------ WINDOW
     sf::ContextSettings settings;
     settings.antialiasingLevel = 8;
-    sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "first attempts", sf::Style::Default, settings);
+    //sf::Style style = sf::Style::Fullscreen;//Default
+    sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "first attempts", sf::Style::Fullscreen, settings);
     window.setVerticalSyncEnabled(true);
     window.setMouseCursorVisible(false);
 
@@ -484,7 +557,8 @@ int main()
 
     // ------------------------------------ MAP
     //PolyMap map = PolyMap(30000, 1000, 1000);
-    PolyMap map = PolyMap(1200, 200, 200);
+    PolyMap map = PolyMap(40000, 4000, 2000);
+    //PolyMap map = PolyMap(4800, 400, 400);
 
     // ------------------------------------ SCEEN
     float screen_x = 0;
@@ -598,6 +672,10 @@ int main()
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)){
           screen_y+=5/screen_zoom;
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)){
+          map.clear();
         }
 
         window.clear();
