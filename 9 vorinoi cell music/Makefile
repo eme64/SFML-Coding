@@ -1,12 +1,12 @@
 CPP=g++
-CFLAGS= -std=gnu++11 -lsfml-graphics -lsfml-window -lsfml-system
+CFLAGS= -std=gnu++11 -lsfml-graphics -lsfml-window -lsfml-system -lpthread
 
 %.o: %.cpp
 	$(CPP) -c -o $@ $< $(CFLAGS)
 
 main: main.o FastNoise/FastNoise.o
 	$(CPP) -o $@ $^ -std=gnu++11 $(CFLAGS)
-	
+
 .PHONY: clean
 
 clean:

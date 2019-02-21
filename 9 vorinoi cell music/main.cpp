@@ -6,6 +6,7 @@
 #include <list>
 #include <queue>
 #include <algorithm>
+#include <thread>
 
 #include "FastNoise/FastNoise.h"
 //https://github.com/Auburns/FastNoise/wiki
@@ -28,6 +29,20 @@ float MOUSE_X_MAP;
 float MOUSE_Y_MAP;
 
 sf::Font FONT;
+
+bool HUD_ENABLED = true;
+bool SHOW_BACKGROUND = false;
+int BACKGROUND_COLORGENERATOR = 0;
+float BACKGROUND_COLORGENERATOR_SCALE = 1.0;
+float BACKGROUND_COLORGENERATOR_TIME = 1.0;
+std::vector<std::string> BACKGROUND_COLORGENERATORS = {
+  "random RGB",
+  "random BW",
+  "saturation spots",
+  "rgb field",
+};
+
+size_t NUM_THREADS = 8;
 
 // --------- MOUSE
 bool MOUSE_LEFT_HIT = false;
@@ -218,30 +233,51 @@ struct PolyMapCell
   std::vector<PolyMapCell*> neighbors;
 
   void computeColor(size_t time, size_t epoch, std::vector<FastNoise> noiseGen) {
-    float hue0 = (1.0+noiseGen[0].GetNoise(pos.x,pos.y,time*1))*0.3;
-    float hue1 = (1.0+noiseGen[1].GetNoise(pos.x*0.1,pos.y*0.1,time*0.1))*1.0;
-    sf::Color rgb = HueToRGB(hue0+hue1);
-    float r=rgb.r, g=rgb.g, b=rgb.b;
-    float white = (1.0+noiseGen[2].GetNoise(pos.x,pos.y,time*1))*0.5;
-    float fraction = noiseGen[3].GetNoise(pos.x*0.1,pos.y*0.1,time*0.1)*10.0;
-    fraction = std::max(0.0f,std::min(1.0f,fraction));
-    r = fraction*r + (1.0-fraction)*255.0*white;
-    g = fraction*g + (1.0-fraction)*255.0*white;
-    b = fraction*b + (1.0-fraction)*255.0*white;
-    //float r = 255.0*(1.0+noiseGen[0].GetNoise(pos.x,pos.y,time*1))*0.5;
-    //float g = 255.0*(1.0+noiseGen[1].GetNoise(pos.x,pos.y,time*1))*0.5;
-    //float b = 255.0*(1.0+noiseGen[2].GetNoise(pos.x,pos.y,time*1))*0.5;
+    float r, g, b;
+    float scale = BACKGROUND_COLORGENERATOR_SCALE;
+    float tscale = BACKGROUND_COLORGENERATOR_TIME;
+    if (BACKGROUND_COLORGENERATOR==0) {
+      r = 255.0*(1.0+noiseGen[0].GetNoise(pos.x*scale,pos.y*scale,time*tscale))*0.5;
+      g = 255.0*(1.0+noiseGen[1].GetNoise(pos.x*scale,pos.y*scale,time*tscale))*0.5;
+      b = 255.0*(1.0+noiseGen[2].GetNoise(pos.x*scale,pos.y*scale,time*tscale))*0.5;
+    } else if (BACKGROUND_COLORGENERATOR==1) {
+      r = 255.0*(1.0+noiseGen[0].GetNoise(pos.x*scale,pos.y*scale,time*tscale))*0.5;
+      g = r;
+      b = r;
+    } else if (BACKGROUND_COLORGENERATOR==2) {
+      float hue0 = (1.0+noiseGen[0].GetNoise(pos.x*scale,pos.y*scale,time*tscale))*0.3;
+      float hue1 = (1.0+noiseGen[1].GetNoise(pos.x*scale*0.1,pos.y*scale*0.1,time*tscale*0.1))*1.0;
+      sf::Color rgb = HueToRGB(hue0+hue1);
+      r=rgb.r, g=rgb.g, b=rgb.b;
+      float white = (1.0+noiseGen[2].GetNoise(pos.x*scale,pos.y*scale,time*tscale))*0.5;
+      float fraction = noiseGen[3].GetNoise(pos.x*scale*0.1,pos.y*scale*0.1,time*tscale*0.1)*10.0;
+      fraction = std::max(0.0f,std::min(1.0f,fraction));
+      r = fraction*r + (1.0-fraction)*255.0*white;
+      g = fraction*g + (1.0-fraction)*255.0*white;
+      b = fraction*b + (1.0-fraction)*255.0*white;
+    } else {
+      const float w = 1000.0;
+      r = 255.0*fmod(pos.x*scale+time*tscale,w)/w;
+      g = 255.0*fmod(pos.y*scale+time*tscale,w)/w;
+      b = 255.0*fmod(std::abs(pos.x*scale+pos.y*scale-time*tscale),w)/w;
+    }
+
+
     PolyMapCellState& s = state(epoch);
+
+    float dimFactor = 1.0;
+
     if (s.type == PolyMapCellState::Type::Pulsator) {
       // full blast always
     }else if (s.type == PolyMapCellState::Type::Pulse) {
       //float factor = 1.0 - 1.0*(float)s.counter/s.value;
-      float factor = std::pow(0.8,s.counter);
-      r*=factor;g*=factor;b*=factor;
+      dimFactor = std::pow(0.8,s.counter);
     } else {
-      r*=0.1;g*=0.1;b*=0.1;
+      if (!SHOW_BACKGROUND) {
+        dimFactor = 0.1;
+      }
     }
-    color = sf::Color(r,g,b);
+    color = sf::Color(r*dimFactor,g*dimFactor,b*dimFactor);
   }
 
   void calculateStep(size_t epoch, std::vector<FastNoise> noiseGen) {
@@ -314,11 +350,27 @@ struct PolyMap
   size_t time = 0;
   size_t epoch = 0;
 
-  PolyMap(size_t n_cells, float s_x, float s_y)
+  enum MapGeneratorType {Random,RandomNonUniform,RegularHex,PerturbedHex};
+
+  PolyMap(size_t n_cells, float s_x, float s_y, MapGeneratorType genType)
   {
     num_cells = n_cells;
+
+    // for grid placements:
+    // x/y = sx/sy;
+    // x*y = num_cells; -> x = num_cells/y;
+    // num_cells/y/y = sx/sy
+    // y*y = sy/sx*num_cells;
+
     spread_x = s_x;
     spread_y = s_y;
+    size_t num_cells_y = std::sqrt(num_cells*spread_y/spread_x);
+    size_t num_cells_x = (num_cells+num_cells_y-1)/num_cells_y;
+    float dx = spread_x/(num_cells_x+1);
+    float dy = spread_y/(num_cells_y+1);
+    std::cout << num_cells << " " << num_cells_x*num_cells_y << " " << num_cells_x << " " << num_cells_y << std::endl;
+    std::cout << dx << " " << dy << std::endl;
+
 
     // --------------------------- Prepare Points
     jcv_point* points = NULL;
@@ -326,8 +378,19 @@ struct PolyMap
 
     for(size_t i = 0; i<num_cells; i++)
     {
-      points[i].x = spread_x*((float) rand() / (RAND_MAX));
-      points[i].y = spread_y*((float) rand() / (RAND_MAX));
+      if (genType == MapGeneratorType::RegularHex or genType == MapGeneratorType::PerturbedHex) {
+        size_t xx = i % num_cells_x;
+        size_t yy = i / num_cells_x;
+        points[i].x = dx*((float)xx+0.5*(yy % 2));
+        points[i].y = dy*(yy+0.5);
+        if (genType == MapGeneratorType::PerturbedHex) {
+          points[i].x+=dx*(((float) rand() / (RAND_MAX))*0.3-0.15);
+          points[i].y+=dy*(((float) rand() / (RAND_MAX))*0.3-0.15);
+        }
+      } else { // Random,RandomNonUniform
+        points[i].x = spread_x*((float) rand() / (RAND_MAX));
+        points[i].y = spread_y*((float) rand() / (RAND_MAX));
+      }
     }
 
     // --------------------------- Prepare Diagram
@@ -339,7 +402,15 @@ struct PolyMap
     rect.max.y = spread_y;
     voronoi_generate(num_cells, points, diagram, &rect);
 
-    for(int i=0; i<10; i++) // relax some -> make more equispaced
+    size_t numRelax = 10;
+    if (genType == MapGeneratorType::RegularHex or genType == MapGeneratorType::PerturbedHex) {
+      numRelax = 0;
+    }
+    if (genType == MapGeneratorType::RandomNonUniform) {
+      numRelax = 1;
+    }
+
+    for(size_t i=0; i<numRelax; i++) // relax some -> make more equispaced
     {
       voronoi_relax_points(diagram, points, &rect);
       voronoi_free(diagram);
@@ -486,15 +557,33 @@ struct PolyMap
   void recolor() {
     time+=1;
     size_t newEpoch = time/1;
+    bool isNewEpoch = false;
     if(not (epoch==newEpoch)){
       epoch = newEpoch;
-      calculateStep();
+      isNewEpoch = true;
     }
-    for(size_t i = 0; i<num_cells; i++)
-    {
-      cells[i].computeColor(time,epoch,noiseGen);
+    //clock_t t1 = clock(); // CLOCK
+
+    std::vector<std::thread> threads;
+    for (size_t tid = 0; tid < NUM_THREADS; tid++) {
+      threads.push_back(std::thread([this,tid,isNewEpoch]{
+        size_t num_cells_local = (num_cells+NUM_THREADS-1)/NUM_THREADS;
+        size_t start = tid*num_cells_local;
+        size_t end = std::min(start+num_cells_local,num_cells);
+        for (size_t i = start; i < end; i++) {
+          cells[i].calculateStep(epoch,noiseGen);
+          cells[i].computeColor(time,epoch,noiseGen);
+        }
+      }));
     }
+    for (std::thread &t : threads) {
+      t.join();
+    }
+
+    //clock_t t2 = clock(); // CLOCK
     create_mesh();
+    //clock_t t3 = clock(); // CLOCK
+    //std::cout << "time: " << (t2-t1) << " " << (t3-t2) << std::endl;
   }
 
   void clear() {
@@ -556,9 +645,30 @@ int main()
     }
 
     // ------------------------------------ MAP
-    //PolyMap map = PolyMap(30000, 1000, 1000);
-    PolyMap map = PolyMap(40000, 4000, 2000);
-    //PolyMap map = PolyMap(4800, 400, 400);
+    std::vector<size_t> map_size_num = {4800,10000,40000,160000};
+    std::vector<size_t> map_size_x = {400,2000,4000,8000};
+    std::vector<size_t> map_size_y = {400,1000,2000,4000};
+    std::vector<std::string> map_size_text = {"small","medium","large","extra large"};
+    std::vector<PolyMap::MapGeneratorType> map_genTypes = {
+      PolyMap::MapGeneratorType::Random,
+      PolyMap::MapGeneratorType::RandomNonUniform,
+      PolyMap::MapGeneratorType::RegularHex,
+      PolyMap::MapGeneratorType::PerturbedHex,
+    };
+    std::vector<std::string> map_genTypes_text = {
+      "random",
+      "random non-uniform",
+      "hex",
+      "hex noisy",
+    };
+
+    size_t map_num = map_size_num[2];
+    size_t map_x = map_size_x[2];
+    size_t map_y = map_size_y[2];
+    std::string map_text = map_size_text[2];
+    PolyMap::MapGeneratorType map_genType = map_genTypes[0];
+    std::string map_genType_text = map_genTypes_text[0];
+    PolyMap map = PolyMap(map_num, map_x, map_y, map_genType);
 
     // ------------------------------------ SCEEN
     float screen_x = 0;
@@ -678,6 +788,129 @@ int main()
           map.clear();
         }
 
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::H)){
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
+            HUD_ENABLED = false;
+          } else {
+            HUD_ENABLED = true;
+          }
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::L)){
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
+            SHOW_BACKGROUND = false;
+          } else {
+            SHOW_BACKGROUND = true;
+          }
+        }
+
+        bool regenerateMap = false;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::R)){
+          int param = -1;
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)) {
+            param = 0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
+            param = 1;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)) {
+            param = 2;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)) {
+            param = 3;
+          }
+          if (param>=0) {
+            regenerateMap = true;
+            map_num = map_size_num[param];
+            map_x = map_size_x[param];
+            map_y = map_size_y[param];
+            map_text = map_size_text[param];
+          }
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::B)){
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)) {
+            BACKGROUND_COLORGENERATOR = 0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
+            BACKGROUND_COLORGENERATOR = 1;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)) {
+            BACKGROUND_COLORGENERATOR = 2;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)) {
+            BACKGROUND_COLORGENERATOR = 3;
+          }
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Z)){
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)) {
+            BACKGROUND_COLORGENERATOR_SCALE = 10.0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
+            BACKGROUND_COLORGENERATOR_SCALE = 3.0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)) {
+            BACKGROUND_COLORGENERATOR_SCALE = 1.0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)) {
+            BACKGROUND_COLORGENERATOR_SCALE = 0.5;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num5)) {
+            BACKGROUND_COLORGENERATOR_SCALE = 0.25;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num6)) {
+            BACKGROUND_COLORGENERATOR_SCALE = 0.1;
+          }
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::T)){
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)) {
+            BACKGROUND_COLORGENERATOR_TIME = 10.0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
+            BACKGROUND_COLORGENERATOR_TIME = 3.0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)) {
+            BACKGROUND_COLORGENERATOR_TIME = 1.0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)) {
+            BACKGROUND_COLORGENERATOR_TIME = 0.5;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num5)) {
+            BACKGROUND_COLORGENERATOR_TIME = 0.25;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num6)) {
+            BACKGROUND_COLORGENERATOR_TIME = 0.1;
+          }
+        }
+
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::G)){
+          int param = -1;
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)) {
+            param = 0;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
+            param = 1;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)) {
+            param = 2;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)) {
+            param = 3;
+          }
+          if (param>=0) {
+            regenerateMap = true;
+            map_genType = map_genTypes[param];
+            map_genType_text = map_genTypes_text[param];
+          }
+        }
+
+        if (regenerateMap) {
+          map = PolyMap(map_num, map_x, map_y, map_genType);
+        }
+
+
         window.clear();
 
         map.draw(screen_x, screen_y, screen_zoom, window);
@@ -695,9 +928,21 @@ int main()
         }
 
         FPS_tick();
-        DrawText(5,5, "FPS: " + std::to_string(framesPerSec), 10, window, sf::Color(255,255,255));
-        DrawText(5,20, "avg: " + std::to_string(framesPerSec_avg), 10, window, sf::Color(255,255,255));
-        DrawText(5,35, "ticker: " + std::to_string(ticker), 10, window, sf::Color(255,255,255));
+        if (HUD_ENABLED) {
+          DrawText(5,5, "FPS: " + std::to_string(framesPerSec), 10, window, sf::Color(255,255,255));
+          DrawText(5,20, "avg: " + std::to_string(framesPerSec_avg), 10, window, sf::Color(255,255,255));
+          DrawText(5,35, "ticker: " + std::to_string(ticker), 10, window, sf::Color(255,255,255));
+
+          DrawText(5,50, "[WASDQE] navigate/scale", 20, window, sf::Color(255,255,255));
+          DrawText(5,75, "[L] lighten background", 20, window, sf::Color(255,255,255));
+          DrawText(5,100, "[H] enable HUD", 20, window, sf::Color(255,255,255));
+          DrawText(5,125, "[SPACE] clear map", 20, window, sf::Color(255,255,255));
+          DrawText(5,150, "[R+1234] resize map: "+map_text, 20, window, sf::Color(255,255,255));
+          DrawText(5,175, "[G+1234] map generator: "+map_genType_text, 20, window, sf::Color(255,255,255));
+          DrawText(5,200, "[B+1234] background color generator: "+BACKGROUND_COLORGENERATORS[BACKGROUND_COLORGENERATOR], 20, window, sf::Color(255,255,255));
+          DrawText(5,225, "[Z+123456] background color zoom: "+std::to_string(BACKGROUND_COLORGENERATOR_SCALE), 20, window, sf::Color(255,255,255));
+          DrawText(5,250, "[T+123456] background color time: "+std::to_string(BACKGROUND_COLORGENERATOR_TIME), 20, window, sf::Color(255,255,255));
+        }
 
         window.display();
     }
