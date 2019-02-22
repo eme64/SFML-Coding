@@ -40,7 +40,11 @@ std::vector<std::string> BACKGROUND_COLORGENERATORS = {
   "random BW",
   "saturation spots",
   "rgb field",
+  "plain white",
+  "single color",
 };
+size_t PULSATOR_COLOR = 0;
+bool PULSATOR_NOT_PULSE = false;
 
 size_t NUM_THREADS = 8;
 
@@ -209,18 +213,19 @@ struct PolyMapCellState {
   Type type = Type::Void;
   size_t value = 0;
   size_t counter = 0;
+  size_t color = 0; // 0: bg, 1+: custom
   bool isSelect = false;
 
-  void setPulsator(){
-    type = Type::Pulsator; value = 32; counter = 0;
+  void setPulsator(size_t color){
+    type = Type::Pulsator; value = 32; counter = 0; this->color = color;
   }
 
   void setVoid(){
     type = Type::Void; value = 0; counter = 0;
   }
 
-  void setPulse(){
-    type = Type::Pulse; value = 12; counter = 0;
+  void setPulse(size_t color){
+    type = Type::Pulse; value = 12; counter = 0; this->color = color;
   }
 };
 
@@ -255,11 +260,17 @@ struct PolyMapCell
       r = fraction*r + (1.0-fraction)*255.0*white;
       g = fraction*g + (1.0-fraction)*255.0*white;
       b = fraction*b + (1.0-fraction)*255.0*white;
-    } else {
+    } else if (BACKGROUND_COLORGENERATOR==3) {
       const float w = 1000.0;
       r = 255.0*fmod(pos.x*scale+time*tscale,w)/w;
       g = 255.0*fmod(pos.y*scale+time*tscale,w)/w;
       b = 255.0*fmod(std::abs(pos.x*scale+pos.y*scale-time*tscale),w)/w;
+    } else if (BACKGROUND_COLORGENERATOR==4) {
+      r = 255; g=255; b = 255;
+    } else {
+      r = 255.0*(1.0+noiseGen[0].GetNoise(0,time*tscale))*0.5;
+      g = 255.0*(1.0+noiseGen[1].GetNoise(0,time*tscale))*0.5;
+      b = 255.0*(1.0+noiseGen[2].GetNoise(0,time*tscale))*0.5;
     }
 
 
@@ -268,9 +279,19 @@ struct PolyMapCell
     float dimFactor = 1.0;
 
     if (s.type == PolyMapCellState::Type::Pulsator) {
-      // full blast always
+      if (s.color>0) {
+        float hue = (float)s.color/9.0;
+        sf::Color rgb = HueToRGB(hue);
+        r=rgb.r, g=rgb.g, b=rgb.b;
+      }
     }else if (s.type == PolyMapCellState::Type::Pulse) {
       //float factor = 1.0 - 1.0*(float)s.counter/s.value;
+      if (s.color>0) {
+        float intensity = (r+g+b)/3.0/255.0;
+        float hue = (float)s.color/9.0+(1.0+noiseGen[0].GetNoise(pos.x*scale*0.1,pos.y*scale*0.1,time*tscale))*2.0;
+        sf::Color rgb = HueToRGB(hue);
+        r=rgb.r*intensity, g=rgb.g*intensity, b=rgb.b*intensity;
+      }
       dimFactor = std::pow(0.8,s.counter);
     } else {
       if (!SHOW_BACKGROUND) {
@@ -294,25 +315,43 @@ struct PolyMapCell
       if (newState.counter >= oldState.value) {
         newState.setVoid();
       }
+      bool makePulse = false;
+      size_t makePulseColor = oldState.color;
+      for(auto n : neighbors) {
+        PolyMapCellState& nOld = n->state(epoch+1);
+        if (nOld.type == PolyMapCellState::Type::Pulse) {
+          int diff = (nOld.color - makePulseColor+9) % 9;
+          if (diff > 5) {
+            makePulseColor = nOld.color;
+            makePulse = true;
+          }
+        }
+      }
+      if (makePulse) {
+        newState.setPulse(makePulseColor);
+      }
     } else if (oldState.type == PolyMapCellState::Type::Void) {
       bool makePulse = false;
+      size_t makePulseColor = 0;
       bool denyPulse = false;
       for(auto n : neighbors) {
         PolyMapCellState& nOld = n->state(epoch+1);
         if (nOld.type == PolyMapCellState::Type::Pulsator) {
           if (epoch % nOld.value == 0) {
             makePulse = true;
+            makePulseColor = nOld.color;
           }
         } else if (nOld.type == PolyMapCellState::Type::Pulse) {
           if (nOld.counter==0) {
             makePulse = true;
+            makePulseColor = nOld.color;
           } else {
             denyPulse = true;
           }
         }
       }
       if (makePulse and !denyPulse) {
-        newState.setPulse();
+        newState.setPulse(makePulseColor);
       }
     }
 
@@ -840,14 +879,20 @@ int main()
           if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)) {
             BACKGROUND_COLORGENERATOR = 3;
           }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num5)) {
+            BACKGROUND_COLORGENERATOR = 4;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num6)) {
+            BACKGROUND_COLORGENERATOR = 5;
+          }
         }
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Z)){
           if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)) {
-            BACKGROUND_COLORGENERATOR_SCALE = 10.0;
+            BACKGROUND_COLORGENERATOR_SCALE = 3.0;
           }
           if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
-            BACKGROUND_COLORGENERATOR_SCALE = 3.0;
+            BACKGROUND_COLORGENERATOR_SCALE = 2.0;
           }
           if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)) {
             BACKGROUND_COLORGENERATOR_SCALE = 1.0;
@@ -860,6 +905,12 @@ int main()
           }
           if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num6)) {
             BACKGROUND_COLORGENERATOR_SCALE = 0.1;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num7)) {
+            BACKGROUND_COLORGENERATOR_SCALE = 0.05;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num8)) {
+            BACKGROUND_COLORGENERATOR_SCALE = 0.025;
           }
         }
 
@@ -906,6 +957,40 @@ int main()
           }
         }
 
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::P) || sf::Keyboard::isKeyPressed(sf::Keyboard::O)){
+          PULSATOR_NOT_PULSE = sf::Keyboard::isKeyPressed(sf::Keyboard::O);
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)) {
+            PULSATOR_COLOR = 1;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
+            PULSATOR_COLOR = 2;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)) {
+            PULSATOR_COLOR = 3;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)) {
+            PULSATOR_COLOR = 4;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num5)) {
+            PULSATOR_COLOR = 5;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num6)) {
+            PULSATOR_COLOR = 6;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num7)) {
+            PULSATOR_COLOR = 7;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num8)) {
+            PULSATOR_COLOR = 8;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num9)) {
+            PULSATOR_COLOR = 9;
+          }
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num0)) {
+            PULSATOR_COLOR = 0;
+          }
+        }
+
         if (regenerateMap) {
           map = PolyMap(map_num, map_x, map_y, map_genType);
         }
@@ -919,7 +1004,11 @@ int main()
 
         if (MOUSE_LEFT_DOWN) {
           PolyMapCell* select = map.getCell(MOUSE_X_MAP, MOUSE_Y_MAP, &(map.cells[0]));
-          select->state(map.epoch).setPulsator();
+          if (PULSATOR_NOT_PULSE) {
+            select->state(map.epoch).setPulsator(PULSATOR_COLOR);
+          } else {
+            select->state(map.epoch).setPulse(PULSATOR_COLOR);
+          }
         }
 
         if (MOUSE_RIGHT_DOWN) {
@@ -937,11 +1026,12 @@ int main()
           DrawText(5,75, "[L] lighten background", 20, window, sf::Color(255,255,255));
           DrawText(5,100, "[H] enable HUD", 20, window, sf::Color(255,255,255));
           DrawText(5,125, "[SPACE] clear map", 20, window, sf::Color(255,255,255));
-          DrawText(5,150, "[R+1234] resize map: "+map_text, 20, window, sf::Color(255,255,255));
-          DrawText(5,175, "[G+1234] map generator: "+map_genType_text, 20, window, sf::Color(255,255,255));
-          DrawText(5,200, "[B+1234] background color generator: "+BACKGROUND_COLORGENERATORS[BACKGROUND_COLORGENERATOR], 20, window, sf::Color(255,255,255));
-          DrawText(5,225, "[Z+123456] background color zoom: "+std::to_string(BACKGROUND_COLORGENERATOR_SCALE), 20, window, sf::Color(255,255,255));
-          DrawText(5,250, "[T+123456] background color time: "+std::to_string(BACKGROUND_COLORGENERATOR_TIME), 20, window, sf::Color(255,255,255));
+          DrawText(5,150, "[R+1..4] resize map: "+map_text, 20, window, sf::Color(255,255,255));
+          DrawText(5,175, "[G+1..4] map generator: "+map_genType_text, 20, window, sf::Color(255,255,255));
+          DrawText(5,200, "[B+1..6] background color generator: "+BACKGROUND_COLORGENERATORS[BACKGROUND_COLORGENERATOR], 20, window, sf::Color(255,255,255));
+          DrawText(5,225, "[Z+1..6] background color zoom: "+std::to_string(BACKGROUND_COLORGENERATOR_SCALE), 20, window, sf::Color(255,255,255));
+          DrawText(5,250, "[T+1..6] background color time: "+std::to_string(BACKGROUND_COLORGENERATOR_TIME), 20, window, sf::Color(255,255,255));
+          DrawText(5,275, "[P+1..0] pulsator color: "+std::to_string(PULSATOR_COLOR), 20, window, sf::Color(255,255,255));
         }
 
         window.display();
