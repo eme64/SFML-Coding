@@ -56,6 +56,12 @@ class MyRecorder : public sf::SoundRecorder {
         std::cout << "Stop" << std::endl;
     }
 public:
+		float getValue() {
+			// return value between 0..1, if out of bounds: consider off
+			std::lock_guard<std::mutex> lock(mutex_);
+			float res = transformInv((double)getMaxIndex()*2 / array_.size());
+			return (res-0.05)*10.0;
+		}
     void draw(sf::RenderWindow &window)
     {
         std::cout << "draw" << std::endl;
@@ -175,14 +181,20 @@ int main()
           //board.set(false, sf::Mouse::getPosition(window).x, sf::Mouse::getPosition(window).y);
         }
 
+
+
         window.clear();
 
         recorder.draw(window);
+				float res = recorder.getValue();
+				if (res>=0 and res<=1) {
+					std::cout << res << std::endl;
+				}
 
         // -------------- draw text:
         sf::Text text;
         text.setFont(font);
-        text.setString("xxx");
+        text.setString(std::to_string(res));
         text.setCharacterSize(20);
         window.draw(text);
 
