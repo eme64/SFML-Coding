@@ -1,6 +1,8 @@
 #ifndef EP_GUI_HPP
 #define EP_GUI_HPP
 
+#include <list>
+
 namespace EP {
   class Color {
   public:
@@ -66,7 +68,7 @@ namespace EP {
     shape.setColor(color.toSFML());
     shape.setPosition(x,y);
     //shape.setStyle(sf::Text::Bold | sf::Text::Underlined);
-    target.draw(shape, sf::BlendAdd);
+    target.draw(shape, sf::BlendAlpha);//BlendAdd
   }
 
   void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, const Color& color) {
@@ -74,7 +76,7 @@ namespace EP {
     rectangle.setSize(sf::Vector2f(dx, dy));
     rectangle.setFillColor(color.toSFML());
     rectangle.setPosition(x, y);
-    target.draw(rectangle, sf::BlendAdd);
+    target.draw(rectangle, sf::BlendAlpha);//BlendAdd
   }
 
   // void DrawDot(float x, float y, sf::RenderWindow &window, sf::Color color = sf::Color(255,0,0))
@@ -101,30 +103,65 @@ namespace EP {
 
 
   namespace GUI {
+    // base: Area
+    // Windows,Buttons,expanders(x,y-sliders)
 
     class Area {
     public:
       Area(Area* const parent, const float x,const float y,const float dx,const float dy)
-      : parent_(parent),x_(x),y_(y),dx_(dx),dy_(dy){}
+      : parent_(parent),x_(x),y_(y),dx_(dx),dy_(dy){
+        if (parent_) {parent_->childIs(this);}
+      }
 
       float dx() const {return dx_;}
       float dy() const {return dy_;}
 
-      void draw(const float px,const float py,const float scale, sf::RenderTarget &target) {
+      virtual void draw(const float px,const float py,const float scale, sf::RenderTarget &target) {
         DrawRect(x_*scale+py, y_*scale+py, dx_*scale, dy_*scale, target, Color(0.5,0.1,0.1));
+        for (auto &c : children_) {
+          c->draw(x_*scale+py, y_*scale+py,scale,target);
+        }
       }
 
-      void onResizeParent() {
-        if (fillParent_&&parent_) { dx_ = parent_->dx(); dy_ = parent_->dy(); }
+      void onResizeParent(const float dx,const float dy) {
+        if (fillParent_&&parent_) { sizeIs(dx,dy); }
       }
 
-      Area* sizeIs(const float dx,const float dy) {dx_=dx; dy_=dy; onResizeParent(); return this;}
+      Area* sizeIs(const float dx,const float dy) {
+        dx_=dx; dy_=dy;
+        for (auto &c : children_) {
+          c->onResizeParent(dx,dy);
+        }
+        return this;
+      }
+
       Area* fillParentIs(bool const value) { fillParent_ = value; return this;}
-
-    private:
+      Area* childIs(Area* c) {children_.push_back(c); return this;}
+    protected:
       Area* parent_ = NULL;
+      std::list<Area*> children_;
       float x_,y_,dx_,dy_; // x,y relative to parent
       bool fillParent_ = false;
+    };// class Area
+    class Window : public Area {
+    public:
+      Window(Area* const parent, const float x,const float y,const float dx,const float dy, const std::string name)
+      : Area(parent,x,y,dx,dy),name_(name){}
+
+      virtual void draw(const float px,const float py,const float scale, sf::RenderTarget &target) {
+        float gx = x_*scale+px;
+        float gy = y_*scale+py;
+        DrawRect(gx, gy, dx_*scale, dy_*scale, target, Color(0.1,0.5,0.1));
+        DrawText(gx+borderSize*scale, gy+borderSize*scale, name_, (headerSize-2*borderSize)*scale, target, Color(1,1,1));
+        for (auto &c : children_) {
+          c->draw(x_*scale+py, y_*scale+py,scale,target);
+        }
+      }
+
+    private:
+      std::string name_;
+      const float borderSize = 2.0; // sides and bottom
+      const float headerSize = 20.0;// top
     };
 
   }// namespace GUI

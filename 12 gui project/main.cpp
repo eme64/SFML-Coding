@@ -32,8 +32,8 @@ int main()
     {
       sf::Vector2u size = window.getSize();
       windowArea = (new EP::GUI::Area(NULL,0,0,size.x,size.y))->fillParentIs(true);
+      EP::GUI::Window* window1 = (new EP::GUI::Window(windowArea,50,50,200,300,"MyWindow"));
     }
-
 
     // ------------------------------------ FPS
     clock_t last_stamp = clock();
