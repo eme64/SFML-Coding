@@ -108,23 +108,38 @@ namespace EP {
 
     class Area {
     public:
-      Area(Area* const parent, const float x,const float y,const float dx,const float dy)
-      : parent_(parent),x_(x),y_(y),dx_(dx),dy_(dy){
+      Area(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy)
+      : name_(name),parent_(parent),x_(x),y_(y),dx_(dx),dy_(dy){
         if (parent_) {parent_->childIs(this);}
       }
 
       float dx() const {return dx_;}
       float dy() const {return dy_;}
+      std::string name() const {return name_;}
+      std::string fullName() const {if (parent_) {return parent_->fullName()+"/"+name_;}else{return name_;}}
 
       virtual void draw(const float px,const float py,const float scale, sf::RenderTarget &target) {
         DrawRect(x_*scale+py, y_*scale+py, dx_*scale, dy_*scale, target, Color(0.5,0.1,0.1));
-        for (auto &c : children_) {
-          c->draw(x_*scale+py, y_*scale+py,scale,target);
+        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+          (*rit)->draw(x_*scale+py, y_*scale+py,scale,target);
         }
       }
 
       void onResizeParent(const float dx,const float dy) {
         if (fillParent_&&parent_) { sizeIs(dx,dy); }
+      }
+
+      Area* checkMouseOver(const float px,const float py,const float scale) {// relative to parent
+        if (px>=x_*scale and py>=y_*scale and px<=(x_+dx_)*scale and py<=(y_+dy_)*scale) {
+          for (auto &c : children_) {
+            Area* over = c->checkMouseOver(px-x_*scale,py-y_*scale,scale);
+            if (over!=NULL) {
+              return over;
+            }
+          }
+          return this;
+        }
+        return NULL;
       }
 
       Area* sizeIs(const float dx,const float dy) {
@@ -138,6 +153,7 @@ namespace EP {
       Area* fillParentIs(bool const value) { fillParent_ = value; return this;}
       Area* childIs(Area* c) {children_.push_back(c); return this;}
     protected:
+      std::string name_;
       Area* parent_ = NULL;
       std::list<Area*> children_;
       float x_,y_,dx_,dy_; // x,y relative to parent
@@ -145,21 +161,21 @@ namespace EP {
     };// class Area
     class Window : public Area {
     public:
-      Window(Area* const parent, const float x,const float y,const float dx,const float dy, const std::string name)
-      : Area(parent,x,y,dx,dy),name_(name){}
+      Window(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy, const std::string title)
+      : Area(name,parent,x,y,dx,dy),title_(title){}
 
       virtual void draw(const float px,const float py,const float scale, sf::RenderTarget &target) {
         float gx = x_*scale+px;
         float gy = y_*scale+py;
         DrawRect(gx, gy, dx_*scale, dy_*scale, target, Color(0.1,0.5,0.1));
-        DrawText(gx+borderSize*scale, gy+borderSize*scale, name_, (headerSize-2*borderSize)*scale, target, Color(1,1,1));
-        for (auto &c : children_) {
-          c->draw(x_*scale+py, y_*scale+py,scale,target);
+        DrawText(gx+borderSize*scale, gy+borderSize*scale, title_, (headerSize-2*borderSize)*scale, target, Color(1,1,1));
+        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+          (*rit)->draw(x_*scale+py, y_*scale+py,scale,target);
         }
       }
 
     private:
-      std::string name_;
+      std::string title_;
       const float borderSize = 2.0; // sides and bottom
       const float headerSize = 20.0;// top
     };
