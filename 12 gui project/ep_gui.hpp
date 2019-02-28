@@ -129,14 +129,19 @@ namespace EP {
         if (fillParent_&&parent_) { sizeIs(dx,dy); }
       }
 
-      Area* checkMouseOver(const float px,const float py,const float scale) {// relative to parent
+      virtual void onMouseOver(const float px,const float py,const float scale) {}// relative to parent
+      virtual void onMouseOverStart() {}
+      virtual void onMouseOverEnd() {}
+
+      Area* checkMouseOver(const float px,const float py,const float scale,const bool doNotify=true) {// relative to parent
         if (px>=x_*scale and py>=y_*scale and px<=(x_+dx_)*scale and py<=(y_+dy_)*scale) {
           for (auto &c : children_) {
-            Area* over = c->checkMouseOver(px-x_*scale,py-y_*scale,scale);
+            Area* over = c->checkMouseOver(px-x_*scale,py-y_*scale,scale,doNotify);
             if (over!=NULL) {
               return over;
             }
           }
+          if (doNotify) {onMouseOver(px,py,scale);}
           return this;
         }
         return NULL;
@@ -159,10 +164,40 @@ namespace EP {
       float x_,y_,dx_,dy_; // x,y relative to parent
       bool fillParent_ = false;
     };// class Area
+    class Button : public Area {
+    public:
+      Button(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy, const std::string text,const std::vector<Color> bgColors,const std::vector<Color> textColors)
+      : Area(name,parent,x,y,dx,dy),text_(text),bgColors_(bgColors),textColors_(textColors){}
+
+      virtual void draw(const float px,const float py,const float scale, sf::RenderTarget &target) {
+        float gx = x_*scale+px;
+        float gy = y_*scale+py;
+        DrawRect(gx, gy, dx_*scale, dy_*scale, target, bgColors_[state_]);
+        DrawText(gx+1*scale, gy+1*scale, text_, (dy_-2)*scale, target, textColors_[state_]);
+        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+          (*rit)->draw(x_*scale+py, y_*scale+py,scale,target);
+        }
+      }
+      virtual void onMouseOver(const float px,const float py,const float scale) {// relative to parent
+        if (state_==0) {state_=1;}
+      }
+      virtual void onMouseOverStart() {if (state_==0) {state_=1;}}
+      virtual void onMouseOverEnd() {if (state_==1) {state_=0;}}
+
+    private:
+      std::string text_;
+      std::vector<Color> bgColors_,textColors_;
+      size_t state_=0;//0:normal, 1:mouse over, 2:pressing, 3:clicked
+    };
     class Window : public Area {
     public:
       Window(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy, const std::string title)
-      : Area(name,parent,x,y,dx,dy),title_(title){}
+      : Area(name,parent,x,y,dx,dy),title_(title){
+        Area* closeButton = new Button("close",this,dx-headerSize,borderSize,headerSize-2*borderSize,headerSize-2*borderSize,"X",
+                                        std::vector<Color>{Color(0.5,0,0),Color(0.4,0,0),Color(0.2,0,0),Color(0.2,0,0)},
+                                        std::vector<Color>{Color(1,0.5,0.5),Color(1,0.8,0.8),Color(0.6,0.1,0.1),Color(0.5,0,0)}
+                                      );
+      }
 
       virtual void draw(const float px,const float py,const float scale, sf::RenderTarget &target) {
         float gx = x_*scale+px;

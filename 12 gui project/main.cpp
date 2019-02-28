@@ -36,6 +36,9 @@ int main()
       EP::GUI::Window* window2 = (new EP::GUI::Window("window2",windowArea,250,150,300,200,"MyWindow"));
     }
 
+    //--------------------------------------- Event states:
+    EP::GUI::Area* mouseOver = NULL;
+
     // ------------------------------------ FPS
     clock_t last_stamp = clock();
     clock_t deltaTime = 1000;
@@ -120,11 +123,15 @@ int main()
             }
         }
 
-
         sf::Vector2i mousepos = sf::Mouse::getPosition(window);
         // MOUSE_X = mousepos.x;
         // MOUSE_Y = mousepos.y;
-        EP::GUI::Area* over = windowArea->checkMouseOver(mousepos.x,mousepos.y,1.0);
+        EP::GUI::Area* mouseOverNew = windowArea->checkMouseOver(mousepos.x,mousepos.y,1.0);
+        if (mouseOver!=mouseOverNew) {
+          if (mouseOver!=NULL) {mouseOver->onMouseOverEnd();}
+          if (mouseOverNew!=NULL) {mouseOverNew->onMouseOverStart();}
+          mouseOver = mouseOverNew;
+        }
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape)){
           window.close();
@@ -141,8 +148,8 @@ int main()
         EP::DrawText(5,5, "FPS: " + std::to_string(framesPerSec), 10, window, EP::Color(1.0,1.0,1.0));
         EP::DrawText(5,20, "avg: " + std::to_string(framesPerSec_avg), 10, window, EP::Color(1.0,1.0,1.0));
         EP::DrawText(5,35, "ticker: " + std::to_string(ticker), 10, window, EP::Color(1.0,1.0,1.0));
-        if (over) {
-          EP::DrawText(5,60, "over: " + over->fullName(), 10, window, EP::Color(1.0,1.0,1.0));
+        if (mouseOver) {
+          EP::DrawText(5,60, "over: " + mouseOver->fullName(), 10, window, EP::Color(1.0,1.0,1.0));
         }
 
 
