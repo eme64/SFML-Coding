@@ -177,6 +177,7 @@ namespace EP {
 
       Area* fillParentIs(bool const value) { fillParent_ = value; return this;}
       Area* childIs(Area* c) {children_.push_back(c); return this;}
+      Area* parentIs(Area* c) {parent_.push_back(c); return this;}
     protected:
       std::string name_;
       Area* parent_ = NULL;
@@ -250,6 +251,32 @@ namespace EP {
       std::string title_;
       const float borderSize = 2.0; // sides and bottom
       const float headerSize = 20.0;// top
+    };
+
+    class ScrollArea : public Area {
+    public:
+      ScrollArea(const std::string& name,Area* const parent, Area* const child,const float y,const float dx,const float dy)
+      : Area(name,parent,x,y,dx,dy),child_(child){
+        // Area* closeButton = new Button("close",this,dx-headerSize,borderSize,headerSize-2*borderSize,headerSize-2*borderSize,"X",
+        //                                 std::vector<Color>{Color(0.5,0,0),Color(0.4,0,0),Color(0.2,0,0),Color(0.2,0,0)},
+        //                                 std::vector<Color>{Color(1,0.5,0.5),Color(1,0.8,0.8),Color(0.6,0.1,0.1),Color(0.5,0,0)}
+        //                               );
+      }
+
+      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+        float gx = x_+px;
+        float gy = y_+py;
+        DrawRect(gx, gy, dx_, dy_, target, Color(0.1,0.5,0.1));
+        DrawText(gx+borderSize, gy+borderSize, title_, (headerSize-2*borderSize), target, Color(1,1,1));
+        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+          (*rit)->draw(x_+py, y_+py,target);
+        }
+      }
+
+    private:
+      Area* child_;
+      float childOffsetX_;
+      float childOffsetY_;
     };
 
 
