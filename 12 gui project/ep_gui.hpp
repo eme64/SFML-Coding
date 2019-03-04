@@ -119,14 +119,27 @@ namespace EP {
       std::string fullName() const {if (parent_) {return parent_->fullName()+"/"+name_;}else{return name_;}}
 
       virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        DrawRect(x_+py, y_+py, dx_, dy_, target, Color(0.5,0.1,0.1));
+        DrawRect(x_+px, y_+py, dx_, dy_, target, bgColor_);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+py, y_+py,target);
+          (*rit)->draw(x_+px, y_+py,target);
         }
       }
 
-      void onResizeParent(const float dx,const float dy) {
-        if (fillParent_&&parent_) { sizeIs(dx,dy); }
+      virtual void childSize(float &cdx, float &cdy) {
+        cdx = dx_;
+        cdy = dy_;
+      }
+      virtual void childOffset(float &cx, float &cy) {
+        cx = 0;
+        cy = 0;
+      }
+
+      void onResizeParent() {
+        if (fillParent_&&parent_) {
+          float cdx,cdy;
+          parent_->childSize(cdx,cdy);
+          sizeIs(cdx,cdy);
+        }
       }
 
       virtual void onMouseOverStart() {}
@@ -135,6 +148,7 @@ namespace EP {
 
       virtual bool onMouseDownStart(const bool isFirstDown,const float px,const float py) {
         std::cout << "onMouseDownStart " << fullName() << " fist:" << std::to_string(isFirstDown) << std::endl;
+        if (isFirstDown) {setFocus();}
         return false;
       }
       //isFirstDown: true if just mouseDown, false if slided from other area that did not lock drag.
@@ -168,26 +182,63 @@ namespace EP {
       }
 
       Area* sizeIs(const float dx,const float dy) {
+        const float dxOld = dx_;
+        const float dyOld = dy_;
         dx_=dx; dy_=dy;
+        onResize(dxOld,dyOld);
         for (auto &c : children_) {
-          c->onResizeParent(dx,dy);
+          c->onResizeParent();
         }
         return this;
+      }
+      virtual void onResize(const float dxOld, const float dyOld) {
+        std::cout << "resizig: " << fullName() << std::endl;
+      }
+
+      Area* positionIs(const float x,const float y) {
+        const float xOld = x_;
+        const float yOld = y_;
+        x_=x; y_=y;
+        onPosition(xOld,yOld);
+        return this;
+      }
+      virtual void onPosition(const float xOld, const float yOld) {
+        std::cout << "position: " << fullName() << std::endl;
       }
 
       Area* fillParentIs(bool const value) { fillParent_ = value; return this;}
       Area* childIs(Area* c) {children_.push_back(c); return this;}
-      Area* parentIs(Area* c) {parent_.push_back(c); return this;}
+      Area* parentIs(Area* p) {parent_=p; return this;}
+
+      void setFocus() {
+        if (parent_) {
+          parent_->firstChildIs(this);
+          parent_->setFocus();
+        }
+      }
+      void colorIs(Color c) {bgColor_=c;}
     protected:
       std::string name_;
       Area* parent_ = NULL;
       std::list<Area*> children_;
+      bool firstChildIs(Area* c) {
+        const bool found = (std::find(children_.begin(), children_.end(), c) != children_.end());
+        if (found) {children_.remove(c);}
+        children_.push_front(c);
+        return found;
+      }
       float x_,y_,dx_,dy_; // x,y relative to parent
       bool fillParent_ = false;
+      Color bgColor_ = Color(0.5,0.1,0.1);
     };// class Area
     class Button : public Area {
     public:
-      Button(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy, const std::string text,const std::vector<Color> bgColors,const std::vector<Color> textColors)
+      Button(const std::string& name,Area* const parent,
+             const float x,const float y,const float dx,const float dy,
+             const std::string text,
+             const std::vector<Color> bgColors = std::vector<Color>{Color(0.5,0.5,0.5),Color(0.4,0.4,0.4),Color(0.3,0.3,0.3),Color(0.2,0.2,0.2)},
+             const std::vector<Color> textColors = std::vector<Color>{Color(0,0,0),Color(0,0,0),Color(1,1,1),Color(1,1,1)}
+            )
       : Area(name,parent,x,y,dx,dy),text_(text),bgColors_(bgColors),textColors_(textColors){}
 
       virtual void draw(const float px,const float py, sf::RenderTarget &target) {
@@ -196,7 +247,7 @@ namespace EP {
         DrawRect(gx, gy, dx_, dy_, target, bgColors_[state_]);
         DrawText(gx+1, gy+1, text_, (dy_-2), target, textColors_[state_]);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+py, y_+py,target);
+          (*rit)->draw(x_+px, y_+py,target);
         }
       }
       virtual void onMouseOver(const float px,const float py) {// relative to parent
@@ -207,6 +258,7 @@ namespace EP {
 
       virtual bool onMouseDownStart(const bool isFirstDown,const float px,const float py) {
         std::cout << "onMouseDownStart " << fullName() << " fist:" << std::to_string(isFirstDown) << std::endl;
+        if (isFirstDown) {setFocus();}
         return true;
       }
 
@@ -219,7 +271,8 @@ namespace EP {
     public:
       Window(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy, const std::string title)
       : Area(name,parent,x,y,dx,dy),title_(title){
-        Area* closeButton = new Button("close",this,dx-headerSize,borderSize,headerSize-2*borderSize,headerSize-2*borderSize,"X",
+        bgColor_ = Color(0.1,0.5,0.1);
+        Area* closeButton = new Button("close",this,borderSize,borderSize,headerSize-2*borderSize,headerSize-2*borderSize,"X",
                                         std::vector<Color>{Color(0.5,0,0),Color(0.4,0,0),Color(0.2,0,0),Color(0.2,0,0)},
                                         std::vector<Color>{Color(1,0.5,0.5),Color(1,0.8,0.8),Color(0.6,0.1,0.1),Color(0.5,0,0)}
                                       );
@@ -228,55 +281,94 @@ namespace EP {
       virtual void draw(const float px,const float py, sf::RenderTarget &target) {
         float gx = x_+px;
         float gy = y_+py;
-        DrawRect(gx, gy, dx_, dy_, target, Color(0.1,0.5,0.1));
-        DrawText(gx+borderSize, gy+borderSize, title_, (headerSize-2*borderSize), target, Color(1,1,1));
+        DrawRect(gx, gy, dx_, dy_, target, bgColor_);
+        DrawText(gx+borderSize+headerSize, gy+borderSize, title_, (headerSize-2*borderSize), target, Color(1,1,1));
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+py, y_+py,target);
+          (*rit)->draw(x_+px, y_+py,target);
         }
       }
 
       virtual bool onMouseDownStart(const bool isFirstDown,const float px,const float py) {
-        std::cout << "onMouseDownStart " << fullName() << " fist:" << std::to_string(isFirstDown) << std::endl;
+        if (isFirstDown) {
+          setFocus();
+
+          // check what to do with drag:
+          resetResizing();
+          if (px-x_<borderSize) {isResizingLeft = true;}
+          if (py-y_<borderSize) {isResizingTop = true;}
+          if (px-x_>dx_-borderSize) {isResizingRight = true;}
+          if (py-y_>dy_-borderSize) {isResizingBottom = true;}
+          isDragging = !(isResizingLeft || isResizingTop || isResizingRight || isResizingBottom);
+        }
         return true;
       }
 
       virtual void onMouseDown(const bool isCaptured,const float px,const float py,float &dx, float &dy) {
+        float moveX=0, moveY=0,moveDX=0, moveDY=0;
         if (isCaptured) {
-          x_+=dx;
-          y_+=dy;
+          if (isDragging) {moveX=dx; moveY=dy;}
+          if (isResizingLeft) {moveDX=-dx; moveX=dx;}
+          if (isResizingRight) {moveDX=dx;}
+          if (isResizingTop) {moveDY=-dy; moveY=dy;}
+          if (isResizingBottom) {moveDY=dy;}
         }
+        if (moveX!=0 || moveY!=0) {positionIs(x_+moveX,y_+moveY);}
+        if (moveDX!=0 || moveDY!=0) {sizeIs(dx_+moveDX,dy_+moveDY);}
       }
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float px,const float py) {
+        resetResizing();
+        isDragging = false;
+      }
+
+      virtual void childSize(float &cdx, float &cdy) {
+        cdx = dx_-2*borderSize;
+        cdy = dy_-headerSize-borderSize;
+      }
+      virtual void childOffset(float &cx, float &cy) {
+        cx = borderSize;
+        cy = headerSize;
+      }
+
 
     private:
       std::string title_;
-      const float borderSize = 2.0; // sides and bottom
-      const float headerSize = 20.0;// top
+      const float borderSize = 5.0; // sides and bottom
+      const float headerSize = 25.0;// top
+      bool isResizable = false;
+      bool isResizingLeft = false;
+      bool isResizingRight = false;
+      bool isResizingTop = false;
+      bool isResizingBottom = false;
+      bool isDragging = false;
+      void resetResizing() {
+        isResizingLeft = false;
+        isResizingRight = false;
+        isResizingTop = false;
+        isResizingBottom = false;
+      }
     };
 
     class ScrollArea : public Area {
     public:
-      ScrollArea(const std::string& name,Area* const parent, Area* const child,const float y,const float dx,const float dy)
+      ScrollArea(const std::string& name,Area* const parent, Area* const child,const float x,const float y,const float dx,const float dy)
       : Area(name,parent,x,y,dx,dy),child_(child){
-        // Area* closeButton = new Button("close",this,dx-headerSize,borderSize,headerSize-2*borderSize,headerSize-2*borderSize,"X",
-        //                                 std::vector<Color>{Color(0.5,0,0),Color(0.4,0,0),Color(0.2,0,0),Color(0.2,0,0)},
-        //                                 std::vector<Color>{Color(1,0.5,0.5),Color(1,0.8,0.8),Color(0.6,0.1,0.1),Color(0.5,0,0)}
-        //                               );
+        child_->parentIs(this);
+        childIs(child_);
       }
 
       virtual void draw(const float px,const float py, sf::RenderTarget &target) {
         float gx = x_+px;
         float gy = y_+py;
-        DrawRect(gx, gy, dx_, dy_, target, Color(0.1,0.5,0.1));
-        DrawText(gx+borderSize, gy+borderSize, title_, (headerSize-2*borderSize), target, Color(1,1,1));
+        DrawRect(gx, gy, dx_, dy_, target, bgColor_);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+py, y_+py,target);
+          (*rit)->draw(x_+px+childOffsetX_, y_+py+childOffsetY_,target);
         }
       }
 
     private:
       Area* child_;
-      float childOffsetX_;
-      float childOffsetY_;
+      float childOffsetX_=0;
+      float childOffsetY_=0;
     };
 
 
