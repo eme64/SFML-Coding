@@ -115,6 +115,8 @@ namespace EP {
 
       float dx() const {return dx_;}
       float dy() const {return dy_;}
+      float globalX() const {return x_+(parent_?parent_->globalX():0);}
+      float globalY() const {return y_+(parent_?parent_->globalY():0);}
       std::string name() const {return name_;}
       std::string fullName() const {if (parent_) {return parent_->fullName()+"/"+name_;}else{return name_;}}
 
@@ -146,7 +148,7 @@ namespace EP {
       virtual void onMouseOver(const float px,const float py) {}// relative to parent
       virtual void onMouseOverEnd() {}
 
-      virtual bool onMouseDownStart(const bool isFirstDown,const float px,const float py) {
+      virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
         std::cout << "onMouseDownStart " << fullName() << " fist:" << std::to_string(isFirstDown) << std::endl;
         if (isFirstDown) {setFocus();}
         return false;
@@ -154,11 +156,12 @@ namespace EP {
       //isFirstDown: true if just mouseDown, false if slided from other area that did not lock drag.
       // return: capture drag. can only capture if isFreshDown==true
 
-      virtual void onMouseDown(const bool isCaptured,const float px,const float py,float &dx, float &dy) {}
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {return true;}
       // px,py: relative to parent, position of mouse in last frame.
       //dx/dy the moving the mouse is trying to do. If change (eg =0), mouse position will be changed accordingly.
+      //return true: keep drag, false: chain mouse
 
-      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float px,const float py) {
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
         std::cout << "onMouseDownEnd " << fullName() << " captured:" << std::to_string(isCaptured) << " last:" << std::to_string(isLastDown) << std::endl;
       }
       // isLastDown: if true indicates that mouse physically released, else only left scope bc not captured
@@ -254,9 +257,10 @@ namespace EP {
         if (state_==0) {state_=1;}
       }
       virtual void onMouseOverStart() {if (state_==0) {state_=1;}}
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {dx=0,dy=0;return false;}
       virtual void onMouseOverEnd() {if (state_==1) {state_=0;}}
 
-      virtual bool onMouseDownStart(const bool isFirstDown,const float px,const float py) {
+      virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
         std::cout << "onMouseDownStart " << fullName() << " fist:" << std::to_string(isFirstDown) << std::endl;
         if (isFirstDown) {setFocus();}
         return true;
@@ -272,50 +276,89 @@ namespace EP {
       Window(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy, const std::string title)
       : Area(name,parent,x,y,dx,dy),title_(title){
         bgColor_ = Color(0.1,0.5,0.1);
-        Area* closeButton = new Button("close",this,borderSize,borderSize,headerSize-2*borderSize,headerSize-2*borderSize,"X",
+        closeButton_ = new Button("close",this,borderSize,borderSize,headerSize-2*borderSize,headerSize-2*borderSize,"X",
                                         std::vector<Color>{Color(0.5,0,0),Color(0.4,0,0),Color(0.2,0,0),Color(0.2,0,0)},
                                         std::vector<Color>{Color(1,0.5,0.5),Color(1,0.8,0.8),Color(0.6,0.1,0.1),Color(0.5,0,0)}
                                       );
       }
 
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+      virtual void draw(const float px,const float py, sf::RenderTarget &target) {// px global pos of parent
         float gx = x_+px;
         float gy = y_+py;
+
         DrawRect(gx, gy, dx_, dy_, target, bgColor_);
         DrawText(gx+borderSize+headerSize, gy+borderSize, title_, (headerSize-2*borderSize), target, Color(1,1,1));
+
+        sf::View viewOld = target.getView(); // push new view
+        sf::View view;
+        float cx,cy,cdx,cdy;childSize(cdx,cdy);childOffset(cx,cy);
+        sf::Vector2u size = target.getSize();
+        sf::FloatRect rect = sf::FloatRect((gx+cx)/size.x,(gy+cy)/size.y,(cdx)/size.x,(cdy)/size.y);
+        sf::FloatRect inter;
+        rect.intersects(viewOld.getViewport(),inter);
+        view.setViewport(inter);
+        view.reset(sf::FloatRect(cx,cy,inter.width*size.x,inter.height*size.y));
+        view.move(sf::Vector2f(gx,gy));
+        target.setView(view);
+
+
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px, y_+py,target);
+          if (closeButton_!=(*rit)) {
+            (*rit)->draw(gx,gy,target);
+          }
         }
+        target.setView(viewOld);// pop new view
+
+        closeButton_->draw(gx,gy,target);
       }
 
-      virtual bool onMouseDownStart(const bool isFirstDown,const float px,const float py) {
+      virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
         if (isFirstDown) {
           setFocus();
+          float lx = x-globalX();
+          float ly = y-globalY();
 
           // check what to do with drag:
           resetResizing();
-          if (px-x_<borderSize) {isResizingLeft = true;}
-          if (py-y_<borderSize) {isResizingTop = true;}
-          if (px-x_>dx_-borderSize) {isResizingRight = true;}
-          if (py-y_>dy_-borderSize) {isResizingBottom = true;}
+          if (lx<borderSize) {isResizingLeft = true;}
+          if (ly<borderSize) {isResizingTop = true;}
+          if (lx>dx_-borderSize) {isResizingRight = true;}
+          if (ly>dy_-borderSize) {isResizingBottom = true;}
           isDragging = !(isResizingLeft || isResizingTop || isResizingRight || isResizingBottom);
         }
         return true;
       }
 
-      virtual void onMouseDown(const bool isCaptured,const float px,const float py,float &dx, float &dy) {
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {
         float moveX=0, moveY=0,moveDX=0, moveDY=0;
+        float cx,cy,cdx,cdy;
+        parent_->childSize(cdx,cdy);parent_->childOffset(cx,cy);
+
         if (isCaptured) {
-          if (isDragging) {moveX=dx; moveY=dy;}
-          if (isResizingLeft) {moveDX=-dx; moveX=dx;}
-          if (isResizingRight) {moveDX=dx;}
-          if (isResizingTop) {moveDY=-dy; moveY=dy;}
-          if (isResizingBottom) {moveDY=dy;}
+          if (isDragging || isResizingLeft) {
+            moveX=std::max(cx-x_,std::min(cx+cdx-x_-dx_,dx));
+            dx=moveX;
+            if (isResizingLeft) {moveDX=-dx;}
+          }
+          if (isDragging || isResizingTop) {
+            moveY=std::max(cy-y_,std::min(cy+cdy-y_-dy_,dy));
+            dy=moveY;
+            if (isResizingTop) {moveDY=-dy;}
+          }
+          if (isResizingRight) {
+            moveDX=std::max(cx-x_,std::min(cx+cdx-x_-dx_,dx));
+            dx=moveDX;
+          }
+          if (isResizingBottom) {
+            moveDY=std::max(cy-y_,std::min(cy+cdy-y_-dy_,dy));
+            dy=moveDY;
+          }
         }
         if (moveX!=0 || moveY!=0) {positionIs(x_+moveX,y_+moveY);}
         if (moveDX!=0 || moveDY!=0) {sizeIs(dx_+moveDX,dy_+moveDY);}
+        return true;
       }
-      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float px,const float py) {
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
         resetResizing();
         isDragging = false;
       }
@@ -332,6 +375,7 @@ namespace EP {
 
     private:
       std::string title_;
+      Button* closeButton_=NULL;//shortcut, still in children
       const float borderSize = 5.0; // sides and bottom
       const float headerSize = 25.0;// top
       bool isResizable = false;
@@ -431,8 +475,7 @@ namespace EP {
                 if (mouseDownArea_) {
                   mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,true,lastMouseX_,lastMouseY_);
                 }
-                mouseDownCaptured_ = false;
-                mouseDownArea_ = NULL;
+                mouseDownReset();
               } else if(event.mouseButton.button == sf::Mouse::Right) {
                 // forget for now
               }
@@ -441,25 +484,37 @@ namespace EP {
             case sf::Event::MouseMoved: {
               float mouseX = event.mouseMove.x;
               float mouseY = event.mouseMove.y;
-              const float origMouseDX = mouseX-lastMouseX_;
-              const float origMouseDY = mouseY-lastMouseY_;
+              const float origMouseDX = mouseX-lastMouseX_+mouseDownKeepDragDX_;
+              const float origMouseDY = mouseY-lastMouseY_+mouseDownKeepDragDY_;
               float mouseDX = origMouseDX;
               float mouseDY = origMouseDY;
+
+              bool keepDrag = true;
 
               if (mouseDown_) {
                 // captured -> simply notify, update mouse
                 // not captured: if has area: check, if leaves: update mouse, notify leaving, possibly start notify
                 // no area: update mouse, possibly start notify after
                 if (mouseDownArea_) {
-                  mouseDownArea_->onMouseDown(mouseDownCaptured_,lastMouseX_,lastMouseY_,mouseDX,mouseDY);
+                  keepDrag = mouseDownArea_->onMouseDown(mouseDownCaptured_,lastMouseX_,lastMouseY_,mouseDX,mouseDY);
+                  if (keepDrag) {
+                    mouseDownKeepDragDX_+= origMouseDX-mouseDX;
+                    mouseDownKeepDragDY_+= origMouseDY-mouseDY;
+                  }
                 }
               }
 
-              lastMouseX_+=mouseDX;
-              lastMouseY_+=mouseDY;
-              if (!(origMouseDX==mouseDX && origMouseDY==mouseDY)) {
+              if (keepDrag) {
+                lastMouseX_+=origMouseDX;
+                lastMouseY_+=origMouseDY;
+              } else {
+                lastMouseX_+=mouseDX;
+                lastMouseY_+=mouseDX;
+              }
+
+
+              if (!(origMouseDX==mouseDX && origMouseDY==mouseDY) && !keepDrag) {
                 sf::Mouse::setPosition(sf::Vector2i(lastMouseX_,lastMouseY_),*renderWindow_);
-                std::cout << "dragged!" << std::endl;
               }
 
               EP::GUI::Area* mouseOverNew = mainArea_->checkMouseOver(lastMouseX_,lastMouseY_);
@@ -471,7 +526,7 @@ namespace EP {
                 }
                 if (mouseOverArea_!=NULL) {
                   mouseOverArea_->onMouseOverEnd();
-                  mouseOverArea_ = NULL;
+                  mouseOverArea_=NULL;
                 }
                 // start new:
                 if (mouseOverNew!=NULL) {
@@ -522,7 +577,15 @@ namespace EP {
       Area* mouseOverArea_;
       bool mouseDown_ = false;
       Area* mouseDownArea_;
-      float mouseDownCaptured_ = false;
+      bool mouseDownCaptured_ = false;
+      float mouseDownKeepDragDX_ = 0;
+      float mouseDownKeepDragDY_ = 0;
+      void mouseDownReset() {
+        mouseDownArea_ = NULL;
+        mouseDownCaptured_ = false;
+        mouseDownKeepDragDX_ = 0;
+        mouseDownKeepDragDY_ = 0;
+      }
       float lastMouseX_;
       float lastMouseY_;
     };
