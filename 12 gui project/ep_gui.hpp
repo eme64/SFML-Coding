@@ -392,28 +392,168 @@ namespace EP {
       }
     };
 
-    class ScrollArea : public Area {
+    class Slider : public Area {
     public:
-      ScrollArea(const std::string& name,Area* const parent, Area* const child,const float x,const float y,const float dx,const float dy)
-      : Area(name,parent,x,y,dx,dy),child_(child){
-        child_->parentIs(this);
-        childIs(child_);
+      class SliderButtton : public Area {
+      public:
+        SliderButtton(const std::string& name,Area* const parent,
+               const float x,const float y,const float dx,const float dy,
+               const std::vector<Color> buttonColors = std::vector<Color>{Color(0.6,0.6,0.6),Color(0.7,0.7,0.7),Color(0.8,0.8,0.8)}
+              )
+        : Area(name,parent,x,y,dx,dy),buttonColors_(buttonColors){}
+        virtual void onMouseOverStart() {if (state_==0) {state_=1;}}
+        virtual void onMouseOver() {if (state_==0) {state_=1;}}
+        virtual void onMouseOverEnd() {if (state_==1) {state_=0;}}
+
+        virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
+          if (isFirstDown) {
+            setFocus();
+            state_=2;
+          }
+          return isFirstDown;
+        }
+        virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {
+          return true;
+        }
+        virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
+          if (isCaptured) {
+            state_=0;
+          }
+        }
+        virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+          float gx = x_+px;
+          float gy = y_+py;
+          DrawRect(gx, gy, dx_, dy_, target, buttonColors_[state_]);
+          for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+            (*rit)->draw(x_+px, y_+py,target);
+          }
+        }
+      private:
+        std::vector<Color> buttonColors_;
+        size_t state_=0;//0:normal, 1:mouse over, 2:pressing
+      };
+      Slider(const std::string& name,Area* const parent,
+             const float x,const float y,const float dx,const float dy,
+             const bool isHorizontal,const float minVal,const float maxVal,const float initVal,const float buttonLength,
+             const std::vector<Color> bgColors = std::vector<Color>{Color(0.5,0.5,0.5),Color(0.4,0.4,0.4),Color(0.3,0.3,0.3)},
+             const std::vector<Color> buttonColors = std::vector<Color>{Color(0.6,0.6,0.6),Color(0.7,0.7,0.7),Color(0.8,0.8,0.8)}
+            )
+      : Area(name,parent,x,y,dx,dy),
+        isHorizontal_(isHorizontal),minVal_(minVal),maxVal_(maxVal),val_(initVal),buttonLength_(buttonLength),
+        bgColors_(bgColors){
+            sliderButton_ = new SliderButtton("button",this,0,0,dx/2,dy/2,buttonColors);
+      }
+
+      virtual void onMouseOverStart() {if (state_==0) {state_=1;}}
+      virtual void onMouseOver() {if (state_==0) {state_=1;}}
+      virtual void onMouseOverEnd() {if (state_==1) {state_=0;}}
+
+      virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
+        if (isFirstDown) {
+          setFocus();
+          state_=2;
+        }
+        return isFirstDown;
+      }
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {return true;}
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
+        if (isCaptured) {
+          state_=0;
+        }
       }
 
       virtual void draw(const float px,const float py, sf::RenderTarget &target) {
         float gx = x_+px;
         float gy = y_+py;
-        DrawRect(gx, gy, dx_, dy_, target, bgColor_);
+        DrawRect(gx, gy, dx_, dy_, target, bgColors_[state_]);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px+childOffsetX_, y_+py+childOffsetY_,target);
+          (*rit)->draw(x_+px, y_+py,target);
         }
       }
 
     private:
-      Area* child_;
-      float childOffsetX_=0;
-      float childOffsetY_=0;
+      SliderButtton* sliderButton_;
+      bool isHorizontal_;
+      float minVal_,maxVal_,val_,buttonLength_;
+      std::vector<Color> bgColors_;
+      size_t state_=0;//0:normal, 1:mouse over, 2:pressing
     };
+
+    class ScrollArea : public Area {
+    public:
+      class ScrollAreaViewer : public Area {
+      public:
+        ScrollAreaViewer(const std::string& name,Area* const parent, Area* const child,const float x,const float y,const float dx,const float dy)
+        : Area(name,parent,x,y,dx,dy),child_(child){
+          child_->parentIs(this);
+          childIs(child_);
+        }
+        virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+          float gx = x_+px;
+          float gy = y_+py;
+          DrawRect(gx, gy, dx_, dy_, target, bgColor_);
+
+          sf::View viewOld = target.getView(); // push new view
+          sf::View view;
+          float cx,cy,cdx,cdy;childSize(cdx,cdy);childOffset(cx,cy);
+          sf::Vector2u size = target.getSize();
+          sf::FloatRect rect = sf::FloatRect((gx+cx)/size.x,(gy+cy)/size.y,(cdx)/size.x,(cdy)/size.y);
+          sf::FloatRect inter;
+          rect.intersects(viewOld.getViewport(),inter);
+          view.setViewport(inter);
+          view.reset(sf::FloatRect(cx,cy,inter.width*size.x,inter.height*size.y));
+          view.move(sf::Vector2f(gx,gy));
+          target.setView(view);
+
+          for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+              (*rit)->draw(gx+childOffsetX_,gy+childOffsetY_,target);
+          }
+          target.setView(viewOld);// pop new view
+        }
+      private:
+        Area* child_;
+        float childOffsetX_=-50;
+        float childOffsetY_=-50;
+      };
+
+      ScrollArea(const std::string& name,Area* const parent, Area* const child,
+                 const float x,const float y,const float dx,const float dy,
+                 const bool scrollX=true,const bool scrollY=true)
+      : Area(name,parent,x,y,dx,dy),scrollX_(scrollX),scrollY_(scrollY){
+        scrollView_ = new ScrollAreaViewer("viewer",this,child,0,0,dx,dy);
+        if (scrollX_) {
+          sliderX_ = new Slider("sliderX",this,0,0,dx,dy,true,0,100,50,20);
+        }
+        if (scrollY_) {
+          sliderY_ = new Slider("sliderX",this,0,0,dx,dy,true,0,100,50,20);
+        }
+        adjustChildren();// above just set bogus values, this will adjust them all anyway
+      }
+      void adjustChildren() {
+        float middleX = scrollX_?dx_-scrollerWidth_:dx_;
+        float middleY = scrollX_?dy_-scrollerWidth_:dy_;
+        scrollView_->sizeIs(middleX,middleY);
+        if (sliderX_) {
+          sliderX_->positionIs(0,middleY);
+          sliderX_->sizeIs(middleX,scrollerWidth_);
+        }
+        if (sliderY_) {
+          sliderY_->positionIs(middleX,0);
+          sliderY_->sizeIs(scrollerWidth_,middleY);
+        }
+      }
+      virtual void onResize(const float dxOld, const float dyOld) {
+        adjustChildren();
+      }
+    private:
+      ScrollAreaViewer* scrollView_;
+      Slider* sliderX_;
+      Slider* sliderY_;
+      const bool scrollX_;
+      const bool scrollY_;
+      float scrollerWidth_=20;
+    };
+
 
 
     class MasterWindow {

@@ -14,7 +14,6 @@
 // #include <forward_list>
 // #include <functional>
 
-
 #include "ep_gui.hpp"
 //-------------------------------------------------------- Main
 int main()
