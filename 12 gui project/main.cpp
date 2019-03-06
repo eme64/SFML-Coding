@@ -1,8 +1,6 @@
-#include <stdlib.h>
-#include <iostream>
-#include <cmath>
-#include <cstddef>
-#include <SFML/Graphics.hpp>
+
+//#include <cstddef>
+
 // #include <SFML/Audio.hpp>
 // #include <list>
 // #include <queue>
@@ -12,7 +10,7 @@
 // #include <complex>
 // #include <mutex>
 // #include <forward_list>
-// #include <functional>
+
 
 #include "ep_gui.hpp"
 //-------------------------------------------------------- Main

@@ -1,7 +1,12 @@
 #ifndef EP_GUI_HPP
 #define EP_GUI_HPP
-
+#include <stdlib.h>
+#include <iostream>
+#include <cmath>
+#include <SFML/Graphics.hpp>
 #include <list>
+#include <functional>
+
 
 namespace EP {
   class Color {
@@ -166,11 +171,7 @@ namespace EP {
       }
       // isLastDown: if true indicates that mouse physically released, else only left scope bc not captured
 
-
-      // report absolute shift (drag), report relative speed time (keep mouse position), remember original position (up to Area?)
-      // lock to this element?
-
-      Area* checkMouseOver(const float px,const float py,const bool doNotify=true) {// relative to parent
+      virtual Area* checkMouseOver(const float px,const float py,const bool doNotify=true) {// relative to parent
         if (px>=x_ and py>=y_ and px<=(x_+dx_) and py<=(y_+dy_)) {
           for (auto &c : children_) {
             Area* over = c->checkMouseOver(px-x_,py-y_,doNotify);
@@ -413,6 +414,11 @@ namespace EP {
           return isFirstDown;
         }
         virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {
+          if (isCaptured) {
+            if(Slider* p = dynamic_cast<Slider*>(parent_)) {
+              return p->onSliderButtonDrag(dx,dy);// let parent handle the case
+            }
+          }
           return true;
         }
         virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
@@ -442,6 +448,53 @@ namespace EP {
         isHorizontal_(isHorizontal),minVal_(minVal),maxVal_(maxVal),val_(initVal),buttonLength_(buttonLength),
         bgColors_(bgColors){
             sliderButton_ = new SliderButtton("button",this,0,0,dx/2,dy/2,buttonColors);
+            adjustChildren();
+      }
+      void adjustChildren() {
+        const float bLenRel = buttonLength_/(maxVal_-minVal_+buttonLength_);
+        const float bPosRel = (val_-minVal_)/(maxVal_-minVal_+buttonLength_);
+        if (isHorizontal_) {
+          sliderButton_->sizeIs(dx_*bLenRel,dy_);
+          sliderButton_->positionIs(dx_*bPosRel,0);
+        } else {
+          sliderButton_->sizeIs(dx_,dy_*bLenRel);
+          sliderButton_->positionIs(0,dy_*bPosRel);
+        }
+      }
+      void valIs(float val) {
+        if (val_!=val) {
+          val_=val;
+          adjustChildren();
+          if (onVal_) {onVal_(val_);}
+        }
+      }
+      void onValIs(std::function<void(float)> onVal) {onVal_=onVal;}// use to listen to value change
+      void valBoundsIs(const float minVal,const float maxVal,const float buttonLength) {
+        minVal_=minVal; maxVal_=maxVal;buttonLength_=buttonLength;
+        if (val_<minVal_) {valIs(minVal_);} else if (val_>maxVal_) {valIs(maxVal_);}
+        adjustChildren();
+      }
+      bool onSliderButtonDrag(float &dx, float &dy) {
+        if (minVal_==maxVal_) {return true;}// abort, want no bad action
+        float *absDrag;
+        float absLen;
+        if (isHorizontal_) {
+          absDrag = &dx;
+          absLen = dx_-sliderButton_->dx();
+        } else {
+          absDrag = &dy;
+          absLen = dy_-sliderButton_->dy();
+        }
+        float relDrag = (*absDrag)/(absLen);
+        float wantDrag = relDrag*(maxVal_-minVal_);
+        float doDrag = std::max(minVal_-val_,std::min(maxVal_-val_,wantDrag));
+        valIs(val_+doDrag);// apply drag
+        float doRelDrag = doDrag/(maxVal_-minVal_);
+        *absDrag = doRelDrag*absLen;// feedback to caller
+        return true;
+      }
+      virtual void onResize(const float dxOld, const float dyOld) {
+        adjustChildren();
       }
 
       virtual void onMouseOverStart() {if (state_==0) {state_=1;}}
@@ -475,6 +528,7 @@ namespace EP {
       SliderButtton* sliderButton_;
       bool isHorizontal_;
       float minVal_,maxVal_,val_,buttonLength_;
+      std::function<void(float)> onVal_;
       std::vector<Color> bgColors_;
       size_t state_=0;//0:normal, 1:mouse over, 2:pressing
     };
@@ -510,10 +564,26 @@ namespace EP {
           }
           target.setView(viewOld);// pop new view
         }
+        virtual Area* checkMouseOver(const float px,const float py,const bool doNotify=true) {// relative to parent
+          if (px>=x_ and py>=y_ and px<=(x_+dx_) and py<=(y_+dy_)) {
+            for (auto &c : children_) {
+              Area* over = c->checkMouseOver(px-x_-childOffsetX_,py-y_-childOffsetY_,doNotify);
+              if (over!=NULL) {
+                return over;
+              }
+            }
+            if (doNotify) {onMouseOver(px,py);}
+            return this;
+          }
+          return NULL;
+        }
+        void childOffsetXIs(const float v) {childOffsetX_=v;}
+        void childOffsetYIs(const float v) {childOffsetY_=v;}
+        Area* child() const {return child_;}
       private:
         Area* child_;
-        float childOffsetX_=-50;
-        float childOffsetY_=-50;
+        float childOffsetX_=0;
+        float childOffsetY_=0;
       };
 
       ScrollArea(const std::string& name,Area* const parent, Area* const child,
@@ -522,10 +592,12 @@ namespace EP {
       : Area(name,parent,x,y,dx,dy),scrollX_(scrollX),scrollY_(scrollY){
         scrollView_ = new ScrollAreaViewer("viewer",this,child,0,0,dx,dy);
         if (scrollX_) {
-          sliderX_ = new Slider("sliderX",this,0,0,dx,dy,true,0,100,50,20);
+          sliderX_ = new Slider("sliderX",this,0,0,dx,dy,true,0,100,0,20);
+          sliderX_->onValIs([this](float val) {scrollView_->childOffsetXIs(-val);});
         }
         if (scrollY_) {
-          sliderY_ = new Slider("sliderX",this,0,0,dx,dy,true,0,100,50,20);
+          sliderY_ = new Slider("sliderY",this,0,0,dx,dy,false,0,100,0,20);
+          sliderY_->onValIs([this](float val) {scrollView_->childOffsetYIs(-val);});
         }
         adjustChildren();// above just set bogus values, this will adjust them all anyway
       }
@@ -536,10 +608,12 @@ namespace EP {
         if (sliderX_) {
           sliderX_->positionIs(0,middleY);
           sliderX_->sizeIs(middleX,scrollerWidth_);
+          sliderX_->valBoundsIs(0.0f,std::max(0.0f,scrollView_->child()->dx()-middleX),middleX);
         }
         if (sliderY_) {
           sliderY_->positionIs(middleX,0);
           sliderY_->sizeIs(scrollerWidth_,middleY);
+          sliderY_->valBoundsIs(0.0f,std::max(0.0f,scrollView_->child()->dy()-middleY),middleY);
         }
       }
       virtual void onResize(const float dxOld, const float dyOld) {
