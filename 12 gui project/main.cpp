@@ -13,6 +13,16 @@
 
 
 #include "ep_gui.hpp"
+
+void addBlockFM(EP::GUI::Area* const parent,const float x,const float y) {
+  EP::GUI::Block* block = new EP::GUI::Block("parent",parent,x,y,100,100,EP::Color(0.2,0,0));
+  EP::GUI::Socket* socketFq = new EP::GUI::Socket("socketFq",block,5,5,EP::GUI::Socket::Direction::Up,"Fq");
+  EP::GUI::Socket* socketMod = new EP::GUI::Socket("socketMod",block,30,5,EP::GUI::Socket::Direction::Up,"Mod");
+  EP::GUI::Socket* socketOut = new EP::GUI::Socket("socketOut",block,5,50,EP::GUI::Socket::Direction::Down,"Out");
+}
+
+
+
 //-------------------------------------------------------- Main
 int main()
 {
@@ -43,6 +53,8 @@ int main()
       scroll1->fillParentIs(true);
       EP::GUI::Area* button1 = new EP::GUI::Button("button1",content1,10,10,100,20,"X");
       EP::GUI::Area* button2 = new EP::GUI::Button("button2",content1,300,300,100,20,"Y");
+      addBlockFM(content1,100,100);
+      addBlockFM(content1,100,200);
     }
   }
   while (masterWindow->isAlive()) {

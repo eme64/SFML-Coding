@@ -19,10 +19,12 @@ namespace EP {
       this->a = std::min(1.0f,std::max(0.0f,a));
     }
 
+    Color operator*(const float scale) {return Color(scale*r,scale*g,scale*b,scale*a);}
+
     sf::Color toSFML() const {
       return sf::Color(255.0*r,255.0*g,255.0*b,255.0*a);
     }
-  private:
+  protected:
   };
   // sf::Color HueToRGB(float hue) {
   //   hue = fmod(hue,1.0);
@@ -81,6 +83,24 @@ namespace EP {
     rectangle.setSize(sf::Vector2f(dx, dy));
     rectangle.setFillColor(color.toSFML());
     rectangle.setPosition(x, y);
+    target.draw(rectangle, sf::BlendAlpha);//BlendAdd
+  }
+  void DrawOval(float x, float y, float dx, float dy, sf::RenderTarget &target, const Color& color) {
+    sf::CircleShape shape(1);
+    shape.setScale(dx*0.5,dy*0.5);
+    shape.setFillColor(color.toSFML());
+    shape.setPosition(x, y);
+    target.draw(shape, sf::BlendAlpha);
+  }
+  void DrawLine(float x1, float y1, float x2, float y2, sf::RenderTarget &target, const Color& color,float width=1) {
+    const float dist = std::sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2));
+    const float rad = std::atan2(y1-y2,x1-x2)+0.5*M_PI;
+    const float angle = rad*180.0/M_PI;
+    sf::RectangleShape rectangle;
+    rectangle.setSize(sf::Vector2f(width, dist));
+    rectangle.setFillColor(color.toSFML());
+    rectangle.setPosition(x1-std::cos(rad)*width*0.5, y1-std::sin(rad)*width*0.5);
+    rectangle.setRotation(angle);
     target.draw(rectangle, sf::BlendAlpha);//BlendAdd
   }
 
@@ -161,12 +181,12 @@ namespace EP {
       //isFirstDown: true if just mouseDown, false if slided from other area that did not lock drag.
       // return: capture drag. can only capture if isFreshDown==true
 
-      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {return true;}
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {return true;}
       // px,py: relative to parent, position of mouse in last frame.
       //dx/dy the moving the mouse is trying to do. If change (eg =0), mouse position will be changed accordingly.
       //return true: keep drag, false: chain mouse
 
-      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
         std::cout << "onMouseDownEnd " << fullName() << " captured:" << std::to_string(isCaptured) << " last:" << std::to_string(isLastDown) << std::endl;
       }
       // isLastDown: if true indicates that mouse physically released, else only left scope bc not captured
@@ -183,6 +203,10 @@ namespace EP {
           return this;
         }
         return NULL;
+      }
+
+      virtual void onKeyPressed(const sf::Keyboard::Key keyCode) {
+        std::cout << "onKeyPressed " << fullName() << " focus:" << std::to_string(keyCode) << std::endl;
       }
 
       Area* sizeIs(const float dx,const float dy) {
@@ -213,13 +237,51 @@ namespace EP {
       Area* fillParentIs(bool const value) { fillParent_ = value; return this;}
       Area* childIs(Area* c) {children_.push_back(c); return this;}
       Area* parentIs(Area* p) {parent_=p; return this;}
+      Area* firstChild() {return children_.front();}
+      bool isFirstChild() {return parent_?this==parent_->firstChild():true;}
 
-      void setFocus() {
+      void setFocus(bool isRecursive=false) {
+        std::cout << "setFocus " << fullName() << std::endl;
+        if (!isRecursive) {
+          Area* const oldFocus = getFocus();
+          if (oldFocus==this) {return;}
+          if (oldFocus) {oldFocus->unFocus();}
+          isFocus_=true;
+        }
+        isFocusPath_=true;
         if (parent_) {
           parent_->firstChildIs(this);
-          parent_->setFocus();
+          parent_->setFocus(true);
         }
       }
+      void unFocus() {
+        std::cout << "unFocus " << fullName() << std::endl;
+        isFocus_=false;
+        isFocusPath_=false;
+        if (parent_) {parent_->unFocus();}
+      }
+      Area* getFocus(bool traverseDown=false) {
+        // travels up to top parent, then travels down until hits the focus child
+        if (isFocus_) {return this;}
+
+        if (traverseDown) {
+          Area* const f = children_.front();
+          if (f) {
+            return f->getFocus(true);
+          } else {
+            return NULL;
+          }
+        } else {
+          if (parent_) {
+            parent_->getFocus(false);
+          } else {
+            return getFocus(true);
+          }
+        }
+      }
+      bool isFocus() {return isFocus_;}
+      bool isFocusPath() {return isFocusPath_;}
+
       void colorIs(Color c) {bgColor_=c;}
     protected:
       std::string name_;
@@ -234,6 +296,8 @@ namespace EP {
       float x_,y_,dx_,dy_; // x,y relative to parent
       bool fillParent_ = false;
       Color bgColor_ = Color(0.5,0.1,0.1);
+      bool isFocus_=false;
+      bool isFocusPath_=false;
     };// class Area
     class Button : public Area {
     public:
@@ -254,11 +318,11 @@ namespace EP {
           (*rit)->draw(x_+px, y_+py,target);
         }
       }
+
+      virtual void onMouseOverStart() {if (state_==0) {state_=1;}}
       virtual void onMouseOver(const float px,const float py) {// relative to parent
         if (state_==0) {state_=1;}
       }
-      virtual void onMouseOverStart() {if (state_==0) {state_=1;}}
-      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {dx=0,dy=0;return false;}
       virtual void onMouseOverEnd() {if (state_==1) {state_=0;}}
 
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
@@ -266,8 +330,9 @@ namespace EP {
         if (isFirstDown) {setFocus();}
         return true;
       }
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {dx=0,dy=0;return false;}
 
-    private:
+    protected:
       std::string text_;
       std::vector<Color> bgColors_,textColors_;
       size_t state_=0;//0:normal, 1:mouse over, 2:pressing, 3:clicked
@@ -287,7 +352,7 @@ namespace EP {
         float gx = x_+px;
         float gy = y_+py;
 
-        DrawRect(gx, gy, dx_, dy_, target, bgColor_);
+        DrawRect(gx, gy, dx_, dy_, target, bgColor_*(isFocusPath()?1.0:0.8));
         DrawText(gx+borderSize+headerSize, gy+borderSize, title_, (headerSize-2*borderSize), target, Color(1,1,1));
 
         sf::View viewOld = target.getView(); // push new view
@@ -330,7 +395,7 @@ namespace EP {
         return true;
       }
 
-      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
         float moveX=0, moveY=0,moveDX=0, moveDY=0;
         float cx,cy,cdx,cdy;
         parent_->childSize(cdx,cdy);parent_->childOffset(cx,cy);
@@ -359,7 +424,7 @@ namespace EP {
         if (moveDX!=0 || moveDY!=0) {sizeIs(dx_+moveDX,dy_+moveDY);}
         return true;
       }
-      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
         resetResizing();
         isDragging = false;
       }
@@ -374,7 +439,7 @@ namespace EP {
       }
 
 
-    private:
+    protected:
       std::string title_;
       Button* closeButton_=NULL;//shortcut, still in children
       const float borderSize = 5.0; // sides and bottom
@@ -413,7 +478,7 @@ namespace EP {
           }
           return isFirstDown;
         }
-        virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {
+        virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
           if (isCaptured) {
             if(Slider* p = dynamic_cast<Slider*>(parent_)) {
               return p->onSliderButtonDrag(dx,dy);// let parent handle the case
@@ -421,7 +486,7 @@ namespace EP {
           }
           return true;
         }
-        virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
+        virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
           if (isCaptured) {
             state_=0;
           }
@@ -434,7 +499,7 @@ namespace EP {
             (*rit)->draw(x_+px, y_+py,target);
           }
         }
-      private:
+      protected:
         std::vector<Color> buttonColors_;
         size_t state_=0;//0:normal, 1:mouse over, 2:pressing
       };
@@ -508,8 +573,8 @@ namespace EP {
         }
         return isFirstDown;
       }
-      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy) {return true;}
-      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y) {
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {return true;}
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
         if (isCaptured) {
           state_=0;
         }
@@ -524,7 +589,7 @@ namespace EP {
         }
       }
 
-    private:
+    protected:
       SliderButtton* sliderButton_;
       bool isHorizontal_;
       float minVal_,maxVal_,val_,buttonLength_;
@@ -580,7 +645,7 @@ namespace EP {
         void childOffsetXIs(const float v) {childOffsetX_=v;}
         void childOffsetYIs(const float v) {childOffsetY_=v;}
         Area* child() const {return child_;}
-      private:
+      protected:
         Area* child_;
         float childOffsetX_=0;
         float childOffsetY_=0;
@@ -619,7 +684,7 @@ namespace EP {
       virtual void onResize(const float dxOld, const float dyOld) {
         adjustChildren();
       }
-    private:
+    protected:
       ScrollAreaViewer* scrollView_;
       Slider* sliderX_;
       Slider* sliderY_;
@@ -628,7 +693,196 @@ namespace EP {
       float scrollerWidth_=20;
     };
 
+    class Socket : public Area {
+    public:
+      enum Direction {Up,Down};
+      Socket(const std::string& name,Area* const parent,
+             const float x,const float y,Direction direction,
+             const std::string text,
+             const Color bgColor = Color(0.5,0.5,0.5),
+             const Color textColor = Color(0,0,0),
+             const Color socketColor = Color(0,0,0),
+             const Color connectorColor = Color(0,0,0)
+            )
+      : Area(name,parent,x,y,20,20),text_(text),textColor_(textColor),socketColor_(socketColor),connectorColor_(connectorColor),direction_(direction){
+        colorIs(bgColor);
+        switch (direction_) {
+          case Direction::Up:
+          case Direction::Down:{
+            sizeIs(16,24);
+            break;
+          }
+        }
+        canTakeSink = []() {return true;};
+        canMakeSource = [](Socket* s) {return true;};
+        onSinkIs = [](Socket* s) {};
+        onSinkDel = [](Socket* s) {};
+        onSourceIs = [](Socket* s) {};
+        onSourceDel = [](Socket* s) {};
+      }
 
+      float socketX() {
+        switch (direction_) {
+          case Direction::Up:return dx_*0.5;
+          case Direction::Down:return dx_*0.5;
+        }
+      };
+      float socketY() {
+        switch (direction_) {
+          case Direction::Up:return dx_*0.5;
+          case Direction::Down:return dy_-dx_*0.5;
+        }
+      };
+      Color connectorColor() {return connectorColor_;}
+
+      // for client use
+      void sourceIs(Socket* source) {
+        if (source==source_) {return;}
+        if (source_) {
+          onSourceDel(source_);
+          source_->sinkDel(this);
+        }
+        source_=source;
+        if (source_) {
+          source_->sinkIs(this);
+          onSourceIs(source_);
+        }
+      }
+
+      // internal: only react!
+      void sinkIs(Socket* sink) {
+        const bool found = (std::find(sink_.begin(), sink_.end(), sink) != sink_.end());
+        if (!found) {
+          sink_.push_front(sink);
+          onSinkIs(sink);
+        }
+      }
+      void sinkDel(Socket* sink) {
+        const bool found = (std::find(sink_.begin(), sink_.end(), sink) != sink_.end());
+        if (found) {
+          onSinkDel(sink);
+          sink_.remove(sink);
+        }
+      }
+
+      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+        float gx = x_+px;
+        float gy = y_+py;
+
+        switch (direction_) {
+          case Direction::Up:{
+            DrawOval(gx, gy, dx_,dx_,target,bgColor_);
+            DrawRect(gx, gy+dx_*0.5, dx_, dy_-dx_*0.5, target, bgColor_);
+            DrawOval(gx+dx_*0.25, gy+dx_*0.25, dx_*0.5,dx_*0.5,target,socketColor_);
+            DrawText(gx+1, gy+dy_*0.5, text_, (dy_-dx_), target, textColor_);
+            break;
+          }
+          case Direction::Down:{
+            DrawOval(gx, gy+dy_-dx_, dx_,dx_,target,bgColor_);
+            DrawRect(gx, gy, dx_, dy_-dx_*0.5, target, bgColor_);
+            DrawOval(gx+dx_*0.25, gy+dy_-dx_*0.75, dx_*0.5,dx_*0.5,target,socketColor_);
+            DrawText(gx+1, gy+1, text_, (dy_-dx_), target, textColor_);
+            break;
+          }
+        }
+        if (source_) {
+          DrawLine(x_+px+socketX(),y_+py+socketY(),source_->globalX()+source_->socketX(),source_->globalY()+source_->socketY(),target,connectorColor_,dx_*0.5);
+        }
+        for (std::list<Socket*>::reverse_iterator rit=sink_.rbegin(); rit!=sink_.rend(); ++rit) {
+          DrawLine(x_+px+socketX(),y_+py+socketY(),(*rit)->globalX()+(*rit)->socketX(),(*rit)->globalY()+(*rit)->socketY(),target,(*rit)->connectorColor(),dx_*0.5);
+        }
+        if (isSettingSource) {
+          DrawLine(x_+px+socketX(),y_+py+socketY(),isSettingSourceX,isSettingSourceY,target,connectorColor_,dx_*0.5);
+        }
+
+        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+          (*rit)->draw(x_+px, y_+py,target);
+        }
+      }
+      virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
+        if (isFirstDown) {setFocus();}
+        if (canTakeSink()) {
+          isSettingSource = true;
+          isSettingSourceX = x;
+          isSettingSourceY = y;
+          sourceIs(NULL);
+          return true;
+        } else {
+          return false;
+        }
+      }
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
+        if (isCaptured and isSettingSource) {
+          isSettingSourceX = x;
+          isSettingSourceY = y;
+        }
+        return true;
+      }
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
+        isSettingSource = false;
+        if (isCaptured) {
+          Socket* source = dynamic_cast<Socket*>(over);
+          if (source and source!=this and source!=source_ and source->canMakeSource(this)) {
+            sourceIs(source);
+          }
+        }
+      }
+
+    protected:
+      std::string text_;
+      Color textColor_,socketColor_,connectorColor_;
+      Direction direction_;
+      Socket* source_=NULL;
+
+      bool isSettingSource = false;
+      float isSettingSourceX,isSettingSourceY;
+
+      std::list<Socket*> sink_;
+
+      // requests:
+      std::function<bool()> canTakeSink;// return if allow
+      std::function<bool(Socket*)> canMakeSource;// return if allow
+
+      // reactions:
+      std::function<void(Socket*)> onSinkIs;
+      std::function<void(Socket*)> onSinkDel;
+      std::function<void(Socket*)> onSourceIs;
+      std::function<void(Socket*)> onSourceDel;
+    };
+
+    class Block : public Area {
+    public:
+      Block(const std::string& name,Area* const parent,
+             const float x,const float y,const float dx,const float dy,
+             const Color bgColor = Color(0.5,0.5,0.5)
+            )
+      : Area(name,parent,x,y,dx,dy){
+        colorIs(bgColor);
+      }
+
+      virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
+        if (isFirstDown) {setFocus();}
+        return true;
+      }
+
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
+        float moveX=0, moveY=0;
+        float cx,cy,cdx,cdy;
+        parent_->childSize(cdx,cdy);parent_->childOffset(cx,cy);
+
+        if (isCaptured) {
+          moveX=std::max(cx-x_,std::min(cx+cdx-x_-dx_,dx));
+          dx=moveX;
+          moveY=std::max(cy-y_,std::min(cy+cdy-y_-dy_,dy));
+          dy=moveY;
+        }
+        if (moveX!=0 || moveY!=0) {positionIs(x_+moveX,y_+moveY);}
+        return true;
+      }
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
+      }
+    protected:
+    };
 
     class MasterWindow {
     public:
@@ -643,6 +897,7 @@ namespace EP {
         }
 
         renderWindow_->setVerticalSyncEnabled(true);
+        renderWindow_->setKeyRepeatEnabled(false);
 
         sf::Vector2u size = renderWindow_->getSize();
         mainArea_ = (new EP::GUI::Area("main",NULL,0,0,size.x,size.y))->fillParentIs(true);
@@ -687,7 +942,7 @@ namespace EP {
               if(event.mouseButton.button == sf::Mouse::Left) {
                 mouseDown_ = false;
                 if (mouseDownArea_) {
-                  mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,true,lastMouseX_,lastMouseY_);
+                  mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,true,lastMouseX_,lastMouseY_,mouseOverArea_);
                 }
                 mouseDownReset();
               } else if(event.mouseButton.button == sf::Mouse::Right) {
@@ -710,7 +965,7 @@ namespace EP {
                 // not captured: if has area: check, if leaves: update mouse, notify leaving, possibly start notify
                 // no area: update mouse, possibly start notify after
                 if (mouseDownArea_) {
-                  keepDrag = mouseDownArea_->onMouseDown(mouseDownCaptured_,lastMouseX_,lastMouseY_,mouseDX,mouseDY);
+                  keepDrag = mouseDownArea_->onMouseDown(mouseDownCaptured_,lastMouseX_,lastMouseY_,mouseDX,mouseDY,mouseOverArea_);
                   if (keepDrag) {
                     mouseDownKeepDragDX_+= origMouseDX-mouseDX;
                     mouseDownKeepDragDY_+= origMouseDY-mouseDY;
@@ -735,7 +990,7 @@ namespace EP {
               if (mouseOverArea_!=mouseOverNew) {
                 // end old:
                 if (!mouseDownCaptured_ && mouseDownArea_!=NULL && mouseDownArea_!=mouseOverNew) {
-                  mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,false,lastMouseX_,lastMouseY_);
+                  mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,false,lastMouseX_,lastMouseY_,mouseOverArea_);
                   mouseDownArea_=NULL;
                 }
                 if (mouseOverArea_!=NULL) {
@@ -754,6 +1009,11 @@ namespace EP {
                   }
                 }
               }
+              break;
+            }
+            case sf::Event::KeyPressed: {
+              Area* const focus = mainArea_->getFocus();
+              if (focus) {focus->onKeyPressed(event.key.code);}
               break;
             }
             case sf::Event::Resized: {
@@ -781,11 +1041,17 @@ namespace EP {
           std::string p = "down: " + (mouseDownArea_?mouseDownArea_->fullName():"None") + " " + (mouseDownCaptured_?"captured":"glide");
           EP::DrawText(5,20, p, 10, *renderWindow_, EP::Color(1.0,1.0,1.0));
         }
+        {
+          Area* const focus = mainArea_->getFocus();
+          std::string p = "focus: " + (focus?focus->fullName():"None");
+          EP::DrawText(5,35, p, 10, *renderWindow_, EP::Color(1.0,1.0,1.0));
+        }
+
         renderWindow_->display();
       }
       void close() {renderWindow_->close();}
       bool isAlive() {return renderWindow_->isOpen();}
-    private:
+    protected:
       sf::RenderWindow *renderWindow_;
       Area* mainArea_;
       Area* mouseOverArea_;
