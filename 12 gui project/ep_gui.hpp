@@ -19,7 +19,7 @@ namespace EP {
       this->a = std::min(1.0f,std::max(0.0f,a));
     }
 
-    Color operator*(const float scale) {return Color(scale*r,scale*g,scale*b,scale*a);}
+    Color operator*(const float scale) {return Color(scale*r,scale*g,scale*b,a);}
 
     sf::Color toSFML() const {
       return sf::Color(255.0*r,255.0*g,255.0*b,255.0*a);
@@ -102,7 +102,39 @@ namespace EP {
     rectangle.setPosition(x1-std::cos(rad)*width*0.5, y1-std::sin(rad)*width*0.5);
     rectangle.setRotation(angle);
     target.draw(rectangle, sf::BlendAlpha);//BlendAdd
+    DrawOval(x1-width*0.5,y1-width*0.5,width,width,target,color);
+    DrawOval(x2-width*0.5,y2-width*0.5,width,width,target,color);
   }
+
+  class ViewAnchor {
+  public:
+    ViewAnchor(sf::RenderTarget &target,const float gx,const float gy,const float cx,const float cy,const float cdx,const float cdy) : target_(target) {//restrict / intersect current
+      viewOld_ = target_.getView();
+      sf::Vector2u size = target_.getSize();
+      sf::FloatRect rect = sf::FloatRect((gx+cx)/size.x,(gy+cy)/size.y,(cdx)/size.x,(cdy)/size.y);
+      sf::FloatRect inter;
+      rect.intersects(viewOld_.getViewport(),inter);
+      sf::View view;
+      view.setViewport(inter);
+      view.reset(sf::FloatRect(inter.left*size.x,inter.top*size.y,inter.width*size.x,inter.height*size.y));
+      target_.setView(view);
+    }
+    ViewAnchor(sf::RenderTarget &target) : target_(target) { // jailbreak
+      viewOld_ = target_.getView();
+      sf::Vector2u size = target_.getSize();
+      sf::View view;
+      view.setViewport(sf::FloatRect(0,0,1,1));
+      view.reset(sf::FloatRect(0,0,size.x,size.y));
+      target_.setView(view);
+    }
+    ~ViewAnchor() {// pop stack
+      target_.setView(viewOld_);
+    }
+  protected:
+    sf::RenderTarget &target_;
+    sf::View viewOld_;
+  };
+
 
   // void DrawDot(float x, float y, sf::RenderWindow &window, sf::Color color = sf::Color(255,0,0))
   // {
@@ -140,8 +172,8 @@ namespace EP {
 
       float dx() const {return dx_;}
       float dy() const {return dy_;}
-      float globalX() const {return x_+(parent_?parent_->globalX():0);}
-      float globalY() const {return y_+(parent_?parent_->globalY():0);}
+      virtual float globalX() const {return x_+(parent_?parent_->globalX():0);}
+      virtual float globalY() const {return y_+(parent_?parent_->globalY():0);}
       std::string name() const {return name_;}
       std::string fullName() const {if (parent_) {return parent_->fullName()+"/"+name_;}else{return name_;}}
 
@@ -163,9 +195,11 @@ namespace EP {
 
       void onResizeParent() {
         if (fillParent_&&parent_) {
-          float cdx,cdy;
+          float cdx,cdy,cx,cy;
           parent_->childSize(cdx,cdy);
+          parent_->childOffset(cx,cy);
           sizeIs(cdx,cdy);
+          positionIs(cx,cy);
         }
       }
 
@@ -220,7 +254,7 @@ namespace EP {
         return this;
       }
       virtual void onResize(const float dxOld, const float dyOld) {
-        std::cout << "resizig: " << fullName() << std::endl;
+        //std::cout << "resizig: " << fullName() << std::endl;
       }
 
       Area* positionIs(const float x,const float y) {
@@ -231,17 +265,21 @@ namespace EP {
         return this;
       }
       virtual void onPosition(const float xOld, const float yOld) {
-        std::cout << "position: " << fullName() << std::endl;
+        //std::cout << "position: " << fullName() << std::endl;
       }
 
-      Area* fillParentIs(bool const value) { fillParent_ = value; return this;}
+      Area* fillParentIs(bool const value) {
+        fillParent_ = value;
+        if (fillParent_) {onResizeParent();}
+        return this;}
       Area* childIs(Area* c) {children_.push_back(c); return this;}
       Area* parentIs(Area* p) {parent_=p; return this;}
+      Area* parent() {return parent_;}
       Area* firstChild() {return children_.front();}
       bool isFirstChild() {return parent_?this==parent_->firstChild():true;}
 
       void setFocus(bool isRecursive=false) {
-        std::cout << "setFocus " << fullName() << std::endl;
+        //std::cout << "setFocus " << fullName() << std::endl;
         if (!isRecursive) {
           Area* const oldFocus = getFocus();
           if (oldFocus==this) {return;}
@@ -255,7 +293,7 @@ namespace EP {
         }
       }
       void unFocus() {
-        std::cout << "unFocus " << fullName() << std::endl;
+        //std::cout << "unFocus " << fullName() << std::endl;
         isFocus_=false;
         isFocusPath_=false;
         if (parent_) {parent_->unFocus();}
@@ -295,10 +333,33 @@ namespace EP {
       }
       float x_,y_,dx_,dy_; // x,y relative to parent
       bool fillParent_ = false;
-      Color bgColor_ = Color(0.5,0.1,0.1);
+      Color bgColor_ = Color(0.05,0.05,0.1);
       bool isFocus_=false;
       bool isFocusPath_=false;
     };// class Area
+    class Label : public Area {
+    public:
+      Label(const std::string& name,Area* const parent,
+             const float x,const float y,const float fontSize,
+             const std::string text,
+             const Color textColor = Color(0,0,0)
+            )
+      : Area(name,parent,x,y,1,1),text_(text),textColor_(textColor),fontSize_(fontSize){}
+
+      virtual Area* checkMouseOver(const float px,const float py,const bool doNotify=true) {// relative to parent
+        return NULL;
+      }
+      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+        float gx = x_+px;
+        float gy = y_+py;
+        DrawText(gx+1, gy+1, text_, fontSize_, target, textColor_);
+      }
+
+    protected:
+      std::string text_;
+      float fontSize_;
+      Color textColor_;
+    };
     class Button : public Area {
     public:
       Button(const std::string& name,Area* const parent,
@@ -355,25 +416,16 @@ namespace EP {
         DrawRect(gx, gy, dx_, dy_, target, bgColor_*(isFocusPath()?1.0:0.8));
         DrawText(gx+borderSize+headerSize, gy+borderSize, title_, (headerSize-2*borderSize), target, Color(1,1,1));
 
-        sf::View viewOld = target.getView(); // push new view
-        sf::View view;
-        float cx,cy,cdx,cdy;childSize(cdx,cdy);childOffset(cx,cy);
-        sf::Vector2u size = target.getSize();
-        sf::FloatRect rect = sf::FloatRect((gx+cx)/size.x,(gy+cy)/size.y,(cdx)/size.x,(cdy)/size.y);
-        sf::FloatRect inter;
-        rect.intersects(viewOld.getViewport(),inter);
-        view.setViewport(inter);
-        view.reset(sf::FloatRect(cx,cy,inter.width*size.x,inter.height*size.y));
-        view.move(sf::Vector2f(gx,gy));
-        target.setView(view);
+        {
+          float cx,cy,cdx,cdy;childSize(cdx,cdy);childOffset(cx,cy);
+          ViewAnchor viewAnchor(target,gx,gy,cx,cy,cdx,cdy);
 
-
-        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          if (closeButton_!=(*rit)) {
-            (*rit)->draw(gx,gy,target);
+          for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+            if (closeButton_!=(*rit)) {
+              (*rit)->draw(gx,gy,target);
+            }
           }
         }
-        target.setView(viewOld);// pop new view
 
         closeButton_->draw(gx,gy,target);
       }
@@ -464,7 +516,7 @@ namespace EP {
       public:
         SliderButtton(const std::string& name,Area* const parent,
                const float x,const float y,const float dx,const float dy,
-               const std::vector<Color> buttonColors = std::vector<Color>{Color(0.6,0.6,0.6),Color(0.7,0.7,0.7),Color(0.8,0.8,0.8)}
+               const std::vector<Color> buttonColors
               )
         : Area(name,parent,x,y,dx,dy),buttonColors_(buttonColors){}
         virtual void onMouseOverStart() {if (state_==0) {state_=1;}}
@@ -506,8 +558,8 @@ namespace EP {
       Slider(const std::string& name,Area* const parent,
              const float x,const float y,const float dx,const float dy,
              const bool isHorizontal,const float minVal,const float maxVal,const float initVal,const float buttonLength,
-             const std::vector<Color> bgColors = std::vector<Color>{Color(0.5,0.5,0.5),Color(0.4,0.4,0.4),Color(0.3,0.3,0.3)},
-             const std::vector<Color> buttonColors = std::vector<Color>{Color(0.6,0.6,0.6),Color(0.7,0.7,0.7),Color(0.8,0.8,0.8)}
+             const std::vector<Color> bgColors = std::vector<Color>{Color(0.2,0.2,0.4),Color(0.15,0.15,0.3),Color(0.1,0.1,0.2)},
+             const std::vector<Color> buttonColors = std::vector<Color>{Color(0.3,0.3,0.6),Color(0.35,0.35,0.7),Color(0.4,0.4,0.8)}
             )
       : Area(name,parent,x,y,dx,dy),
         isHorizontal_(isHorizontal),minVal_(minVal),maxVal_(maxVal),val_(initVal),buttonLength_(buttonLength),
@@ -642,6 +694,8 @@ namespace EP {
           }
           return NULL;
         }
+        virtual float globalX() const {return x_+(parent_?parent_->globalX():0)+childOffsetX_;}
+        virtual float globalY() const {return y_+(parent_?parent_->globalY():0)+childOffsetY_;}
         void childOffsetXIs(const float v) {childOffsetX_=v;}
         void childOffsetYIs(const float v) {childOffsetY_=v;}
         Area* child() const {return child_;}
@@ -699,17 +753,17 @@ namespace EP {
       Socket(const std::string& name,Area* const parent,
              const float x,const float y,Direction direction,
              const std::string text,
-             const Color bgColor = Color(0.5,0.5,0.5),
-             const Color textColor = Color(0,0,0),
+             const Color bgColor = Color(0.2,0.2,0.4),
+             const Color textColor = Color(1,1,1),
              const Color socketColor = Color(0,0,0),
-             const Color connectorColor = Color(0,0,0)
+             const Color connectorColor = Color(0.4,0.4,0.8)
             )
       : Area(name,parent,x,y,20,20),text_(text),textColor_(textColor),socketColor_(socketColor),connectorColor_(connectorColor),direction_(direction){
         colorIs(bgColor);
         switch (direction_) {
           case Direction::Up:
           case Direction::Down:{
-            sizeIs(16,24);
+            sizeIs(20,30);
             break;
           }
         }
@@ -720,6 +774,13 @@ namespace EP {
         onSourceIs = [](Socket* s) {};
         onSourceDel = [](Socket* s) {};
       }
+
+      void canTakeSinkIs(std::function<bool()> f) {canTakeSink=f;}
+      void canMakeSourceIs(std::function<bool(Socket*)> f) {canMakeSource=f;}
+      void onSinkIsIs(std::function<void(Socket*)> f) {onSinkIs=f;}
+      void onSinkDelIs(std::function<void(Socket*)> f) {onSinkDel=f;}
+      void onSourceIsIs(std::function<void(Socket*)> f) {onSourceIs=f;}
+      void onSourceDelIs(std::function<void(Socket*)> f) {onSourceDel=f;}
 
       float socketX() {
         switch (direction_) {
@@ -748,6 +809,8 @@ namespace EP {
           onSourceIs(source_);
         }
       }
+
+      std::list<Socket*>& sink() {return sink_;}
 
       // internal: only react!
       void sinkIs(Socket* sink) {
@@ -786,13 +849,16 @@ namespace EP {
           }
         }
         if (source_) {
-          DrawLine(x_+px+socketX(),y_+py+socketY(),source_->globalX()+source_->socketX(),source_->globalY()+source_->socketY(),target,connectorColor_,dx_*0.5);
+          DrawLine(x_+px+socketX(),y_+py+socketY(),source_->globalX()+source_->socketX(),source_->globalY()+source_->socketY(),target,Color(0,0,0),dx_*0.5);
+          DrawLine(x_+px+socketX(),y_+py+socketY(),source_->globalX()+source_->socketX(),source_->globalY()+source_->socketY(),target,connectorColor_,dx_*0.5-4);
         }
         for (std::list<Socket*>::reverse_iterator rit=sink_.rbegin(); rit!=sink_.rend(); ++rit) {
-          DrawLine(x_+px+socketX(),y_+py+socketY(),(*rit)->globalX()+(*rit)->socketX(),(*rit)->globalY()+(*rit)->socketY(),target,(*rit)->connectorColor(),dx_*0.5);
+          DrawLine(x_+px+socketX(),y_+py+socketY(),(*rit)->globalX()+(*rit)->socketX(),(*rit)->globalY()+(*rit)->socketY(),target,Color(0,0,0),dx_*0.5);
+          DrawLine(x_+px+socketX(),y_+py+socketY(),(*rit)->globalX()+(*rit)->socketX(),(*rit)->globalY()+(*rit)->socketY(),target,(*rit)->connectorColor(),dx_*0.5-4);
         }
         if (isSettingSource) {
-          DrawLine(x_+px+socketX(),y_+py+socketY(),isSettingSourceX,isSettingSourceY,target,connectorColor_,dx_*0.5);
+          DrawLine(x_+px+socketX(),y_+py+socketY(),isSettingSourceX_,isSettingSourceY_,target,Color(0,0,0),dx_*0.5);
+          DrawLine(x_+px+socketX(),y_+py+socketY(),isSettingSourceX_,isSettingSourceY_,target,connectorColor_,dx_*0.5-4);
         }
 
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
@@ -803,8 +869,8 @@ namespace EP {
         if (isFirstDown) {setFocus();}
         if (canTakeSink()) {
           isSettingSource = true;
-          isSettingSourceX = x;
-          isSettingSourceY = y;
+          isSettingSourceX_ = x;
+          isSettingSourceY_ = y;
           sourceIs(NULL);
           return true;
         } else {
@@ -813,8 +879,8 @@ namespace EP {
       }
       virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
         if (isCaptured and isSettingSource) {
-          isSettingSourceX = x;
-          isSettingSourceY = y;
+          isSettingSourceX_ = x;
+          isSettingSourceY_ = y;
         }
         return true;
       }
@@ -835,7 +901,7 @@ namespace EP {
       Socket* source_=NULL;
 
       bool isSettingSource = false;
-      float isSettingSourceX,isSettingSourceY;
+      float isSettingSourceX_,isSettingSourceY_;
 
       std::list<Socket*> sink_;
 
@@ -858,6 +924,13 @@ namespace EP {
             )
       : Area(name,parent,x,y,dx,dy){
         colorIs(bgColor);
+      }
+      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+        DrawRect(x_+px, y_+py, dx_, dy_, target, bgColor_*(isFocus()?1.0:0.4));
+        DrawRect(x_+px+2, y_+py+2, dx_-4, dy_-4, target, bgColor_*0.7);
+        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+          (*rit)->draw(x_+px, y_+py,target);
+        }
       }
 
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
@@ -882,6 +955,94 @@ namespace EP {
       virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
       }
     protected:
+    };
+
+    class BlockHolder : public Area {
+    public:
+      BlockHolder(const std::string& name,Area* const parent,
+                  const float x,const float y,const float dx,const float dy
+                 )
+      : Area(name,parent,x,y,dx,dy){}
+      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+        DrawRect(x_+px, y_+py, dx_, dy_, target, bgColor_);
+        const float tileD = 100.0;
+        for (size_t x = 0; x < dx_/tileD+1; x++) {
+          for (size_t y = 0; y < dy_/tileD+1; y++) {
+            DrawRect(x_+px+x*tileD, y_+py+y*tileD, tileD-2, tileD-2, target, bgColor_*0.5);
+          }
+        }
+
+        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+          (*rit)->draw(x_+px, y_+py,target);
+        }
+      }
+    protected:
+    };
+
+
+    class BlockTemplate : public Area {
+      // drag template from this area to blockHolder area. Instantiate a new Block.
+    public:
+      BlockTemplate(const std::string& name,Area* const parent,
+             const float x,const float y,const float dx,const float dy,
+             const std::string text,
+             const Color bgColor = Color(0.5,0.5,0.5),
+             const Color textColor = Color(0,0,0)
+            )
+      : Area(name,parent,x,y,dx,dy),text_(text),textColor_(textColor) {
+        colorIs(bgColor);
+        doInstantiate_ = [this](BlockHolder* bh,const float x,const float y) {
+          std::cout << "not implemented: adding " << this->fullName() << " to " << bh->fullName() << std::endl;
+        };
+      }
+      void doInstantiateIs(std::function<void(BlockHolder*,const float,const float)> f) {doInstantiate_=f;}
+
+      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+        float gx = x_+px;
+        float gy = y_+py;
+        DrawRect(gx, gy, dx_, dy_, target, bgColor_);
+        DrawText(gx+1, gy+1, text_, (dy_-2), target, textColor_);
+        if (isDraggingTemplate1_) {
+          ViewAnchor viewAnchor(target);// jailbreak
+          DrawRect(isDraggingTemplateX_, isDraggingTemplateY_, dx_, dy_, target, bgColor_);
+          DrawText(isDraggingTemplateX_+1, isDraggingTemplateY_+1, text_, (dy_-2), target, textColor_);
+        }
+        for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
+          (*rit)->draw(x_+px, y_+py,target);
+        }
+      }
+      virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
+        if (isFirstDown) {setFocus();}
+        isDraggingTemplate1_ = true;
+        isDraggingTemplateX_ = x;
+        isDraggingTemplateY_ = y;
+        return true;
+      }
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
+        if (isCaptured and isDraggingTemplate1_) {
+          isDraggingTemplateX_ = x;
+          isDraggingTemplateY_ = y;
+        }
+        return true;
+      }
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
+        if (isCaptured && isDraggingTemplate1_) {
+          BlockHolder* bh = dynamic_cast<BlockHolder*>(over);
+          if (bh) {
+            doInstantiate_(bh,x-bh->globalX(),y-bh->globalY());
+          }
+        }
+        isDraggingTemplate1_ = false;
+      }
+    protected:
+      std::string text_;
+      Color textColor_;
+
+      bool isDraggingTemplate1_ = false;
+      float isDraggingTemplateX_,isDraggingTemplateY_;
+
+      // requests:
+      std::function<void(BlockHolder*,const float,const float)> doInstantiate_;
     };
 
     class MasterWindow {
