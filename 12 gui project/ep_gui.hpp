@@ -354,7 +354,7 @@ namespace EP {
         float gy = y_+py;
         DrawText(gx+1, gy+1, text_, fontSize_, target, textColor_);
       }
-
+      void textIs(std::string text) {text_=text;}
     protected:
       std::string text_;
       float fontSize_;
@@ -866,15 +866,17 @@ namespace EP {
         }
       }
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
-        if (isFirstDown) {setFocus();}
-        if (canTakeSink()) {
-          isSettingSource = true;
-          isSettingSourceX_ = x;
-          isSettingSourceY_ = y;
-          sourceIs(NULL);
-          return true;
-        } else {
-          return false;
+        if (isFirstDown) {
+          setFocus();
+          if (canTakeSink()) {
+            isSettingSource = true;
+            isSettingSourceX_ = x;
+            isSettingSourceY_ = y;
+            sourceIs(NULL);
+            return true;
+          } else {
+            return false;
+          }
         }
       }
       virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
