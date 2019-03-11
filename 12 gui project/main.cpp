@@ -1,4 +1,6 @@
 #include <map>
+#include <mutex>
+#include <SFML/Audio.hpp>
 
 #include "ep_gui.hpp"
 
@@ -13,6 +15,102 @@ namespace EP {
     // internal processing/storage allowed.
     // list makes sure the tasks are ordered.
     // recompiled incrementally, on events.
+
+    // Task: on purpose separate, so that can be exported without too many dependencies.
+
+    class Task {
+    public:
+      Task(const size_t inSize,const size_t outSize) {
+        inTask_.resize(inSize,NULL);
+        inTaskPort_.resize(inSize,0);
+        inValue_.resize(inSize,0);
+        out_.resize(outSize,0);
+      }
+      inline void fetchInput() {// runs before tick of this task, and after tick of dependency tasks
+        for (size_t i = 0; i < inValue_.size(); i++) {
+          if (inTask_[i]!=NULL) {inValue_[i]=inTask_[i]->out(inTaskPort_[i]);}
+        }
+      }
+      virtual void tick(const float dt) = 0;// calculate output from input and internal state
+      inline float out(const size_t i) {return out_[i];}
+      void inIs(const size_t i,Task* const task,const size_t port) {inTask_[i]=task;inTaskPort_[i]=port;inValue_[i]=0;}
+      void inIs(const size_t i,const float value) {inTask_[i]=NULL;inTaskPort_[i]=0;inValue_[i]=value;}
+    protected:
+      std::vector<Task*> inTask_;
+      std::vector<size_t> inTaskPort_;
+      std::vector<float> inValue_;// set if inTask_!=NULL
+      std::vector<float> out_;
+    };
+
+    static float audioOut;
+    static std::vector<Task*> taskList;
+    std::mutex taskListMutex;
+
+    class TaskOscillator : public Task {
+    public:
+      TaskOscillator() : Task(2,1),t_(0) {}
+      // in: freq, mod
+      // out: wave
+      virtual void tick(const float dt) {
+        t_+=dt*inValue_[0]*2.0*M_PI;
+        out_[0] =std::sin(t_);
+      }
+    protected:
+      float t_ = 0;
+    };
+    class TaskAudioOut : public Task {
+    public:
+      TaskAudioOut() : Task(1,0) {}
+      // in: signal
+      // out:
+      virtual void tick(const float dt) {
+        audioOut = inValue_[0];// send signal to out.
+      }
+    protected:
+    };
+
+    class AudioOutStream : public sf::SoundStream {
+    public:
+      AudioOutStream()
+      :sampleRate_(44100), sampleSize_(2000), amplitude_(30000)
+      {
+        initialize(1, sampleRate_);
+      }
+    private:
+      const unsigned sampleRate_;
+      const unsigned sampleSize_;
+      const unsigned amplitude_;
+
+      std::vector<sf::Int16> samples;
+      //
+      // std::mutex instruments_mutex;
+      // std::forward_list<Instrument*> instruments;
+
+      virtual bool onGetData(Chunk& data)
+      {
+        samples.clear();
+        const float dt = (float)1.0 / (float)sampleRate_;
+
+        std::lock_guard<std::mutex> lock(taskListMutex);
+        for (size_t i = 0; i < sampleSize_; i++) {
+          for (auto &t : taskList) {
+            t->fetchInput();
+            t->tick(dt);
+          }
+          samples.push_back(amplitude_ * audioOut);
+        }
+
+        data.samples = &samples[0];
+        data.sampleCount = sampleSize_;
+        return true;
+      }
+
+      virtual void onSeek(sf::Time timeOffset)
+      {
+        // not supported.
+      }
+    };
+
 
     static std::map<EP::GUI::Block*,Entity*> blockToEntity;
 
@@ -161,6 +259,20 @@ int main()
 
     EP::FlowGUI::newBlockTemplateWindow(masterWindow->area());
   }
+  // ------------------------------------ BOCUS AUDIO SETUP
+  {
+    std::lock_guard<std::mutex> lock(EP::FlowGUI::taskListMutex);
+    EP::FlowGUI::TaskOscillator* o = new EP::FlowGUI::TaskOscillator();
+    o->inIs(0,440);
+    EP::FlowGUI::taskList.push_back(o);
+    EP::FlowGUI::TaskAudioOut* out = new EP::FlowGUI::TaskAudioOut();
+    out->inIs(0,o,0);
+    EP::FlowGUI::taskList.push_back(out);
+  }
+  // ------------------------------------ AUDIO
+  EP::FlowGUI::AudioOutStream audioOutStream;
+  audioOutStream.play();
+  // ------------------------------------ MAIN
   while (masterWindow->isAlive()) {
     masterWindow->update();
     masterWindow->draw();
