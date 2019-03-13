@@ -578,6 +578,7 @@ namespace EP {
           sliderButton_->positionIs(0,dy_*bPosRel);
         }
       }
+      double val() {return val_;}
       void valIs(float val) {
         if (val_!=val) {
           val_=val;

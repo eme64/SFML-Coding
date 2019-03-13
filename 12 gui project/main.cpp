@@ -45,6 +45,7 @@ namespace EP {
         }
         std::cout << "}" << std::endl;
       }
+      std::vector<Task*>& inTask() {return inTask_;}
     protected:
       std::vector<Task*> inTask_;
       std::vector<size_t> inTaskPort_;
@@ -62,7 +63,7 @@ namespace EP {
       enum Out : size_t {Signal=0};
       TaskOscillator() : Task(3,1),t_(0) {}
       virtual void tick(const double dt) {
-        t_+=dt*(inValue_[In::Freq]+inValue_[In::Mod]*inValue_[In::ModFactor])*2.0*M_PI;
+        t_+=dt*(inValue_[In::Freq]+inValue_[In::Freq]*inValue_[In::Mod]*inValue_[In::ModFactor])*2.0*M_PI;
         out_[Out::Signal] =std::sin(t_);
       }
     protected:
@@ -148,7 +149,7 @@ namespace EP {
         if (block_) {blockToEntity.insert({block_,this});}
       }
       EP::GUI::Block* block() {return block_;}
-      EP::GUI::Socket* socketInIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,const size_t port) {
+      EP::GUI::Socket* socketInIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,const size_t port,std::function<double()> defaultVal) {
         EP::GUI::Socket* socket = new EP::GUI::Socket("socketIn"+name,parent,x,y,EP::GUI::Socket::Direction::Up,name);
         socketToTaskPort.insert({socket,TaskPort(task(),port)});
         socket->canTakeSinkIs([]() {return true;});
@@ -156,16 +157,34 @@ namespace EP {
         socket->onSourceIsIs([this,port](EP::GUI::Socket* source) {
           std::cout << "sourceIs" << std::endl;
           const TaskPort taskPort = socketToTaskPort[source];
-          task()->inIs(port,taskPort.task,taskPort.port);
+          {
+            std::lock_guard<std::mutex> lock(taskListMutex);
+            task()->inIs(port,taskPort.task,taskPort.port);
+          }
           recompileTasks();
         });
-        socket->onSourceDelIs([this,port](EP::GUI::Socket* source) {
+        socket->onSourceDelIs([this,port,defaultVal](EP::GUI::Socket* source) {
           std::cout << "sourceDel" << std::endl;
-          task()->inIs(port,NULL,0);
+          {
+            std::lock_guard<std::mutex> lock(taskListMutex);
+            task()->inIs(port,defaultVal());
+          }
           recompileTasks();
         });
         inSockets_.push_front(socket);
         return socket;
+      }
+      void packageInIs(EP::GUI::Block* const block,const float x,const float y,std::string name,
+                       Task* const task,const size_t port,std::function<double(double)> sliderToVal,const double sliderDefault=1.0) {
+        EP::GUI::Label*  label = new EP::GUI::Label("label"+name,block,x,y+30,10,"XXX",EP::Color(1,1,1));
+        EP::GUI::Slider* slider = new EP::GUI::Slider("slider"+name,block,x,y+45,20,50,false,0.0,1.0,0,0.2);
+        slider->onValIs([label,task,sliderToVal,port](float val) {
+          label->textIs(std::to_string(int(sliderToVal(val))));
+          std::lock_guard<std::mutex> lock(taskListMutex);
+          task->inIs(port,sliderToVal(val));
+        });
+        slider->valIs(sliderDefault);
+        EP::GUI::Socket* socket = socketInIs(block,x,y,name,port,[slider]() {return slider->val();});
       }
       EP::GUI::Socket* socketOutIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,const size_t port) {
         EP::GUI::Socket* socket = new EP::GUI::Socket("socketOut"+name,parent,x,y,EP::GUI::Socket::Direction::Down,name);
@@ -197,11 +216,40 @@ namespace EP {
 
       static void recompileTasks() {
         std::cout << "recompileTasks" << std::endl;
-        for (auto &it : blockToEntity) {
-          it.second->task()->print();
+        std::map<Task*,int> taskToDependencies;
+        std::vector<Task*> newTaskList;
+
+        for (auto &it : blockToEntity) {// make entry for each task.
+          Task* const t = it.second->task();
+          taskToDependencies.insert({t,0});
         }
-        // static std::vector<Task*> taskList;
-        // std::mutex taskListMutex;
+        for (auto &it : blockToEntity) {// count dependencies
+          Task* const t = it.second->task();
+          std::vector<Task*> &inTask = t->inTask();
+          for (auto &t2 : inTask) {
+            if (t2!=NULL) {taskToDependencies[t2]++;}
+          }
+        }
+        std::function<void(Task*)> process = [&taskToDependencies,&newTaskList,&process](Task* t) {
+          taskToDependencies[t] = -1;
+          newTaskList.push_back(t);
+          std::vector<Task*> &inTask = t->inTask();
+          for (auto &t2 : inTask) {
+            if (t2!=NULL) {
+              taskToDependencies[t2]--;
+              if (taskToDependencies[t2]==0) {process(t2);}
+            }
+          }
+        };
+        for (auto &it : blockToEntity) {// bfs each dag
+          Task* const t = it.second->task();
+          if (taskToDependencies[t]==0) {process(t);}
+        }
+        std::reverse(newTaskList.begin(),newTaskList.end());
+        {
+          std::lock_guard<std::mutex> lock(taskListMutex);
+          newTaskList.swap(taskList);
+        }
       }
     protected:
       EP::GUI::Block* block_ = NULL;
@@ -217,32 +265,37 @@ namespace EP {
         EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,x,y,100,200,EP::Color(0.5,0.5,1));
         blockIs(block);
 
-        socketFq_ = socketInIs(block,5,5,"Fq",TaskOscillator::In::Freq);
-        labelFq_ = new EP::GUI::Label("labelFq",block,5,35,10,"440",EP::Color(1,1,1));
-        sliderFq_ = new EP::GUI::Slider("sliderFq",block,5,50,20,50,false,0.0,1.0,1.0,0.2);
-        sliderFq_->onValIs([this](float val) {
-          labelFq_->textIs(std::to_string(int(sliderFqFunction(val))));
-          taskOsc_->inIs(TaskOscillator::In::Freq,val);
-        });
-
-        socketMod_ = socketInIs(block,30,5,"Mod",TaskOscillator::In::Mod);
-
+        packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,[](double in) {return (1.0-in)*440.0+440.0;},1.0);
+        packageInIs(block,30,5,"Mod",task(),TaskOscillator::In::Mod,[](double in) {return (1.0-in)*2.0-1.0;},0.5);
+        packageInIs(block,55,5,"Fac",task(),TaskOscillator::In::ModFactor,[](double in) {return (1.0-in)*1.0;},1.0);
+        
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"FM Osc.",EP::Color(0.5,0.5,1));
 
-        socketOut_ = socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
-
-
+        socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
       }
-      float sliderFqFunction(float in) {return (1.0-in)*440.0+440.0;}
       virtual Task* task() {return taskOsc_;}
     protected:
-      EP::GUI::Socket* socketFq_=NULL;
-      EP::GUI::Slider* sliderFq_=NULL;
-      EP::GUI::Label*  labelFq_ =NULL;
+      TaskOscillator* taskOsc_;
+    };
 
-      EP::GUI::Socket* socketMod_=NULL;
-      EP::GUI::Socket* socketOut_=NULL;
+    class EntityLFO : Entity {
+    public:
+      EntityLFO(EP::GUI::Area* const parent,const float x,const float y) {
+        taskOsc_ = new TaskOscillator();
 
+        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,x,y,100,200,EP::Color(0.5,0.1,0.5));
+        blockIs(block);
+
+        packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,[](double in) {return (1.0-in)*10.0;},1.0);
+        packageInIs(block,30,5,"Mod",task(),TaskOscillator::In::Mod,[](double in) {return (1.0-in)*2.0-1.0;},0.5);
+        packageInIs(block,55,5,"Fac",task(),TaskOscillator::In::ModFactor,[](double in) {return (1.0-in)*1.0;},1.0);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"LFO Osc.",EP::Color(0.5,0.5,1));
+
+        socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
+      }
+      virtual Task* task() {return taskOsc_;}
+    protected:
       TaskOscillator* taskOsc_;
     };
 
@@ -253,7 +306,7 @@ namespace EP {
 
         EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,x,y,100,100,EP::Color(1,0.5,0.5));
         blockIs(block);
-        socketMain_  = socketInIs(block,5,5,"Main",TaskAudioOut::In::Signal);
+        socketMain_  = socketInIs(block,5,5,"Main",TaskAudioOut::In::Signal,[]() {return 0;});
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Audio Out",EP::Color(1,0.5,0.5));
       }
       virtual Task* task() {return taskAudioOut_;}
@@ -270,7 +323,11 @@ namespace EP {
       btFM->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
         new EntityFM(bh,x,y);
       });
-      EP::GUI::BlockTemplate* btAudioOut = new EP::GUI::BlockTemplate("blockTemplateAudioOut",content,5,30,90,20,"Audio Out");
+      EP::GUI::BlockTemplate* btLFO = new EP::GUI::BlockTemplate("blockTemplateLFO",content,5,30,90,20,"LFO Osc.");
+      btLFO->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityLFO(bh,x,y);
+      });
+      EP::GUI::BlockTemplate* btAudioOut = new EP::GUI::BlockTemplate("blockTemplateAudioOut",content,5,55,90,20,"Audio Out");
       btAudioOut->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
         new EntityAudioOut(bh,x,y);
       });
