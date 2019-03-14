@@ -388,15 +388,20 @@ namespace EP {
 
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
         std::cout << "onMouseDownStart " << fullName() << " fist:" << std::to_string(isFirstDown) << std::endl;
-        if (isFirstDown) {setFocus();}
+        if (isFirstDown) {
+          setFocus();
+          if(onClick_) {onClick_();}
+        }
         return true;
       }
       virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {dx=0,dy=0;return false;}
 
+      void onClickIs(std::function<void()> f) {onClick_=f;}
     protected:
       std::string text_;
       std::vector<Color> bgColors_,textColors_;
       size_t state_=0;//0:normal, 1:mouse over, 2:pressing, 3:clicked
+      std::function<void()> onClick_;
     };
     class Window : public Area {
     public:

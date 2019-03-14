@@ -35,6 +35,7 @@ namespace EP {
       inline double out(const size_t i) {return out_[i];}
       void inIs(const size_t i,Task* const task,const size_t port) {inTask_[i]=task;inTaskPort_[i]=port;inValue_[i]=0;}
       void inIs(const size_t i,const double value) {inTask_[i]=NULL;inTaskPort_[i]=0;inValue_[i]=value;}
+      bool inHasTask(const size_t i) {return inTask_[i]!=NULL;}
       void print() {
         std::cout << "{ " << this << std::endl;
         for (size_t i = 0; i < inTask_.size(); i++) {
@@ -77,6 +78,63 @@ namespace EP {
         audioOut = inValue_[In::Signal];// send signal to out.
       }
     protected:
+    };
+    class TaskTrigger : public Task {
+    public:
+      enum Out : size_t {Signal=0};
+      TaskTrigger() : Task(0,1) {}
+      virtual void tick(const double dt) {
+        out_[Out::Signal] = trigger_?1:0;
+        trigger_=false;
+      }
+      void setTrigger() {trigger_=true;}
+    protected:
+      bool trigger_=false;
+    };
+    class TaskEnvelope : public Task {
+    public:
+      enum In : size_t {Pulse=0,Input=1,Attack=2,Decay=3,Sustain=4,SustainAmp=5,Release=6};
+      enum Out : size_t {Amplitude=0,Output=1};
+      TaskEnvelope() : Task(7,2) {}
+      virtual void tick(const double dt) {
+        t_+=dt;
+        const double thisPulse = inValue_[In::Pulse];
+        if (lastPulse_<=0 and thisPulse>0) {// rising edge above 0
+          t_=0;
+        }
+        const double attack = inValue_[In::Attack];
+        const double decay = inValue_[In::Decay];
+        const double sustain = inValue_[In::Sustain];
+        const double sustainAmp = inValue_[In::SustainAmp];
+        const double release = inValue_[In::Release];
+        double amplitude = 0;
+        if (t_<attack) {
+          amplitude = t_/attack;
+        } else {
+          const double t2 = t_-attack;
+          if (t2<decay) {
+            const double factor = t2/decay;
+            amplitude = (1.0-factor)+factor*sustainAmp;
+          } else {
+            const double t3 = t2-decay;
+            if (t3<sustain) {
+              amplitude = sustainAmp;
+            } else {
+              const double t4 = t3-sustain;
+              if (t4<release) {
+                const double factor = t4/release;
+                amplitude = (1.0-factor)*sustainAmp;
+              }
+            }
+          }
+        }
+        out_[Out::Amplitude] = amplitude;
+        out_[Out::Output] = amplitude*inValue_[In::Input];
+        lastPulse_=thisPulse;
+      }
+    protected:
+      double lastPulse_=0;
+      double t_ = 100;// far in future where zero
     };
 
     class AudioOutStream : public sf::SoundStream {
@@ -181,7 +239,9 @@ namespace EP {
         slider->onValIs([label,task,sliderToVal,port](float val) {
           label->textIs(std::to_string(int(sliderToVal(val))));
           std::lock_guard<std::mutex> lock(taskListMutex);
-          task->inIs(port,sliderToVal(val));
+          if (!task->inHasTask(port)) {
+            task->inIs(port,sliderToVal(val));
+          }
         });
         slider->valIs(sliderDefault);
         EP::GUI::Socket* socket = socketInIs(block,x,y,name,port,[slider]() {return slider->val();});
@@ -268,7 +328,7 @@ namespace EP {
         packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,[](double in) {return (1.0-in)*440.0+440.0;},1.0);
         packageInIs(block,30,5,"Mod",task(),TaskOscillator::In::Mod,[](double in) {return (1.0-in)*2.0-1.0;},0.5);
         packageInIs(block,55,5,"Fac",task(),TaskOscillator::In::ModFactor,[](double in) {return (1.0-in)*1.0;},1.0);
-        
+
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"FM Osc.",EP::Color(0.5,0.5,1));
 
         socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
@@ -297,6 +357,53 @@ namespace EP {
       virtual Task* task() {return taskOsc_;}
     protected:
       TaskOscillator* taskOsc_;
+    };
+
+    class EntityTrigger : Entity {
+    public:
+      EntityTrigger(EP::GUI::Area* const parent,const float x,const float y) {
+        taskTrigger_ = new TaskTrigger();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockTrigger",parent,x,y,100,100,EP::Color(0.5,0.1,0.5));
+        blockIs(block);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Trigger",EP::Color(0.5,0.5,1));
+
+        EP::GUI::Button* button = new EP::GUI::Button("buttonTrigger",block,5,5,90,20,"Trigger");
+        button->onClickIs([this]() {taskTrigger_->setTrigger();});
+
+        socketOutIs(block,5,50,"Out",TaskOscillator::Out::Signal);
+      }
+      virtual Task* task() {return taskTrigger_;}
+    protected:
+      TaskTrigger* taskTrigger_;
+    };
+
+    class EntityEnvelope : Entity {
+    public:
+      EntityEnvelope(EP::GUI::Area* const parent,const float x,const float y) {
+        taskEnvelope_ = new TaskEnvelope();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,x,y,200,100,EP::Color(0.5,0.1,0.5));
+        blockIs(block);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Envelope",EP::Color(0.5,0.5,1));
+
+        socketInIs(block,5,5,"Main",TaskEnvelope::In::Pulse,[]() {return 0;});
+        socketInIs(block,30,5,"In",TaskEnvelope::In::Input,[]() {return 0;});
+
+        packageInIs(block,55 ,5,"A" ,task(),TaskEnvelope::In::Attack,[](double in) {return (1.0-in)*0.5;},0.1);
+        packageInIs(block,80 ,5,"D" ,task(),TaskEnvelope::In::Decay,[](double in) {return (1.0-in)*1.0;},0.3);
+        packageInIs(block,105,5,"S" ,task(),TaskEnvelope::In::Sustain,[](double in) {return (1.0-in)*2.0;},0);
+        packageInIs(block,130,5,"SA",task(),TaskEnvelope::In::SustainAmp,[](double in) {return (1.0-in)*1.0;},0.5);
+        packageInIs(block,155,5,"R" ,task(),TaskEnvelope::In::Release,[](double in) {return (1.0-in)*2.0;},0.1);
+
+        socketOutIs(block,5,50,"Amp",TaskEnvelope::Out::Amplitude);
+        socketOutIs(block,30,50,"Out",TaskEnvelope::Out::Output);
+      }
+      virtual Task* task() {return taskEnvelope_;}
+    protected:
+      TaskEnvelope* taskEnvelope_;
     };
 
     class EntityAudioOut : Entity {
@@ -331,6 +438,16 @@ namespace EP {
       btAudioOut->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
         new EntityAudioOut(bh,x,y);
       });
+      EP::GUI::BlockTemplate* btTrigger = new EP::GUI::BlockTemplate("blockTrigger",content,5,80,90,20,"Trigger");
+      btTrigger->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityTrigger(bh,x,y);
+      });
+      EP::GUI::BlockTemplate* btEnvelope = new EP::GUI::BlockTemplate("blockEnvelope",content,5,105,90,20,"Envelope");
+      btEnvelope->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityEnvelope(bh,x,y);
+      });
+
+
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
       content->colorIs(EP::Color(0.1,0,0));
@@ -359,7 +476,7 @@ int main()
       EP::GUI::Window* ww = new EP::GUI::Window("w"+std::to_string(i),content1,10,10,100,100,"w"+std::to_string(i));
       w = ww;
     }
-    EP::GUI::Window* window2 = new EP::GUI::Window("window2",masterWindow->area(),300,150,300,200,"Designer");
+    EP::GUI::Window* window2 = new EP::GUI::Window("window2",masterWindow->area(),300,150,600,400,"Designer");
     {
       float x,y,dx,dy;
       window2->childSize(dx,dy);
@@ -373,22 +490,6 @@ int main()
     }
 
     EP::FlowGUI::newBlockTemplateWindow(masterWindow->area());
-  }
-  // ------------------------------------ BOCUS AUDIO SETUP
-  {
-    std::lock_guard<std::mutex> lock(EP::FlowGUI::taskListMutex);
-    EP::FlowGUI::TaskOscillator* o1 = new EP::FlowGUI::TaskOscillator();
-    o1->inIs(0,55);
-    EP::FlowGUI::taskList.push_back(o1);
-
-    EP::FlowGUI::TaskOscillator* o2 = new EP::FlowGUI::TaskOscillator();
-    o2->inIs(0,880);
-    o2->inIs(1,o1,0);
-    o2->inIs(2,50);
-    EP::FlowGUI::taskList.push_back(o2);
-    EP::FlowGUI::TaskAudioOut* out = new EP::FlowGUI::TaskAudioOut();
-    out->inIs(0,o2,0);
-    EP::FlowGUI::taskList.push_back(out);
   }
   // ------------------------------------ AUDIO
   EP::FlowGUI::AudioOutStream audioOutStream;
