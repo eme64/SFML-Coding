@@ -91,6 +91,32 @@ namespace EP {
     protected:
       bool trigger_=false;
     };
+
+    class TaskInputValue : public Task {
+    public:
+      enum Out : size_t {Signal=0};
+      TaskInputValue() : Task(0,1) {}
+      virtual void tick(const double dt) {
+        out_[Out::Signal] = value_;
+      }
+      void setValue(double const value) {value_=value;}
+    protected:
+      double value_;
+    };
+
+    class TaskMultiplyAndAdd : public Task {
+    public:
+      enum In : size_t {Input=0,Factor=1,Shift=2};
+      enum Out : size_t {Signal=0};
+      TaskMultiplyAndAdd() : Task(3,1) {}
+      virtual void tick(const double dt) {
+        out_[Out::Signal] = inValue_[In::Input]*inValue_[In::Factor] + inValue_[In::Shift];
+      }
+      void setValue(double const value) {value_=value;}
+    protected:
+      double value_;
+    };
+
     class TaskEnvelope : public Task {
     public:
       enum In : size_t {Pulse=0,Input=1,Attack=2,Decay=3,Sustain=4,SustainAmp=5,Release=6};
@@ -379,6 +405,38 @@ namespace EP {
       TaskTrigger* taskTrigger_;
     };
 
+    class EntityValuePicker : Entity {
+    public:
+      EntityValuePicker(EP::GUI::Area* const parent,const float x,const float y) {
+        taskInputValue_ = new TaskInputValue();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,x,y,55,200,EP::Color(0.5,0.5,0.1));
+        blockIs(block);
+
+        EP::GUI::Slider* sliderExp = new EP::GUI::Slider("expSlider",block,5,5,20,150,false,0.0,1.0,0.5,0.1);
+        EP::GUI::Slider* sliderLin = new EP::GUI::Slider("linSlider",block,30,5,20,150,false,0.0,1.0,1,0.1);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,160,15,"XXX",EP::Color(1,1,0.5));
+
+        std::function<void(double)> recomputeVal = [this,sliderExp,sliderLin,label](double disregard){
+          const double val = std::pow(10.0,(1.0-sliderExp->val())*10.0-5.0)*((1.0-sliderLin->val())*9.0+1.0);
+          taskInputValue_->setValue(val);
+          label->textIs(std::to_string(val));
+        };
+
+        sliderExp->onValIs(recomputeVal);
+        sliderLin->onValIs(recomputeVal);
+
+        recomputeVal(0);
+
+        socketOutIs(block,5,170,"Out",TaskInputValue::Out::Signal);
+      }
+      virtual Task* task() {return taskInputValue_;}
+    protected:
+      TaskInputValue* taskInputValue_;
+    };
+
+
+
     class EntityEnvelope : Entity {
     public:
       EntityEnvelope(EP::GUI::Area* const parent,const float x,const float y) {
@@ -404,6 +462,27 @@ namespace EP {
       virtual Task* task() {return taskEnvelope_;}
     protected:
       TaskEnvelope* taskEnvelope_;
+    };
+
+    class EntityMultiplyAndAdd : Entity {
+    public:
+      EntityMultiplyAndAdd(EP::GUI::Area* const parent,const float x,const float y) {
+        task_ = new TaskMultiplyAndAdd();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,x,y,80,100,EP::Color(0.5,0.1,0.5));
+        blockIs(block);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Mult Add",EP::Color(0.5,0.5,1));
+
+        socketInIs(block,5,5,"In",TaskMultiplyAndAdd::In::Input,[]() {return 0;});
+        socketInIs(block,30,5,"Fact",TaskMultiplyAndAdd::In::Factor,[]() {return 0;});
+        socketInIs(block,55,5,"Add",TaskMultiplyAndAdd::In::Shift,[]() {return 0;});
+
+        socketOutIs(block,5,50,"Out",TaskMultiplyAndAdd::Out::Signal);
+      }
+      virtual Task* task() {return task_;}
+    protected:
+      TaskMultiplyAndAdd* task_;
     };
 
     class EntityAudioOut : Entity {
@@ -446,6 +525,16 @@ namespace EP {
       btEnvelope->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
         new EntityEnvelope(bh,x,y);
       });
+      EP::GUI::BlockTemplate* btValuePicker = new EP::GUI::BlockTemplate("blockValuePicker",content,5,130,90,20,"V Picker");
+      btValuePicker->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityValuePicker(bh,x,y);
+      });
+
+      EP::GUI::BlockTemplate* btMultAndAdd = new EP::GUI::BlockTemplate("blockMultAndAdd",content,5,155,90,20,"Mult Add");
+      btMultAndAdd->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityMultiplyAndAdd(bh,x,y);
+      });
+
 
 
 
