@@ -117,6 +117,44 @@ namespace EP {
       double value_;
     };
 
+    class TaskKeyPad : public Task {
+    public:
+      enum In : size_t {Clock=0,InFreq=1};
+      enum Out : size_t {Signal=0,OutFreq=1};
+      TaskKeyPad(size_t numRows, size_t numCols) : Task(2,2),numCols_(numCols),numRows_(numRows) {
+        adjustGrid();
+      }
+      virtual void tick(const double dt) {
+        const double thisPulse = inValue_[In::Clock];
+        if (lastPulse_<=0 and thisPulse>0) {// rising edge above 0
+          lastCol_++;
+          if (lastCol_>=numCols_) {lastCol_=0;}
+          out_[Out::OutFreq] = inValue_[In::InFreq];
+
+          if (cell(0,lastCol_)) {out_[Out::Signal] = 1.0;}
+        } else {
+          out_[Out::Signal] = 0;
+        }
+        lastPulse_=thisPulse;
+      }
+      void adjustGrid() {
+        grid_.resize(numCols_);
+        for (size_t i = 0; i < numCols_; i++) {
+          grid_[i].resize(numRows_);
+        }
+      }
+      void invertCell(size_t row, size_t col) {grid_[col][row] = not grid_[col][row];}
+      bool cell(size_t row, size_t col) {return grid_[col][row];}
+      size_t numCols() {return numCols_;}
+      size_t numRows() {return numRows_;}
+      size_t currColl() {return lastCol_;}
+    protected:
+      size_t numRows_,numCols_;
+      std::vector<std::vector<bool>> grid_;
+      size_t lastCol_=0;
+      double lastPulse_=0;
+    };
+
     class TaskEnvelope : public Task {
     public:
       enum In : size_t {Pulse=0,Input=1,Attack=2,Decay=3,Sustain=4,SustainAmp=5,Release=6};
@@ -436,7 +474,6 @@ namespace EP {
     };
 
 
-
     class EntityEnvelope : Entity {
     public:
       EntityEnvelope(EP::GUI::Area* const parent,const float x,const float y) {
@@ -483,6 +520,51 @@ namespace EP {
       virtual Task* task() {return task_;}
     protected:
       TaskMultiplyAndAdd* task_;
+    };
+
+    class EntityKeyPad : Entity {
+    public:
+      EntityKeyPad(EP::GUI::Area* const parent,const float x,const float y) {
+        task_ = new TaskKeyPad(4,16);
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,x,y,300,200,EP::Color(0.2,0.1,0.1));
+        blockIs(block);
+
+        socketInIs(block,5,5,"Clk",TaskKeyPad::In::Clock,[]() {return 0;});
+        socketInIs(block,30,5,"Fq",TaskKeyPad::In::InFreq,[]() {return 0;});
+
+        buttons_.resize(task_->numCols());
+        const double d = 10;
+        for (size_t c = 0; c < task_->numCols(); c++) {
+          buttons_[c].resize(task_->numRows());
+          for (size_t r = 0; r < task_->numRows(); r++) {
+            buttons_[c][r] = new EP::GUI::Button("button",block,5+c*d,50+r*d,d-1,d-1,"");
+            buttons_[c][r]->onClickIs([this,r,c]() {task_->invertCell(r,c);});
+          }
+        }
+
+        block->onDrawIs([this]() {
+          size_t currentCol = task_->currColl();
+          for (size_t c = 0; c < task_->numCols(); c++) {
+            for (size_t r = 0; r < task_->numRows(); r++) {
+              const bool cell = task_->cell(r,c);
+              buttons_[c][r]->buttonColorIs(std::vector<EP::Color>{
+                EP::Color(currentCol==c,cell,0.5),
+                EP::Color(currentCol==c,cell,0.4),
+                EP::Color(currentCol==c,cell,0.3),
+                EP::Color(currentCol==c,cell,0.2)
+              });
+            }
+          }
+        });
+
+        socketOutIs(block,5,170,"Sig",TaskKeyPad::Out::Signal);
+        socketOutIs(block,30,170,"Fq",TaskKeyPad::Out::OutFreq);
+      }
+      virtual Task* task() {return task_;}
+    protected:
+      std::vector<std::vector<EP::GUI::Button*>> buttons_;
+      TaskKeyPad* task_;
     };
 
     class EntityAudioOut : Entity {
@@ -533,6 +615,11 @@ namespace EP {
       EP::GUI::BlockTemplate* btMultAndAdd = new EP::GUI::BlockTemplate("blockMultAndAdd",content,5,155,90,20,"Mult Add");
       btMultAndAdd->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
         new EntityMultiplyAndAdd(bh,x,y);
+      });
+
+      EP::GUI::BlockTemplate* btKeyPad = new EP::GUI::BlockTemplate("blockKeyPad",content,5,180,90,20,"KeyPad");
+      btKeyPad->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityKeyPad(bh,x,y);
       });
 
 

@@ -397,6 +397,7 @@ namespace EP {
       virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {dx=0,dy=0;return false;}
 
       void onClickIs(std::function<void()> f) {onClick_=f;}
+      void buttonColorIs(const std::vector<Color> bgColors) {bgColors_=bgColors;}
     protected:
       std::string text_;
       std::vector<Color> bgColors_,textColors_;
@@ -934,6 +935,8 @@ namespace EP {
         colorIs(bgColor);
       }
       virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+        if (onDraw_) {onDraw_();}
+
         DrawRect(x_+px, y_+py, dx_, dy_, target, bgColor_*(isFocus()?1.0:0.4));
         DrawRect(x_+px+2, y_+py+2, dx_-4, dy_-4, target, bgColor_*0.7);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
@@ -962,7 +965,9 @@ namespace EP {
       }
       virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
       }
+      void onDrawIs(std::function<void()> onDraw) {onDraw_=onDraw;}
     protected:
+      std::function<void()> onDraw_;
     };
 
     class BlockHolder : public Area {
