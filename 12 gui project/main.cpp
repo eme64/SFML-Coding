@@ -23,35 +23,47 @@ namespace EP {
       Task(const size_t inSize,const size_t outSize) {
         inTask_.resize(inSize,NULL);
         inTaskPort_.resize(inSize,0);
-        inValue_.resize(inSize,0);
-        out_.resize(outSize,0);
+        inValue_.resize(inSize,std::vector<double>{0});
+        out_.resize(outSize,std::vector<double>{0});
       }
       inline void fetchInput() {// runs before tick of this task, and after tick of dependency tasks
         for (size_t i = 0; i < inValue_.size(); i++) {
-          if (inTask_[i]!=NULL) {inValue_[i]=inTask_[i]->out(inTaskPort_[i]);}
+          if (inTask_[i]!=NULL) {
+            std::vector<double>& o = inTask_[i]->out(inTaskPort_[i]);
+            if (inValue_[i].size()!=o.size()) {inValue_[i].resize(o.size());}
+            for (size_t j = 0; j < o.size(); j++) {inValue_[i][j]=o[j];}
+          }
         }
       }
       virtual void tick(const double dt) = 0;// calculate output from input and internal state
-      inline double out(const size_t i) {return out_[i];}
-      void inIs(const size_t i,Task* const task,const size_t port) {inTask_[i]=task;inTaskPort_[i]=port;inValue_[i]=0;}
-      void inIs(const size_t i,const double value) {inTask_[i]=NULL;inTaskPort_[i]=0;inValue_[i]=value;}
+      inline std::vector<double>& out(const size_t i) {return out_[i];}
+      void inIs(const size_t i,Task* const task,const size_t port) {inTask_[i]=task;inTaskPort_[i]=port;inValue_[i]=task->out(port);}
+      void inIs(const size_t i,const std::vector<double> value) {inTask_[i]=NULL;inTaskPort_[i]=0;inValue_[i]=value;}
       bool inHasTask(const size_t i) {return inTask_[i]!=NULL;}
       void print() {
         std::cout << "{ " << this << std::endl;
         for (size_t i = 0; i < inTask_.size(); i++) {
-          std::cout << "  in " << i << " " << inTask_[i] << " " << inTaskPort_[i] << " " << inValue_[i] << std::endl;
+          std::cout << "  in " << i << " " << inTask_[i] << " " << inTaskPort_[i] << " : ";
+          for(auto& n: inValue_[i]) {std::cout << n << " ";}
+          std::cout << std::endl;
         }
         for (size_t i = 0; i < out_.size(); i++) {
-          std::cout << "  out " << i << " " << out_[i] << std::endl;
+          std::cout << "  out " << i << " : ";
+          for(auto& n: out_[i]) {std::cout << n << " ";}
+          std::cout << std::endl;
         }
         std::cout << "}" << std::endl;
       }
       std::vector<Task*>& inTask() {return inTask_;}
+      // size_t maxInSize() const {
+      //   size_t res = 0;
+      //   for (size_t i = 0; i < inValue_.size(); i++) {res = std::max(res,inValue_[i].size());}
+      // }
     protected:
       std::vector<Task*> inTask_;
       std::vector<size_t> inTaskPort_;
-      std::vector<double> inValue_;// set if inTask_!=NULL
-      std::vector<double> out_;
+      std::vector<std::vector<double>> inValue_;// set if inTask_!=NULL
+      std::vector<std::vector<double>> out_;
     };
 
     static double audioOut;
@@ -64,18 +76,34 @@ namespace EP {
       enum Out : size_t {Signal=0};
       TaskOscillator() : Task(3,1),t_(0) {}
       virtual void tick(const double dt) {
-        t_+=dt*(inValue_[In::Freq]+inValue_[In::Freq]*inValue_[In::Mod]*inValue_[In::ModFactor])*2.0*M_PI;
-        out_[Out::Signal] =std::sin(t_);
+        const size_t sFreq = inValue_[In::Freq].size();
+        const size_t sMod = inValue_[In::Mod].size();
+        const size_t sModFactor = inValue_[In::ModFactor].size();
+        const size_t maxSize = std::max(sFreq,std::max(sMod,sModFactor));
+
+        if (t_.size()!=maxSize) {t_.resize(maxSize,0);}
+        if (out_[Out::Signal].size()!=maxSize) {out_[Out::Signal].resize(maxSize,0);}
+
+        for (size_t i = 0; i < maxSize; i++) {
+          const float freq = inValue_[In::Freq][sFreq==maxSize?i:0];
+          const float mod = inValue_[In::Mod][sMod==maxSize?i:0];
+          const float modFactor = inValue_[In::ModFactor][sModFactor==maxSize?i:0];
+
+          t_[i]+=dt*(freq+freq*mod*modFactor)*2.0*M_PI;
+          out_[Out::Signal][i] =std::sin(t_[i]);
+        }
       }
     protected:
-      double t_ = 0;
+      std::vector<double> t_{0};
     };
     class TaskAudioOut : public Task {
     public:
       enum In : size_t {Signal=0};
       TaskAudioOut() : Task(1,0) {}
       virtual void tick(const double dt) {
-        audioOut = inValue_[In::Signal];// send signal to out.
+        double sum = 0;
+        for(auto& n : inValue_[In::Signal]){sum+=n;}
+        audioOut = sum;// send signal to out.
       }
     protected:
     };
@@ -84,7 +112,7 @@ namespace EP {
       enum Out : size_t {Signal=0};
       TaskTrigger() : Task(0,1) {}
       virtual void tick(const double dt) {
-        out_[Out::Signal] = trigger_?1:0;
+        out_[Out::Signal][0] = trigger_?1:0;
         trigger_=false;
       }
       void setTrigger() {trigger_=true;}
@@ -97,7 +125,7 @@ namespace EP {
       enum Out : size_t {Signal=0};
       TaskInputValue() : Task(0,1) {}
       virtual void tick(const double dt) {
-        out_[Out::Signal] = value_;
+        out_[Out::Signal][0] = value_;
       }
       void setValue(double const value) {value_=value;}
     protected:
@@ -110,30 +138,50 @@ namespace EP {
       enum Out : size_t {Signal=0};
       TaskMultiplyAndAdd() : Task(3,1) {}
       virtual void tick(const double dt) {
-        out_[Out::Signal] = inValue_[In::Input]*inValue_[In::Factor] + inValue_[In::Shift];
+        const size_t sInput = inValue_[In::Input].size();
+        const size_t sFactor = inValue_[In::Factor].size();
+        const size_t sShift = inValue_[In::Shift].size();
+        const size_t maxSize = std::max(sInput,std::max(sFactor,sShift));
+
+        if (out_[Out::Signal].size()!=maxSize) {out_[Out::Signal].resize(maxSize,0);}
+
+        for (size_t i = 0; i < maxSize; i++) {
+          const float input = inValue_[In::Input][sInput==maxSize?i:0];
+          const float factor = inValue_[In::Factor][sFactor==maxSize?i:0];
+          const float shift = inValue_[In::Shift][sShift==maxSize?i:0];
+          out_[Out::Signal][i] = input*factor+shift;
+        }
       }
-      void setValue(double const value) {value_=value;}
     protected:
-      double value_;
     };
 
     class TaskKeyPad : public Task {
     public:
       enum In : size_t {Clock=0,InFreq=1};
-      enum Out : size_t {Signal=0,OutFreq=1};
-      TaskKeyPad(size_t numRows, size_t numCols) : Task(2,2),numCols_(numCols),numRows_(numRows) {
+      enum Out : size_t {Signal=0,OutFreq=1,Row=2};
+      TaskKeyPad(size_t numRows, size_t numCols) : Task(2,3),numCols_(numCols),numRows_(numRows) {
         adjustGrid();
       }
       virtual void tick(const double dt) {
-        const double thisPulse = inValue_[In::Clock];
+        const double thisPulse = inValue_[In::Clock][0];
         if (lastPulse_<=0 and thisPulse>0) {// rising edge above 0
           lastCol_++;
           if (lastCol_>=numCols_) {lastCol_=0;}
-          out_[Out::OutFreq] = inValue_[In::InFreq];
 
-          if (cell(0,lastCol_)) {out_[Out::Signal] = 1.0;}
+          if (inValue_[In::InFreq].size()==numRows_) {
+            out_[Out::OutFreq] = inValue_[In::InFreq];
+          } else {
+            for (size_t i = 0; i < numRows_; i++) {out_[Out::OutFreq][i]=inValue_[In::InFreq][0];}
+          }
+
+          for (size_t i = 0; i < numRows_; i++) {
+            if (cell(i,lastCol_)) {out_[Out::Signal][i] = 1.0;}
+          }
+
         } else {
-          out_[Out::Signal] = 0;
+          for (size_t i = 0; i < numRows_; i++) {
+            out_[Out::Signal][i] = 0;
+          }
         }
         lastPulse_=thisPulse;
       }
@@ -142,6 +190,10 @@ namespace EP {
         for (size_t i = 0; i < numCols_; i++) {
           grid_[i].resize(numRows_);
         }
+        out_[Out::Signal].resize(numRows_,0);
+        out_[Out::OutFreq].resize(numRows_,0);
+        out_[Out::Row].resize(numRows_);
+        for (size_t i = 0; i < numRows_; i++) {out_[Out::Row][i]=i;}
       }
       void invertCell(size_t row, size_t col) {grid_[col][row] = not grid_[col][row];}
       bool cell(size_t row, size_t col) {return grid_[col][row];}
@@ -161,44 +213,78 @@ namespace EP {
       enum Out : size_t {Amplitude=0,Output=1};
       TaskEnvelope() : Task(7,2) {}
       virtual void tick(const double dt) {
-        t_+=dt;
-        const double thisPulse = inValue_[In::Pulse];
-        if (lastPulse_<=0 and thisPulse>0) {// rising edge above 0
-          t_=0;
-        }
-        const double attack = inValue_[In::Attack];
-        const double decay = inValue_[In::Decay];
-        const double sustain = inValue_[In::Sustain];
-        const double sustainAmp = inValue_[In::SustainAmp];
-        const double release = inValue_[In::Release];
-        double amplitude = 0;
-        if (t_<attack) {
-          amplitude = t_/attack;
-        } else {
-          const double t2 = t_-attack;
-          if (t2<decay) {
-            const double factor = t2/decay;
-            amplitude = (1.0-factor)+factor*sustainAmp;
+        // const size_t sInput = inValue_[In::Input].size();
+        // const size_t sFactor = inValue_[In::Factor].size();
+        // const size_t sShift = inValue_[In::Shift].size();
+        // const size_t maxSize = std::max(sInput,std::max(sFactor,sShift));
+        //
+        // if (out_[Out::Signal].size()!=maxSize) {out_[Out::Signal].resize(maxSize,0);}
+        //
+        // for (size_t i = 0; i < maxSize; i++) {
+        //   const float input = inValue_[In::Input][sInput==maxSize?i:0];
+        //   const float factor = inValue_[In::Factor][sFactor==maxSize?i:0];
+        //   const float shift = inValue_[In::Shift][sShift==maxSize?i:0];
+        //   out_[Out::Signal][i] = input*factor+shift;
+        // }
+        const size_t sPulse = inValue_[In::Pulse].size();
+        const size_t sInput = inValue_[In::Input].size();
+        const size_t sAttack = inValue_[In::Attack].size();
+        const size_t sDecay = inValue_[In::Decay].size();
+        const size_t sSustain = inValue_[In::Sustain].size();
+        const size_t sSustainAmp = inValue_[In::SustainAmp].size();
+        const size_t sRelease = inValue_[In::Release].size();
+        const size_t maxSize = std::max(std::max(sPulse,std::max(sInput,sAttack)),std::max(std::max(sDecay,sSustain),std::max(sSustainAmp,sRelease)));
+
+        if (out_[Out::Amplitude].size()!=maxSize) {out_[Out::Amplitude].resize(maxSize,0);}
+        if (out_[Out::Output].size()!=maxSize) {out_[Out::Output].resize(maxSize,0);}
+        if (lastPulse_.size()!=maxSize) {lastPulse_.resize(maxSize,0);}
+        if (t_.size()!=maxSize) {t_.resize(maxSize,100);}
+
+
+        for (size_t i = 0; i < maxSize; i++) {
+          const float thisPulse = inValue_[In::Pulse][sPulse==maxSize?i:0];
+          const float inp = inValue_[In::Input][sInput==maxSize?i:0];
+          const float attack = inValue_[In::Attack][sAttack==maxSize?i:0];
+          const float decay = inValue_[In::Decay][sDecay==maxSize?i:0];
+          const float sustain = inValue_[In::Sustain][sSustain==maxSize?i:0];
+          const float sustainAmp = inValue_[In::SustainAmp][sSustainAmp==maxSize?i:0];
+          const float release = inValue_[In::Release][sRelease==maxSize?i:0];
+
+          t_[i]+=dt;
+          const double lastPulse = lastPulse_[i];
+          if (lastPulse<=0 and thisPulse>0) {// rising edge above 0
+            t_[i]=0;
+          }
+          double amplitude = 0;
+
+          if (t_[i]<attack) {
+            amplitude = t_[i]/attack;
           } else {
-            const double t3 = t2-decay;
-            if (t3<sustain) {
-              amplitude = sustainAmp;
+            const double t2 = t_[i]-attack;
+            if (t2<decay) {
+              const double factor = t2/decay;
+              amplitude = (1.0-factor)+factor*sustainAmp;
             } else {
-              const double t4 = t3-sustain;
-              if (t4<release) {
-                const double factor = t4/release;
-                amplitude = (1.0-factor)*sustainAmp;
+              const double t3 = t2-decay;
+              if (t3<sustain) {
+                amplitude = sustainAmp;
+              } else {
+                const double t4 = t3-sustain;
+                if (t4<release) {
+                  const double factor = t4/release;
+                  amplitude = (1.0-factor)*sustainAmp;
+                }
               }
             }
           }
+          out_[Out::Amplitude][i] = amplitude;
+          out_[Out::Output][i] = amplitude*inp;
+          lastPulse_[i]=thisPulse;
         }
-        out_[Out::Amplitude] = amplitude;
-        out_[Out::Output] = amplitude*inValue_[In::Input];
-        lastPulse_=thisPulse;
       }
     protected:
-      double lastPulse_=0;
-      double t_ = 100;// far in future where zero
+      std::vector<double> lastPulse_{0};
+      std::vector<double> t_{100};// far in future where zero
     };
 
     class AudioOutStream : public sf::SoundStream {
@@ -289,7 +375,7 @@ namespace EP {
           std::cout << "sourceDel" << std::endl;
           {
             std::lock_guard<std::mutex> lock(taskListMutex);
-            task()->inIs(port,defaultVal());
+            task()->inIs(port,std::vector<double>{defaultVal()});
           }
           recompileTasks();
         });
@@ -304,7 +390,7 @@ namespace EP {
           label->textIs(std::to_string(int(sliderToVal(val))));
           std::lock_guard<std::mutex> lock(taskListMutex);
           if (!task->inHasTask(port)) {
-            task->inIs(port,sliderToVal(val));
+            task->inIs(port,std::vector<double>{sliderToVal(val)});
           }
         });
         slider->valIs(sliderDefault);
@@ -370,6 +456,11 @@ namespace EP {
           if (taskToDependencies[t]==0) {process(t);}
         }
         std::reverse(newTaskList.begin(),newTaskList.end());
+
+        for (auto &t : newTaskList) {// bfs each dag
+          t->print();
+        }
+
         {
           std::lock_guard<std::mutex> lock(taskListMutex);
           newTaskList.swap(taskList);
@@ -525,9 +616,9 @@ namespace EP {
     class EntityKeyPad : Entity {
     public:
       EntityKeyPad(EP::GUI::Area* const parent,const float x,const float y) {
-        task_ = new TaskKeyPad(4,16);
+        task_ = new TaskKeyPad(10,32);
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,x,y,300,200,EP::Color(0.2,0.1,0.1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,x,y,350,200,EP::Color(0.2,0.1,0.1));
         blockIs(block);
 
         socketInIs(block,5,5,"Clk",TaskKeyPad::In::Clock,[]() {return 0;});
@@ -560,6 +651,8 @@ namespace EP {
 
         socketOutIs(block,5,170,"Sig",TaskKeyPad::Out::Signal);
         socketOutIs(block,30,170,"Fq",TaskKeyPad::Out::OutFreq);
+        socketOutIs(block,55,170,"Row",TaskKeyPad::Out::Row);
+
       }
       virtual Task* task() {return task_;}
     protected:
