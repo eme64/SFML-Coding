@@ -98,11 +98,19 @@ namespace EP {
     };
     class TaskAudioOut : public Task {
     public:
-      enum In : size_t {Signal=0};
-      TaskAudioOut() : Task(1,0) {}
+      enum In : size_t {Signal=0,Amplitude=1};
+      TaskAudioOut() : Task(2,0) {}
       virtual void tick(const double dt) {
         double sum = 0;
-        for(auto& n : inValue_[In::Signal]){sum+=n;}
+        if (inValue_[In::Signal].size()==inValue_[In::Amplitude].size()) {
+          for (size_t i = 0; i < inValue_[In::Signal].size(); i++) {
+            sum+=inValue_[In::Signal][i]*inValue_[In::Amplitude][i];
+          }
+        }else{
+          for(auto& n : inValue_[In::Signal]){sum+=n;}
+          sum*=inValue_[In::Amplitude][0];
+        }
+
         audioOut = sum;// send signal to out.
       }
     protected:
@@ -125,11 +133,41 @@ namespace EP {
       enum Out : size_t {Signal=0};
       TaskInputValue() : Task(0,1) {}
       virtual void tick(const double dt) {
-        out_[Out::Signal][0] = value_;
+        // nothing
       }
-      void setValue(double const value) {value_=value;}
+      void setValue(const std::vector<double> value) {
+        out_[Out::Signal].resize(value.size());
+        for (size_t i = 0; i < value.size(); i++) {out_[Out::Signal][i]=value[i];}
+      }
     protected:
-      double value_;
+    };
+
+    class TaskQuantizer : public Task {
+    public:
+      enum In : size_t {Input=0,Chord=1};
+      enum Out : size_t {Freq=0};
+      TaskQuantizer() : Task(2,1) {}
+      virtual void tick(const double dt) {
+        const size_t sInput = inValue_[In::Input].size();
+        const size_t sChord = inValue_[In::Chord].size();
+        if (sChord==0) {
+          out_[Out::Freq].resize(0);
+          return; // abort
+        }else if (sChord==1) {
+          out_[Out::Freq].resize(1);
+          out_[Out::Freq][0] = inValue_[In::Chord][0];
+          return; // simple case
+        }
+        const double chordOctave = inValue_[In::Chord][sChord-1]/inValue_[In::Chord][0];
+
+        if (out_[Out::Freq].size()!=sInput) {out_[Out::Freq].resize(sInput,0);}
+        for (size_t i = 0; i < sInput; i++) {
+          const size_t octave = int(std::floor(inValue_[In::Input][i]))/(sChord-1);
+          const size_t offset = int(std::floor(inValue_[In::Input][i])) % (sChord-1);
+          out_[Out::Freq][i] = std::pow(chordOctave,octave)*inValue_[In::Chord][offset];
+        }
+      }
+    protected:
     };
 
     class TaskMultiplyAndAdd : public Task {
@@ -157,9 +195,9 @@ namespace EP {
 
     class TaskKeyPad : public Task {
     public:
-      enum In : size_t {Clock=0,InFreq=1};
-      enum Out : size_t {Signal=0,OutFreq=1,Row=2};
-      TaskKeyPad(size_t numRows, size_t numCols) : Task(2,3),numCols_(numCols),numRows_(numRows) {
+      enum In : size_t {Clock=0};
+      enum Out : size_t {Signal=0,Row=1};
+      TaskKeyPad(size_t numRows, size_t numCols) : Task(1,2),numCols_(numCols),numRows_(numRows) {
         adjustGrid();
       }
       virtual void tick(const double dt) {
@@ -167,12 +205,6 @@ namespace EP {
         if (lastPulse_<=0 and thisPulse>0) {// rising edge above 0
           lastCol_++;
           if (lastCol_>=numCols_) {lastCol_=0;}
-
-          if (inValue_[In::InFreq].size()==numRows_) {
-            out_[Out::OutFreq] = inValue_[In::InFreq];
-          } else {
-            for (size_t i = 0; i < numRows_; i++) {out_[Out::OutFreq][i]=inValue_[In::InFreq][0];}
-          }
 
           for (size_t i = 0; i < numRows_; i++) {
             if (cell(i,lastCol_)) {out_[Out::Signal][i] = 1.0;}
@@ -191,7 +223,6 @@ namespace EP {
           grid_[i].resize(numRows_);
         }
         out_[Out::Signal].resize(numRows_,0);
-        out_[Out::OutFreq].resize(numRows_,0);
         out_[Out::Row].resize(numRows_);
         for (size_t i = 0; i < numRows_; i++) {out_[Out::Row][i]=i;}
       }
@@ -213,19 +244,6 @@ namespace EP {
       enum Out : size_t {Amplitude=0,Output=1};
       TaskEnvelope() : Task(7,2) {}
       virtual void tick(const double dt) {
-        // const size_t sInput = inValue_[In::Input].size();
-        // const size_t sFactor = inValue_[In::Factor].size();
-        // const size_t sShift = inValue_[In::Shift].size();
-        // const size_t maxSize = std::max(sInput,std::max(sFactor,sShift));
-        //
-        // if (out_[Out::Signal].size()!=maxSize) {out_[Out::Signal].resize(maxSize,0);}
-        //
-        // for (size_t i = 0; i < maxSize; i++) {
-        //   const float input = inValue_[In::Input][sInput==maxSize?i:0];
-        //   const float factor = inValue_[In::Factor][sFactor==maxSize?i:0];
-        //   const float shift = inValue_[In::Shift][sShift==maxSize?i:0];
-        //   out_[Out::Signal][i] = input*factor+shift;
-        // }
         const size_t sPulse = inValue_[In::Pulse].size();
         const size_t sInput = inValue_[In::Input].size();
         const size_t sAttack = inValue_[In::Attack].size();
@@ -548,7 +566,7 @@ namespace EP {
 
         std::function<void(double)> recomputeVal = [this,sliderExp,sliderLin,label](double disregard){
           const double val = std::pow(10.0,(1.0-sliderExp->val())*10.0-5.0)*((1.0-sliderLin->val())*9.0+1.0);
-          taskInputValue_->setValue(val);
+          taskInputValue_->setValue(std::vector<double>{val});
           label->textIs(std::to_string(val));
         };
 
@@ -562,6 +580,67 @@ namespace EP {
       virtual Task* task() {return taskInputValue_;}
     protected:
       TaskInputValue* taskInputValue_;
+    };
+
+    class EntityChordPicker : Entity {
+    public:
+      EntityChordPicker(EP::GUI::Area* const parent,const float x,const float y) {
+        taskInputValue_ = new TaskInputValue();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockChordPicker",parent,x,y,200,70,EP::Color(0.5,0.1,0.1));
+        blockIs(block);
+
+        const double ddx = 15;
+        const double ddy = 20;
+        const size_t numFreq = 13;
+        frequency_.resize(numFreq);
+        buttons_.resize(numFreq);
+        activated_.resize(numFreq,true);
+
+
+        std::function<void(size_t)> flipButton = [this](const size_t i) {
+          activated_[i] = not activated_[i];
+          buttons_[i]->buttonColorIs(std::vector<EP::Color>{
+            EP::Color(activated_[i]*0.6+0.4,0.3,0.1),
+            EP::Color(activated_[i]*0.5+0.5,0.4,0.2),
+            EP::Color(activated_[i]*0.4+0.6,0.4,0.2),
+            EP::Color(activated_[i]*0.4+0.6,0.4,0.2),
+          });
+        };
+        std::function<void(void)> recomputeValues = [this,numFreq]() {
+          std::vector<double> tmp_;
+          for (size_t i = 0; i < numFreq; i++) {
+            if (activated_[i]) {
+              tmp_.push_back(frequency_[i]);
+            }
+          }
+          taskInputValue_->setValue(tmp_);
+        };
+
+        for (size_t i = 0; i < numFreq; i++) {
+          frequency_[i] = 440.0*std::pow(2.0,(double)(i)/12.0);
+          buttons_[i] = new EP::GUI::Button("button",block,5+i*ddx,5,ddx-1,ddy-1,"");
+          buttons_[i]->onClickIs([this,i,flipButton,recomputeValues]() {
+            flipButton(i);
+            recomputeValues();
+          });
+          flipButton(i);
+          if (i%12==0) {
+            flipButton(i);
+          }
+        }
+        recomputeValues();
+
+        socketOutIs(block,5,30,"Out",TaskInputValue::Out::Signal);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,40,30,20,"Chord Picker",EP::Color(1,0.6,0.1));
+      }
+      virtual Task* task() {return taskInputValue_;}
+    protected:
+      TaskInputValue* taskInputValue_;
+      std::vector<EP::GUI::Button*> buttons_;
+      std::vector<double> frequency_;
+      std::vector<bool> activated_;
     };
 
 
@@ -613,6 +692,27 @@ namespace EP {
       TaskMultiplyAndAdd* task_;
     };
 
+    class EntityQuantizer : Entity {
+    public:
+      EntityQuantizer(EP::GUI::Area* const parent,const float x,const float y) {
+        task_ = new TaskQuantizer();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockTaskQuantizer",parent,x,y,80,100,EP::Color(0.5,0.1,0.5));
+        blockIs(block);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Quantizer",EP::Color(0.5,0.5,1));
+
+        socketInIs(block,5,5,"In",TaskQuantizer::In::Input,[]() {return 0;});
+        socketInIs(block,30,5,"Fq",TaskQuantizer::In::Chord,[]() {return 0;});
+
+        socketOutIs(block,5,50,"Fq",TaskQuantizer::Out::Freq);
+      }
+      virtual Task* task() {return task_;}
+    protected:
+      TaskQuantizer* task_;
+    };
+
+
     class EntityKeyPad : Entity {
     public:
       EntityKeyPad(EP::GUI::Area* const parent,const float x,const float y) {
@@ -622,7 +722,6 @@ namespace EP {
         blockIs(block);
 
         socketInIs(block,5,5,"Clk",TaskKeyPad::In::Clock,[]() {return 0;});
-        socketInIs(block,30,5,"Fq",TaskKeyPad::In::InFreq,[]() {return 0;});
 
         buttons_.resize(task_->numCols());
         const double d = 10;
@@ -650,8 +749,7 @@ namespace EP {
         });
 
         socketOutIs(block,5,170,"Sig",TaskKeyPad::Out::Signal);
-        socketOutIs(block,30,170,"Fq",TaskKeyPad::Out::OutFreq);
-        socketOutIs(block,55,170,"Row",TaskKeyPad::Out::Row);
+        socketOutIs(block,30,170,"Row",TaskKeyPad::Out::Row);
 
       }
       virtual Task* task() {return task_;}
@@ -668,6 +766,7 @@ namespace EP {
         EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,x,y,100,100,EP::Color(1,0.5,0.5));
         blockIs(block);
         socketMain_  = socketInIs(block,5,5,"Main",TaskAudioOut::In::Signal,[]() {return 0;});
+        packageInIs(block,30,5,"A",task(),TaskAudioOut::In::Amplitude,[](double in) {return (1.0-in)*0.1;},0);
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Audio Out",EP::Color(1,0.5,0.5));
       }
       virtual Task* task() {return taskAudioOut_;}
@@ -677,7 +776,7 @@ namespace EP {
     };
 
     static EP::GUI::Window* newBlockTemplateWindow(EP::GUI::Area* const parent) {
-      EP::GUI::Window* window = new EP::GUI::Window("blockTemplateWindow",parent,10,10,300,200,"Block Templates");
+      EP::GUI::Window* window = new EP::GUI::Window("blockTemplateWindow",parent,10,10,200,400,"Block Templates");
 
       EP::GUI::Area* content = new EP::GUI::Area("templateHolder",NULL,0,0,100,400);
       EP::GUI::BlockTemplate* btFM = new EP::GUI::BlockTemplate("blockTemplateFM",content,5,5,90,20,"FM Osc.");
@@ -713,6 +812,16 @@ namespace EP {
       EP::GUI::BlockTemplate* btKeyPad = new EP::GUI::BlockTemplate("blockKeyPad",content,5,180,90,20,"KeyPad");
       btKeyPad->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
         new EntityKeyPad(bh,x,y);
+      });
+
+      EP::GUI::BlockTemplate* btChord = new EP::GUI::BlockTemplate("blockChordPicker",content,5,205,90,20,"Chord Picker");
+      btChord->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityChordPicker(bh,x,y);
+      });
+
+      EP::GUI::BlockTemplate* btQuantizer = new EP::GUI::BlockTemplate("blockQuantizer",content,5,230,90,20,"Quantizer");
+      btQuantizer->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityQuantizer(bh,x,y);
       });
 
 
