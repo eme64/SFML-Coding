@@ -1,11 +1,38 @@
 #include <map>
 #include <queue>
 #include <mutex>
+#include <valarray>
+#include <complex>
 #include <SFML/Audio.hpp>
 
 #include "ep_gui.hpp"
 
 namespace EP {
+  namespace FFT {
+    // ------------------------------------------------------ FFT
+    const double PI  = 3.141592653589793238463;
+    typedef std::complex<double> ComplexVal;
+    typedef std::valarray<ComplexVal> SampleArray;
+    void cooleyTukeyFFT(SampleArray& values) {
+    	const size_t N = values.size();
+    	if (N <= 1) return; //base-case
+
+    	//separate the array of values into even and odd indices
+    	SampleArray evens = values[std::slice(0, N / 2, 2)]; //slice starting at 0, N/2 elements, increment by 2
+    	SampleArray odds = values[std::slice(1, N / 2, 2)]; //slice starting at 1
+
+    	//now call recursively
+    	cooleyTukeyFFT(evens);
+    	cooleyTukeyFFT(odds);
+
+    	//recombine
+    	for(size_t i=0; i<N/2; i++) {
+    		ComplexVal index = std::polar(1.0, -2 * PI*i / N) * odds[i];
+    		values[i] = evens[i] + index;
+    		values[i + N / 2] = evens[i] - index;
+    	}
+    }
+  }
   namespace FlowGUI {
     class Entity;
 
@@ -40,7 +67,6 @@ namespace EP {
     }
 
     // Task: on purpose separate, so that can be exported without too many dependencies.
-
     class Task {
     public:
       Task(const size_t inSize,const size_t outSize) {
@@ -339,6 +365,63 @@ namespace EP {
       std::vector<double> t_{100};// far in future where zero
     };
 
+    class TaskSignalAnalyzer : public Task {
+    public:
+      enum In : size_t {Signal=0};
+      enum Out : size_t {Amplitude=0,Freq=0};
+      TaskSignalAnalyzer() : Task(1,2) {}
+      virtual void tick(const double dt) {
+        // ensure buffer/output size
+        const size_t sSignal = inValue_[In::Signal].size();
+        if (buffers_.size()!=sSignal) {
+          out_[Out::Amplitude].resize(sSignal,0);
+          out_[Out::Freq].resize(sSignal,0);
+          buffers_.resize(sSignal);
+          for (size_t i = 0; i < sSignal; i++) {
+            buffers_[i].resize(bufferSize_);
+          }
+          bufferOffset_=0;
+        }
+
+        // write to buffer
+        for (size_t i = 0; i < sSignal; i++) {
+          buffers_[i][bufferOffset_]=inValue_[In::Signal][i];
+        }
+
+        // advance offset, maybe update output
+        bufferOffset_++;
+        if (bufferOffset_%updateRate_==0) {
+          if (bufferOffset_>=bufferSize_) {
+            bufferOffset_=0;
+          }
+          EP::FFT::SampleArray fftBuffer(bufferSize_);
+          for (size_t i = 0; i < sSignal; i++) {
+            double maxAmp = 0;
+            for (size_t j = bufferOffset_; j < bufferOffset_+updateRate_; j++) {
+              maxAmp = std::max(maxAmp,std::abs(buffers_[i][j]));
+            }
+            out_[Out::Amplitude][i] = maxAmp;
+            EP::FFT::SampleArray fftBuffer = buffers_[i].cshift(bufferOffset_);
+            EP::FFT::cooleyTukeyFFT(fftBuffer);
+            size_t m = 0;
+            double maxVal = 0;
+            for (size_t j = 0; j < bufferSize_/2; j++) {
+              const double loc = std::abs(fftBuffer[j])+std::abs(fftBuffer[bufferSize_-j-1]);
+              if (maxVal < loc) {m = j; maxVal = loc;}
+            }
+            const double fq = 1.0*(double)m/(double)bufferSize_/dt;
+            out_[Out::Freq][i] = fq;
+          }
+        }
+
+      }
+    protected:
+      const size_t updateRate_=256;
+      const size_t bufferSize_=updateRate_*8;
+      size_t bufferOffset_=0;
+      std::vector<EP::FFT::SampleArray> buffers_;
+    };
+
     class AudioOutStream : public sf::SoundStream {
     public:
       AudioOutStream()
@@ -397,7 +480,6 @@ namespace EP {
             block.push_back(samples[i]*0.0003);
           }
           audioInBlocks.push(block);
-          std::cout << audioInBlocks.size() << std::endl;
           return true;
         }
 
@@ -406,8 +488,6 @@ namespace EP {
         }
     public:
     private:
-      // std::mutex mutex_;
-      // SampleArray array_;
     };
 
 
@@ -682,7 +762,7 @@ namespace EP {
         };
 
         for (size_t i = 0; i < numFreq; i++) {
-          frequency_[i] = 440.0*std::pow(2.0,(double)(i)/12.0);
+          frequency_[i] = 1*std::pow(2.0,(double)(i)/12.0);
           buttons_[i] = new EP::GUI::Button("button",block,5+i*ddx,5,ddx-1,ddy-1,"");
           buttons_[i]->onClickIs([this,i,flipButton,recomputeValues]() {
             flipButton(i);
@@ -856,6 +936,29 @@ namespace EP {
       TaskAudioIn* task_;
     };
 
+    class EntitySignalAnalyzer : Entity {
+    public:
+      EntitySignalAnalyzer(EP::GUI::Area* const parent,const float x,const float y) {
+        task_ = new TaskSignalAnalyzer();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockSignalAnalyzer",parent,x,y,80,100,EP::Color(0.5,0.1,0.5));
+        blockIs(block);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"SignalAnalyzer",EP::Color(0.5,0.5,1));
+
+        socketInIs(block,5,5,"In",TaskSignalAnalyzer::In::Signal,[]() {return 0;});
+
+        socketOutIs(block,5,50,"Amp",TaskSignalAnalyzer::Out::Amplitude);
+        socketOutIs(block,30,50,"Fq",TaskSignalAnalyzer::Out::Freq);
+      }
+      virtual Task* task() {return task_;}
+    protected:
+      TaskSignalAnalyzer* task_;
+    };
+
+
+
+
     static EP::GUI::Window* newBlockTemplateWindow(EP::GUI::Area* const parent) {
       EP::GUI::Window* window = new EP::GUI::Window("blockTemplateWindow",parent,10,10,200,400,"Block Templates");
 
@@ -909,6 +1012,13 @@ namespace EP {
       btAudioIn->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
         new EntityAudioIn(bh,x,y);
       });
+
+      EP::GUI::BlockTemplate* btSignalAnalyzer = new EP::GUI::BlockTemplate("blockSignalAnalyzer",content,5,280,90,20,"Signal Analyzer");
+      btSignalAnalyzer->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntitySignalAnalyzer(bh,x,y);
+      });
+
+
 
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
