@@ -170,6 +170,8 @@ namespace EP {
         if (parent_) {parent_->childIs(this);}
       }
 
+      float x() const {return x_;}
+      float y() const {return y_;}
       float dx() const {return dx_;}
       float dy() const {return dy_;}
       virtual float globalX() const {return x_+(parent_?parent_->globalX():0);}

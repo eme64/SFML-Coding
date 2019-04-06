@@ -103,11 +103,9 @@ namespace EP {
         }
         std::cout << "}" << std::endl;
       }
-      std::vector<Task*>& inTask() {return inTask_;}
-      // size_t maxInSize() const {
-      //   size_t res = 0;
-      //   for (size_t i = 0; i < inValue_.size(); i++) {res = std::max(res,inValue_[i].size());}
-      // }
+      const std::vector<Task*>& inTask() const {return inTask_;}
+      const std::vector<size_t>& inTaskPort() const {return inTaskPort_;}
+      const std::vector<std::vector<double>>& inValue() const {return inValue_;}
     protected:
       std::vector<Task*> inTask_;
       std::vector<size_t> inTaskPort_;
@@ -597,7 +595,7 @@ namespace EP {
         }
         for (auto &it : blockToEntity) {// count dependencies
           Task* const t = it.second->task();
-          std::vector<Task*> &inTask = t->inTask();
+          const std::vector<Task*> &inTask = t->inTask();
           for (auto &t2 : inTask) {
             if (t2!=NULL) {taskToDependencies[t2]++;}
           }
@@ -605,7 +603,7 @@ namespace EP {
         std::function<void(Task*)> process = [&taskToDependencies,&newTaskList,&process](Task* t) {
           taskToDependencies[t] = -1;
           newTaskList.push_back(t);
-          std::vector<Task*> &inTask = t->inTask();
+          const std::vector<Task*> &inTask = t->inTask();
           for (auto &t2 : inTask) {
             if (t2!=NULL) {
               taskToDependencies[t2]--;
@@ -627,6 +625,25 @@ namespace EP {
           std::lock_guard<std::mutex> lock(taskListMutex);
           newTaskList.swap(taskList);
         }
+      }
+      virtual std::string serializeName() {return "Entity";}
+      std::string serialize(std::map<Entity*, size_t> &entityToId, std::map<Task*, Entity*> &taskToEntity){
+        const size_t id = entityToId[this];
+        std::string ret = "@"+std::to_string(id)+" "+serializeName()+"\n";
+        ret+="  position="+std::to_string(block_->x())+","+std::to_string(block_->y())+"\n";
+        Task* t = task();
+        for (size_t i = 0; i < task()->inTask().size(); i++) {
+          ret+="  inTask_"+std::to_string(i)+"="
+          +std::to_string(entityToId[taskToEntity[task()->inTask()[i]]])+","
+          +std::to_string(task()->inTaskPort()[i])+"\n";
+          ret+="  inValue_"+std::to_string(i)+"=";
+          for (size_t j = 0; j < task()->inValue()[i].size(); j++) {
+            if (j>0) {ret+=",";}
+            ret+=std::to_string(task()->inValue()[i][j]);
+          }
+          ret+="\n";
+        }
+        return ret;
       }
     protected:
       EP::GUI::Block* block_ = NULL;
@@ -651,6 +668,7 @@ namespace EP {
         socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
       }
       virtual Task* task() {return taskOsc_;}
+      virtual std::string serializeName() {return "EntityFM";}
     protected:
       TaskOscillator* taskOsc_;
     };
@@ -672,6 +690,7 @@ namespace EP {
         socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
       }
       virtual Task* task() {return taskOsc_;}
+      virtual std::string serializeName() {return "EntityLFO";}
     protected:
       TaskOscillator* taskOsc_;
     };
@@ -692,6 +711,7 @@ namespace EP {
         socketOutIs(block,5,50,"Out",TaskOscillator::Out::Signal);
       }
       virtual Task* task() {return taskTrigger_;}
+      virtual std::string serializeName() {return "EntityTrigger";}
     protected:
       TaskTrigger* taskTrigger_;
     };
@@ -722,6 +742,7 @@ namespace EP {
         socketOutIs(block,5,170,"Out",TaskInputValue::Out::Signal);
       }
       virtual Task* task() {return taskInputValue_;}
+      virtual std::string serializeName() {return "EntityValuePicker";}
     protected:
       TaskInputValue* taskInputValue_;
     };
@@ -780,6 +801,7 @@ namespace EP {
         EP::GUI::Label* label = new EP::GUI::Label("label",block,40,30,20,"Chord Picker",EP::Color(1,0.6,0.1));
       }
       virtual Task* task() {return taskInputValue_;}
+      virtual std::string serializeName() {return "EntityChordPicker";}
     protected:
       TaskInputValue* taskInputValue_;
       std::vector<EP::GUI::Button*> buttons_;
@@ -811,6 +833,7 @@ namespace EP {
         socketOutIs(block,30,50,"Out",TaskEnvelope::Out::Output);
       }
       virtual Task* task() {return taskEnvelope_;}
+      virtual std::string serializeName() {return "EntityEnvelope";}
     protected:
       TaskEnvelope* taskEnvelope_;
     };
@@ -832,6 +855,7 @@ namespace EP {
         socketOutIs(block,5,50,"Out",TaskMultiplyAndAdd::Out::Signal);
       }
       virtual Task* task() {return task_;}
+      virtual std::string serializeName() {return "EntityMultiplyAndAdd";}
     protected:
       TaskMultiplyAndAdd* task_;
     };
@@ -852,6 +876,7 @@ namespace EP {
         socketOutIs(block,5,50,"Fq",TaskQuantizer::Out::Freq);
       }
       virtual Task* task() {return task_;}
+      virtual std::string serializeName() {return "EntityQuantizer";}
     protected:
       TaskQuantizer* task_;
     };
@@ -897,6 +922,7 @@ namespace EP {
 
       }
       virtual Task* task() {return task_;}
+      virtual std::string serializeName() {return "EntityKeyPad";}
     protected:
       std::vector<std::vector<EP::GUI::Button*>> buttons_;
       TaskKeyPad* task_;
@@ -914,6 +940,7 @@ namespace EP {
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Audio Out",EP::Color(1,0.5,0.5));
       }
       virtual Task* task() {return taskAudioOut_;}
+      virtual std::string serializeName() {return "EntityAudioOut";}
     protected:
       EP::GUI::Socket* socketMain_=NULL;
       TaskAudioOut* taskAudioOut_;
@@ -932,6 +959,7 @@ namespace EP {
         socketOutIs(block,5,50,"In",TaskAudioIn::Out::Signal);
       }
       virtual Task* task() {return task_;}
+      virtual std::string serializeName() {return "EntityAudioIn";}
     protected:
       TaskAudioIn* task_;
     };
@@ -952,6 +980,7 @@ namespace EP {
         socketOutIs(block,30,50,"Fq",TaskSignalAnalyzer::Out::Freq);
       }
       virtual Task* task() {return task_;}
+      virtual std::string serializeName() {return "EntitySignalAnalyzer";}
     protected:
       TaskSignalAnalyzer* task_;
     };
@@ -1018,8 +1047,39 @@ namespace EP {
         new EntitySignalAnalyzer(bh,x,y);
       });
 
+      EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
+      content->colorIs(EP::Color(0.1,0,0));
+      scroll->fillParentIs(true);
+    }
 
+    static std::string entitiesToString() {
+      std::string res = "";
+      size_t idCounter = 0;
+      std::map<Entity*, size_t> entitiyToId;
+      std::map<Task*, Entity*> taskToEntity;
+      for (auto &it : blockToEntity) {
+        idCounter++;
+        Entity* const e = it.second;
+        entitiyToId.insert({e,idCounter});
+        taskToEntity.insert({e->task(),e});
+      }
+      for (auto &it : blockToEntity) {
+        Entity* const e = it.second;
+        res+=e->serialize(entitiyToId,taskToEntity);
+      }
+      std::cout << res << std::endl;
+      return res;
+    }
 
+    static EP::GUI::Window* newDebugWindow(EP::GUI::Area* const parent) {
+      EP::GUI::Window* window = new EP::GUI::Window("debugWindow",parent,10,400,200,400,"Debugging");
+
+      EP::GUI::Area* content = new EP::GUI::Area("templateHolder",NULL,0,0,100,400);
+
+      EP::GUI::Button* buttonSerialize = new EP::GUI::Button("buttonSerialize",content,5,5,90,20,"serialize");
+      buttonSerialize->onClickIs([]() {
+        entitiesToString();
+      });
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
       content->colorIs(EP::Color(0.1,0,0));
@@ -1036,18 +1096,7 @@ int main()
   // ------------------------------------ WINDOW
   EP::GUI::MasterWindow* masterWindow = new EP::GUI::MasterWindow(1000,600,"window title",false);
   {
-    EP::GUI::Window* window1 = new EP::GUI::Window("window1",masterWindow->area(),10,10,200,300,"MyWindow1");
-    EP::GUI::Window* w = window1;
-    for (size_t i = 3; i < 7; i++) {
-      float x,y,dx,dy;
-      w->childSize(dx,dy);
-      w->childOffset(x,y);
-      EP::GUI::Area* content1 = new EP::GUI::Area("content"+std::to_string(i),w,x,y,dx,dy);
-      content1->colorIs(EP::Color(0.2,0.2,0.3));
-      content1->fillParentIs(true);
-      EP::GUI::Window* ww = new EP::GUI::Window("w"+std::to_string(i),content1,10,10,100,100,"w"+std::to_string(i));
-      w = ww;
-    }
+
     EP::GUI::Window* window2 = new EP::GUI::Window("window2",masterWindow->area(),300,150,600,400,"Designer");
     {
       float x,y,dx,dy;
@@ -1062,6 +1111,20 @@ int main()
     }
 
     EP::FlowGUI::newBlockTemplateWindow(masterWindow->area());
+    EP::FlowGUI::newDebugWindow(masterWindow->area());
+
+    EP::GUI::Window* window1 = new EP::GUI::Window("window1",masterWindow->area(),10,10,200,300,"MyWindow1");
+    EP::GUI::Window* w = window1;
+    for (size_t i = 3; i < 7; i++) {
+      float x,y,dx,dy;
+      w->childSize(dx,dy);
+      w->childOffset(x,y);
+      EP::GUI::Area* content1 = new EP::GUI::Area("content"+std::to_string(i),w,x,y,dx,dy);
+      content1->colorIs(EP::Color(0.2,0.2,0.3));
+      content1->fillParentIs(true);
+      EP::GUI::Window* ww = new EP::GUI::Window("w"+std::to_string(i),content1,10,10,100,100,"w"+std::to_string(i));
+      w = ww;
+    }
   }
   // ------------------------------------ AUDIO
   EP::FlowGUI::AudioOutStream audioOutStream;
