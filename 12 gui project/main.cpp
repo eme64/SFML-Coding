@@ -1,4 +1,5 @@
 #include <map>
+#include <queue>
 #include <mutex>
 #include <SFML/Audio.hpp>
 
@@ -15,6 +16,28 @@ namespace EP {
     // internal processing/storage allowed.
     // list makes sure the tasks are ordered.
     // recompiled incrementally, on events.
+
+    // ------------------------------------------------------ AUDIO QUEUE
+    static std::queue<std::vector<double>> audioInBlocks;
+    // push to enqueue block
+    static size_t audioInBlocksOffset;
+    static double audioInBlocksValueCached;
+    static double audioInBlockValue(){
+      if (audioInBlocks.empty()) {return 0;}
+      std::vector<double> *front = &(audioInBlocks.front());
+      audioInBlocksValueCached = (*front)[audioInBlocksOffset];
+      return audioInBlocksValueCached;
+    }
+    static double audioInBlockNext(){
+      if (audioInBlocks.empty()) {return 0;}
+      std::vector<double> *front = &(audioInBlocks.front());
+      audioInBlocksOffset++;
+      if (audioInBlocksOffset>=front->size()) {
+        audioInBlocksOffset = 0;
+        audioInBlocks.pop();
+      }
+      return audioInBlockValue();
+    }
 
     // Task: on purpose separate, so that can be exported without too many dependencies.
 
@@ -138,6 +161,17 @@ namespace EP {
       void setValue(const std::vector<double> value) {
         out_[Out::Signal].resize(value.size());
         for (size_t i = 0; i < value.size(); i++) {out_[Out::Signal][i]=value[i];}
+      }
+    protected:
+    };
+
+    class TaskAudioIn : public Task {
+    public:
+      enum Out : size_t {Signal=0};
+      TaskAudioIn() : Task(0,1) {}
+      virtual void tick(const double dt) {
+        out_[Out::Signal].resize(1);
+        out_[Out::Signal][0] = audioInBlocksValueCached;
       }
     protected:
     };
@@ -329,6 +363,8 @@ namespace EP {
 
         std::lock_guard<std::mutex> lock(taskListMutex);
         for (size_t i = 0; i < sampleSize_; i++) {
+          audioInBlockNext();
+
           for (auto &t : taskList) {
             t->fetchInput();
             t->tick(dt);
@@ -346,6 +382,34 @@ namespace EP {
         // not supported.
       }
     };
+
+    class AudioInStream : public sf::SoundRecorder {
+        virtual bool onStart() {
+            std::cout << "Start Recording" << std::endl;
+            setProcessingInterval(sf::milliseconds(0.1));
+            return true;
+        }
+
+        virtual bool onProcessSamples(const sf::Int16* samples, std::size_t sampleCount) {
+          std::vector<double> block;
+          block.reserve(sampleCount);
+          for (size_t i = 0; i < sampleCount; i++) {
+            block.push_back(samples[i]*0.0003);
+          }
+          audioInBlocks.push(block);
+          std::cout << audioInBlocks.size() << std::endl;
+          return true;
+        }
+
+        virtual void onStop() {
+            std::cout << "Stop" << std::endl;
+        }
+    public:
+    private:
+      // std::mutex mutex_;
+      // SampleArray array_;
+    };
+
 
 
     static std::map<EP::GUI::Block*,Entity*> blockToEntity;
@@ -775,6 +839,23 @@ namespace EP {
       TaskAudioOut* taskAudioOut_;
     };
 
+    class EntityAudioIn : Entity {
+    public:
+      EntityAudioIn(EP::GUI::Area* const parent,const float x,const float y) {
+        task_ = new TaskAudioIn();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockAudioIn",parent,x,y,80,100,EP::Color(0.5,0.1,0.5));
+        blockIs(block);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"AudioIn",EP::Color(0.5,0.5,1));
+
+        socketOutIs(block,5,50,"In",TaskAudioIn::Out::Signal);
+      }
+      virtual Task* task() {return task_;}
+    protected:
+      TaskAudioIn* task_;
+    };
+
     static EP::GUI::Window* newBlockTemplateWindow(EP::GUI::Area* const parent) {
       EP::GUI::Window* window = new EP::GUI::Window("blockTemplateWindow",parent,10,10,200,400,"Block Templates");
 
@@ -824,7 +905,10 @@ namespace EP {
         new EntityQuantizer(bh,x,y);
       });
 
-
+      EP::GUI::BlockTemplate* btAudioIn = new EP::GUI::BlockTemplate("blockAudioIn",content,5,255,90,20,"AudioIn");
+      btAudioIn->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
+        new EntityAudioIn(bh,x,y);
+      });
 
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
@@ -872,9 +956,16 @@ int main()
   // ------------------------------------ AUDIO
   EP::FlowGUI::AudioOutStream audioOutStream;
   audioOutStream.play();
+  // ------------------------------------ Recorder:
+  if (!EP::FlowGUI::AudioInStream::isAvailable()) {
+      std::cout << "recorder not available" << std::endl;
+  }
+  EP::FlowGUI::AudioInStream recorder;
+  recorder.start();
   // ------------------------------------ MAIN
   while (masterWindow->isAlive()) {
     masterWindow->update();
     masterWindow->draw();
   }
+  recorder.stop();
 }
