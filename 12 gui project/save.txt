@@ -1,0 +1,16 @@
+@1 EntityAudioIn
+  position=69.000000,34.000000
+@2 EntityAudioOut
+  position=243.000000,227.000000
+  inTask_0=3,0
+  inValue_0=0.458751
+  inTask_1=0,0
+  inValue_1=0.078400
+@3 EntityFM
+  position=421.000000,43.000000
+  inTask_0=0,0
+  inValue_0=440.000000
+  inTask_1=1,0
+  inValue_1=-0.007800
+  inTask_2=0,0
+  inValue_2=1.000000

@@ -4,6 +4,9 @@
 #include <valarray>
 #include <complex>
 #include <SFML/Audio.hpp>
+#include <iostream>
+#include <fstream>
+#include <sstream>
 
 #include "ep_gui.hpp"
 
@@ -510,6 +513,14 @@ namespace EP {
         for(auto &s : inSockets_) {socketToTaskPort.erase(s);}
         for(auto &s : outSockets_) {socketToTaskPort.erase(s);}
       }
+      virtual void doDelete() {
+        std::cout << "doDelete" << std::endl;
+        block()->doDelete();
+        std::cout << "blockIs NULL" << std::endl;
+        blockIs(NULL);
+        std::cout << "removeTask" << std::endl;
+        std::lock_guard<std::mutex> lock(taskListMutex);
+      }
       void blockIs(EP::GUI::Block* block) {
         if (block==block_) {return;}
         if (block_) {blockToEntity.erase(block_);}
@@ -626,7 +637,6 @@ namespace EP {
           newTaskList.swap(taskList);
         }
       }
-      virtual std::string serializeName() {return "Entity";}
       std::string serialize(std::map<Entity*, size_t> &entityToId, std::map<Task*, Entity*> &taskToEntity){
         const size_t id = entityToId[this];
         std::string ret = "@"+std::to_string(id)+" "+serializeName()+"\n";
@@ -643,8 +653,11 @@ namespace EP {
           }
           ret+="\n";
         }
+        ret+=serializeData();
         return ret;
       }
+      virtual std::string serializeName() {return "Entity";}
+      virtual std::string serializeData() {return "";}
     protected:
       EP::GUI::Block* block_ = NULL;
       std::list<EP::GUI::Socket*> inSockets_;
@@ -1071,6 +1084,16 @@ namespace EP {
       return res;
     }
 
+    static void stringToEntities(std::string &input) {
+      std::cout << "clean" << std::endl;
+      for (auto &it : blockToEntity) {
+        Entity* const e = it.second;
+        e->doDelete();
+      }
+
+      std::cout << "construct" << std::endl;
+    }
+
     static EP::GUI::Window* newDebugWindow(EP::GUI::Area* const parent) {
       EP::GUI::Window* window = new EP::GUI::Window("debugWindow",parent,10,400,200,400,"Debugging");
 
@@ -1078,7 +1101,22 @@ namespace EP {
 
       EP::GUI::Button* buttonSerialize = new EP::GUI::Button("buttonSerialize",content,5,5,90,20,"serialize");
       buttonSerialize->onClickIs([]() {
-        entitiesToString();
+        std::ofstream myfile;
+        myfile.open ("save.txt");
+        myfile << entitiesToString();
+        myfile.close();
+      });
+
+      EP::GUI::Button* buttonDeSerialize = new EP::GUI::Button("buttonDeserialize",content,5,30,90,20,"deserialize");
+      buttonDeSerialize->onClickIs([]() {
+        std::ifstream myfile;
+        myfile.open("save.txt");
+        std::stringstream mystream;
+        mystream << myfile.rdbuf();
+        myfile.close();
+        std::string str = mystream.str();
+        std::cout << str << std::endl;
+        stringToEntities(str);
       });
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);

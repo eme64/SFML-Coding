@@ -275,10 +275,28 @@ namespace EP {
         if (fillParent_) {onResizeParent();}
         return this;}
       Area* childIs(Area* c) {children_.push_back(c); return this;}
+      void childDel(Area* c) {children_.remove(c);}
       Area* parentIs(Area* p) {parent_=p; return this;}
       Area* parent() {return parent_;}
       Area* firstChild() {return children_.front();}
       bool isFirstChild() {return parent_?this==parent_->firstChild():true;}
+      void doDelete() {
+        std::cout << "checkFocus" << std::endl;
+        if (isFocus()) {unFocus();}
+        std::cout << "doDelete: " << fullName() << std::endl;
+        std::list<Area*> cCopy = children_;
+        // cannot use original, bc is modified by children
+        for (auto &c : cCopy) {
+          std::cout << "inc" << c->fullName() << std::endl;
+          c->doDelete();
+          std::cout << "outc" << std::endl;
+        }
+        std::cout << "rm from parent: " << fullName() << std::endl;
+        if (parent_) {parent_->childDel(this); parent_=NULL;}
+        std::cout << "delete: " << fullName() << std::endl;
+        delete this;
+        std::cout << "done." << std::endl;
+      }
 
       void setFocus(bool isRecursive=false) {
         //std::cout << "setFocus " << fullName() << std::endl;
@@ -935,6 +953,11 @@ namespace EP {
             )
       : Area(name,parent,x,y,dx,dy){
         colorIs(bgColor);
+      }
+      virtual void onKeyPressed(const sf::Keyboard::Key keyCode) {
+        switch (keyCode) {
+          case sf::Keyboard::Key::Delete:{doDelete(); break;}
+        }
       }
       virtual void draw(const float px,const float py, sf::RenderTarget &target) {
         if (onDraw_) {onDraw_();}
