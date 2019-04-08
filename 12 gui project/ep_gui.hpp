@@ -177,7 +177,12 @@ namespace EP {
       virtual float globalX() const {return x_+(parent_?parent_->globalX():0);}
       virtual float globalY() const {return y_+(parent_?parent_->globalY():0);}
       std::string name() const {return name_;}
-      std::string fullName() const {if (parent_) {return parent_->fullName()+"/"+name_;}else{return name_;}}
+      std::string fullName() const {
+        if (parent_) {
+          return parent_->fullName()+"/"+name_;
+        }else{return name_;
+        }
+      }
 
       virtual void draw(const float px,const float py, sf::RenderTarget &target) {
         DrawRect(x_+px, y_+py, dx_, dy_, target, bgColor_);
@@ -281,6 +286,10 @@ namespace EP {
       Area* firstChild() {return children_.front();}
       bool isFirstChild() {return parent_?this==parent_->firstChild():true;}
       void doDelete() {
+        if (isDeleted_) {return;}
+        isDeleted_ = true;
+        
+        onDeleteNotify(this);
         std::cout << "checkFocus" << std::endl;
         if (isFocus()) {unFocus();}
         std::cout << "doDelete: " << fullName() << std::endl;
@@ -341,6 +350,13 @@ namespace EP {
       bool isFocusPath() {return isFocusPath_;}
 
       void colorIs(Color c) {bgColor_=c;}
+      void onDeleteIs(std::function<void(Area*)> f) {onDelete_.push_back(f);}
+      void onDeleteNotify(Area* const a) {
+        for (auto &f : onDelete_) {f(a);}
+        if (parent_) {
+          parent_->onDeleteNotify(a);
+        }
+      }
     protected:
       std::string name_;
       Area* parent_ = NULL;
@@ -356,6 +372,8 @@ namespace EP {
       Color bgColor_ = Color(0.05,0.05,0.1);
       bool isFocus_=false;
       bool isFocusPath_=false;
+      std::vector<std::function<void(Area*)>> onDelete_;
+      bool isDeleted_ = false;
     };// class Area
     class Label : public Area {
     public:
@@ -800,6 +818,16 @@ namespace EP {
         onSinkDel = [](Socket* s) {};
         onSourceIs = [](Socket* s) {};
         onSourceDel = [](Socket* s) {};
+
+        onDeleteIs([this](Area* const a) {
+          if (a==this) {
+            sourceIs(NULL);
+            auto tmpVec = sink();
+            for (auto &s : tmpVec) {
+              s->sourceIs(NULL);
+            }
+          }
+        });
       }
 
       void canTakeSinkIs(std::function<bool()> f) {canTakeSink=f;}
@@ -1100,6 +1128,9 @@ namespace EP {
 
         sf::Vector2u size = renderWindow_->getSize();
         mainArea_ = (new EP::GUI::Area("main",NULL,0,0,size.x,size.y))->fillParentIs(true);
+        mainArea_->onDeleteIs([this](Area* const a) {
+          if(mouseOverArea_==a){mouseOverIs(NULL);}// make sure deleted items are out of mouseOver
+        });
 
         sf::Vector2i mousepos = sf::Mouse::getPosition(*renderWindow_);
         lastMouseX_ = mousepos.x;
@@ -1107,6 +1138,31 @@ namespace EP {
       }
       sf::RenderWindow* target() {return renderWindow_;}
       Area* area() {return mainArea_;}
+
+      void mouseOverIs(Area* const mouseOverNew) {
+        if (mouseOverArea_!=mouseOverNew) {
+          // end old:
+          if (!mouseDownCaptured_ && mouseDownArea_!=NULL && mouseDownArea_!=mouseOverNew) {
+            mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,false,lastMouseX_,lastMouseY_,mouseOverArea_);
+            mouseDownArea_=NULL;
+          }
+          if (mouseOverArea_!=NULL) {
+            mouseOverArea_->onMouseOverEnd();
+            mouseOverArea_=NULL;
+          }
+          // start new:
+          if (mouseOverNew!=NULL) {
+            mouseOverArea_ = mouseOverNew;
+            mouseOverArea_->onMouseOverStart();
+
+            if (mouseDown_ && !mouseDownArea_) {
+              mouseDownArea_ = mouseOverArea_;
+              mouseDownArea_->onMouseDownStart(false,lastMouseX_,lastMouseY_);
+              mouseDownCaptured_ = false;
+            }
+          }
+        }
+      }
 
       void update() {
         sf::Event event;
@@ -1186,28 +1242,29 @@ namespace EP {
               }
 
               EP::GUI::Area* mouseOverNew = mainArea_->checkMouseOver(lastMouseX_,lastMouseY_);
-              if (mouseOverArea_!=mouseOverNew) {
-                // end old:
-                if (!mouseDownCaptured_ && mouseDownArea_!=NULL && mouseDownArea_!=mouseOverNew) {
-                  mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,false,lastMouseX_,lastMouseY_,mouseOverArea_);
-                  mouseDownArea_=NULL;
-                }
-                if (mouseOverArea_!=NULL) {
-                  mouseOverArea_->onMouseOverEnd();
-                  mouseOverArea_=NULL;
-                }
-                // start new:
-                if (mouseOverNew!=NULL) {
-                  mouseOverArea_ = mouseOverNew;
-                  mouseOverArea_->onMouseOverStart();
-
-                  if (mouseDown_ && !mouseDownArea_) {
-                    mouseDownArea_ = mouseOverArea_;
-                    mouseDownArea_->onMouseDownStart(false,lastMouseX_,lastMouseY_);
-                    mouseDownCaptured_ = false;
-                  }
-                }
-              }
+              mouseOverIs(mouseOverNew);
+              // if (mouseOverArea_!=mouseOverNew) {
+              //   // end old:
+              //   if (!mouseDownCaptured_ && mouseDownArea_!=NULL && mouseDownArea_!=mouseOverNew) {
+              //     mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,false,lastMouseX_,lastMouseY_,mouseOverArea_);
+              //     mouseDownArea_=NULL;
+              //   }
+              //   if (mouseOverArea_!=NULL) {
+              //     mouseOverArea_->onMouseOverEnd();
+              //     mouseOverArea_=NULL;
+              //   }
+              //   // start new:
+              //   if (mouseOverNew!=NULL) {
+              //     mouseOverArea_ = mouseOverNew;
+              //     mouseOverArea_->onMouseOverStart();
+              //
+              //     if (mouseDown_ && !mouseDownArea_) {
+              //       mouseDownArea_ = mouseOverArea_;
+              //       mouseDownArea_->onMouseDownStart(false,lastMouseX_,lastMouseY_);
+              //       mouseDownCaptured_ = false;
+              //     }
+              //   }
+              // }
               break;
             }
             case sf::Event::KeyPressed: {

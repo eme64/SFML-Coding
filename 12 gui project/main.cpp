@@ -10,6 +10,7 @@
 
 #include "ep_gui.hpp"
 
+
 namespace EP {
   namespace FFT {
     // ------------------------------------------------------ FFT
@@ -89,7 +90,7 @@ namespace EP {
       }
       virtual void tick(const double dt) = 0;// calculate output from input and internal state
       inline std::vector<double>& out(const size_t i) {return out_[i];}
-      void inIs(const size_t i,Task* const task,const size_t port) {inTask_[i]=task;inTaskPort_[i]=port;inValue_[i]=task->out(port);}
+      void inIs(const size_t i,Task* const task,const size_t port) {inTask_[i]=task;inTaskPort_[i]=port;}//inValue_[i]=task->out(port);}
       void inIs(const size_t i,const std::vector<double> value) {inTask_[i]=NULL;inTaskPort_[i]=0;inValue_[i]=value;}
       bool inHasTask(const size_t i) {return inTask_[i]!=NULL;}
       void print() {
@@ -514,6 +515,9 @@ namespace EP {
         for(auto &s : outSockets_) {socketToTaskPort.erase(s);}
       }
       virtual void doDelete() {
+        if (isDeleted_) {return;}// prevent multiple entry
+        isDeleted_ = true;
+
         std::cout << "doDelete" << std::endl;
         block()->doDelete();
         std::cout << "blockIs NULL" << std::endl;
@@ -525,7 +529,14 @@ namespace EP {
         if (block==block_) {return;}
         if (block_) {blockToEntity.erase(block_);}
         block_ = block;
-        if (block_) {blockToEntity.insert({block_,this});}
+        if (block_) {
+          block_->onDeleteIs([this](EP::GUI::Area* const a) {
+            if (a==block_) {
+              doDelete();
+            }
+          });
+          blockToEntity.insert({block_,this});
+        }
       }
       EP::GUI::Block* block() {return block_;}
       EP::GUI::Socket* socketInIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,const size_t port,std::function<double()> defaultVal) {
@@ -662,6 +673,7 @@ namespace EP {
       EP::GUI::Block* block_ = NULL;
       std::list<EP::GUI::Socket*> inSockets_;
       std::list<EP::GUI::Socket*> outSockets_;
+      bool isDeleted_ = false;
     };
 
     class EntityFM : Entity {
