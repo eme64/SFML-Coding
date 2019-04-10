@@ -37,6 +37,18 @@ namespace EP {
     	}
     }
   }
+
+  std::vector<std::string> split(const std::string &text, char sep) {
+    std::vector<std::string> tokens;
+    std::size_t start = 0, end = 0;
+    while ((end = text.find(sep, start)) != std::string::npos) {
+      tokens.push_back(text.substr(start, end - start));
+      start = end + 1;
+    }
+    tokens.push_back(text.substr(start));
+    return tokens;
+  }
+
   namespace FlowGUI {
     class Entity;
 
@@ -506,6 +518,14 @@ namespace EP {
 
     static std::map<EP::GUI::Socket*,TaskPort> socketToTaskPort;// for both in and out sockets.
 
+    struct EntityData {
+      EntityData(size_t id,std::string type,float const x,float const y):id(id),type(type),x(x),y(y){}
+      size_t id;
+      std::string type;
+      float x,y;
+      std::map<std::string, std::vector<std::string>> values;
+    };
+
     class Entity {
     public:
       Entity() {}
@@ -651,13 +671,13 @@ namespace EP {
       std::string serialize(std::map<Entity*, size_t> &entityToId, std::map<Task*, Entity*> &taskToEntity){
         const size_t id = entityToId[this];
         std::string ret = "@"+std::to_string(id)+" "+serializeName()+"\n";
-        ret+="  position="+std::to_string(block_->x())+","+std::to_string(block_->y())+"\n";
+        ret+="position="+std::to_string(block_->x())+","+std::to_string(block_->y())+"\n";
         Task* t = task();
         for (size_t i = 0; i < task()->inTask().size(); i++) {
-          ret+="  inTask_"+std::to_string(i)+"="
+          ret+="inTask_"+std::to_string(i)+"="
           +std::to_string(entityToId[taskToEntity[task()->inTask()[i]]])+","
           +std::to_string(task()->inTaskPort()[i])+"\n";
-          ret+="  inValue_"+std::to_string(i)+"=";
+          ret+="inValue_"+std::to_string(i)+"=";
           for (size_t j = 0; j < task()->inValue()[i].size(); j++) {
             if (j>0) {ret+=",";}
             ret+=std::to_string(task()->inValue()[i][j]);
@@ -676,12 +696,12 @@ namespace EP {
       bool isDeleted_ = false;
     };
 
-    class EntityFM : Entity {
+    class EntityFM : public Entity {
     public:
-      EntityFM(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityFM(EP::GUI::Area* const parent,EntityData* const data) {
         taskOsc_ = new TaskOscillator();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,x,y,100,200,EP::Color(0.5,0.5,1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,data->x,data->y,100,200,EP::Color(0.5,0.5,1));
         blockIs(block);
 
         packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,[](double in) {return (1.0-in)*440.0+440.0;},1.0);
@@ -698,12 +718,12 @@ namespace EP {
       TaskOscillator* taskOsc_;
     };
 
-    class EntityLFO : Entity {
+    class EntityLFO : public Entity {
     public:
-      EntityLFO(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityLFO(EP::GUI::Area* const parent,EntityData* const data) {
         taskOsc_ = new TaskOscillator();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,x,y,100,200,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,data->x,data->y,100,200,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,[](double in) {return (1.0-in)*10.0;},1.0);
@@ -720,12 +740,12 @@ namespace EP {
       TaskOscillator* taskOsc_;
     };
 
-    class EntityTrigger : Entity {
+    class EntityTrigger : public Entity {
     public:
-      EntityTrigger(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityTrigger(EP::GUI::Area* const parent,EntityData* const data) {
         taskTrigger_ = new TaskTrigger();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockTrigger",parent,x,y,100,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockTrigger",parent,data->x,data->y,100,100,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Trigger",EP::Color(0.5,0.5,1));
@@ -741,12 +761,12 @@ namespace EP {
       TaskTrigger* taskTrigger_;
     };
 
-    class EntityValuePicker : Entity {
+    class EntityValuePicker : public Entity {
     public:
-      EntityValuePicker(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityValuePicker(EP::GUI::Area* const parent,EntityData* const data) {
         taskInputValue_ = new TaskInputValue();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,x,y,55,200,EP::Color(0.5,0.5,0.1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,data->x,data->y,55,200,EP::Color(0.5,0.5,0.1));
         blockIs(block);
 
         EP::GUI::Slider* sliderExp = new EP::GUI::Slider("expSlider",block,5,5,20,150,false,0.0,1.0,0.5,0.1);
@@ -772,12 +792,12 @@ namespace EP {
       TaskInputValue* taskInputValue_;
     };
 
-    class EntityChordPicker : Entity {
+    class EntityChordPicker : public Entity {
     public:
-      EntityChordPicker(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityChordPicker(EP::GUI::Area* const parent,EntityData* const data) {
         taskInputValue_ = new TaskInputValue();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockChordPicker",parent,x,y,200,70,EP::Color(0.5,0.1,0.1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockChordPicker",parent,data->x,data->y,200,70,EP::Color(0.5,0.1,0.1));
         blockIs(block);
 
         const double ddx = 15;
@@ -835,12 +855,12 @@ namespace EP {
     };
 
 
-    class EntityEnvelope : Entity {
+    class EntityEnvelope : public Entity {
     public:
-      EntityEnvelope(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityEnvelope(EP::GUI::Area* const parent,EntityData* const data) {
         taskEnvelope_ = new TaskEnvelope();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,x,y,200,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,data->x,data->y,200,100,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Envelope",EP::Color(0.5,0.5,1));
@@ -863,12 +883,12 @@ namespace EP {
       TaskEnvelope* taskEnvelope_;
     };
 
-    class EntityMultiplyAndAdd : Entity {
+    class EntityMultiplyAndAdd : public Entity {
     public:
-      EntityMultiplyAndAdd(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityMultiplyAndAdd(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskMultiplyAndAdd();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,x,y,80,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,data->x,data->y,80,100,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Mult Add",EP::Color(0.5,0.5,1));
@@ -885,12 +905,12 @@ namespace EP {
       TaskMultiplyAndAdd* task_;
     };
 
-    class EntityQuantizer : Entity {
+    class EntityQuantizer : public Entity {
     public:
-      EntityQuantizer(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityQuantizer(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskQuantizer();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockTaskQuantizer",parent,x,y,80,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockTaskQuantizer",parent,data->x,data->y,80,100,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Quantizer",EP::Color(0.5,0.5,1));
@@ -907,12 +927,12 @@ namespace EP {
     };
 
 
-    class EntityKeyPad : Entity {
+    class EntityKeyPad : public Entity {
     public:
-      EntityKeyPad(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityKeyPad(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskKeyPad(10,32);
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,x,y,350,200,EP::Color(0.2,0.1,0.1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,data->x,data->y,350,200,EP::Color(0.2,0.1,0.1));
         blockIs(block);
 
         socketInIs(block,5,5,"Clk",TaskKeyPad::In::Clock,[]() {return 0;});
@@ -953,12 +973,12 @@ namespace EP {
       TaskKeyPad* task_;
     };
 
-    class EntityAudioOut : Entity {
+    class EntityAudioOut : public Entity {
     public:
-      EntityAudioOut(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityAudioOut(EP::GUI::Area* const parent,EntityData* const data) {
         taskAudioOut_ = new TaskAudioOut();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,x,y,100,100,EP::Color(1,0.5,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,data->x,data->y,100,100,EP::Color(1,0.5,0.5));
         blockIs(block);
         socketMain_  = socketInIs(block,5,5,"Main",TaskAudioOut::In::Signal,[]() {return 0;});
         packageInIs(block,30,5,"A",task(),TaskAudioOut::In::Amplitude,[](double in) {return (1.0-in)*0.1;},0);
@@ -971,12 +991,12 @@ namespace EP {
       TaskAudioOut* taskAudioOut_;
     };
 
-    class EntityAudioIn : Entity {
+    class EntityAudioIn : public Entity {
     public:
-      EntityAudioIn(EP::GUI::Area* const parent,const float x,const float y) {
+      EntityAudioIn(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskAudioIn();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockAudioIn",parent,x,y,80,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockAudioIn",parent,data->x,data->y,80,100,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"AudioIn",EP::Color(0.5,0.5,1));
@@ -989,12 +1009,12 @@ namespace EP {
       TaskAudioIn* task_;
     };
 
-    class EntitySignalAnalyzer : Entity {
+    class EntitySignalAnalyzer : public Entity {
     public:
-      EntitySignalAnalyzer(EP::GUI::Area* const parent,const float x,const float y) {
+      EntitySignalAnalyzer(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskSignalAnalyzer();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockSignalAnalyzer",parent,x,y,80,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockSignalAnalyzer",parent,data->x,data->y,80,100,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"SignalAnalyzer",EP::Color(0.5,0.5,1));
@@ -1010,67 +1030,67 @@ namespace EP {
       TaskSignalAnalyzer* task_;
     };
 
-
+    static Entity* entityFromData(EP::GUI::BlockHolder* const bh, EntityData* const data) {
+      std::cout << "instantiate " << data->type << std::endl;
+      if(data->type=="EntityFM") {
+        return new EntityFM(bh,data);
+      } else if(data->type=="EntityLFO") {
+        return new EntityLFO(bh,data);
+      } else if(data->type=="EntityAudioOut") {
+        return new EntityAudioOut(bh,data);
+      } else if(data->type=="EntityTrigger") {
+        return new EntityTrigger(bh,data);
+      } else if(data->type=="EntityEnvelope") {
+        return new EntityEnvelope(bh,data);
+      } else if(data->type=="EntityValuePicker") {
+        return new EntityValuePicker(bh,data);
+      } else if(data->type=="EntityMultiplyAndAdd") {
+        return new EntityMultiplyAndAdd(bh,data);
+      } else if(data->type=="EntityKeyPad") {
+        return new EntityKeyPad(bh,data);
+      } else if(data->type=="EntityChordPicker") {
+        return new EntityChordPicker(bh,data);
+      } else if(data->type=="EntityQuantizer") {
+        return new EntityQuantizer(bh,data);
+      } else if(data->type=="EntityAudioIn") {
+        return new EntityAudioIn(bh,data);
+      } else if(data->type=="EntitySignalAnalyzer") {
+        return new EntitySignalAnalyzer(bh,data);
+      } else {
+        std::cout << "do not know " << data->type << std::endl;
+        return NULL;
+      }
+    }
 
 
     static EP::GUI::Window* newBlockTemplateWindow(EP::GUI::Area* const parent) {
       EP::GUI::Window* window = new EP::GUI::Window("blockTemplateWindow",parent,10,10,200,400,"Block Templates");
 
       EP::GUI::Area* content = new EP::GUI::Area("templateHolder",NULL,0,0,100,400);
-      EP::GUI::BlockTemplate* btFM = new EP::GUI::BlockTemplate("blockTemplateFM",content,5,5,90,20,"FM Osc.");
-      btFM->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityFM(bh,x,y);
-      });
-      EP::GUI::BlockTemplate* btLFO = new EP::GUI::BlockTemplate("blockTemplateLFO",content,5,30,90,20,"LFO Osc.");
-      btLFO->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityLFO(bh,x,y);
-      });
-      EP::GUI::BlockTemplate* btAudioOut = new EP::GUI::BlockTemplate("blockTemplateAudioOut",content,5,55,90,20,"Audio Out");
-      btAudioOut->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityAudioOut(bh,x,y);
-      });
-      EP::GUI::BlockTemplate* btTrigger = new EP::GUI::BlockTemplate("blockTrigger",content,5,80,90,20,"Trigger");
-      btTrigger->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityTrigger(bh,x,y);
-      });
-      EP::GUI::BlockTemplate* btEnvelope = new EP::GUI::BlockTemplate("blockEnvelope",content,5,105,90,20,"Envelope");
-      btEnvelope->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityEnvelope(bh,x,y);
-      });
-      EP::GUI::BlockTemplate* btValuePicker = new EP::GUI::BlockTemplate("blockValuePicker",content,5,130,90,20,"V Picker");
-      btValuePicker->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityValuePicker(bh,x,y);
-      });
 
-      EP::GUI::BlockTemplate* btMultAndAdd = new EP::GUI::BlockTemplate("blockMultAndAdd",content,5,155,90,20,"Mult Add");
-      btMultAndAdd->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityMultiplyAndAdd(bh,x,y);
-      });
+      float yNext = 5;
+      std::function<void(std::string,std::string)> addBlockTemplate = [&content,&yNext](std::string type,std::string name) {
+        EP::GUI::BlockTemplate* bt = new EP::GUI::BlockTemplate("blockTemplate"+type,content,5,yNext,90,20,name);
+        yNext+=25;
+        bt->doInstantiateIs([type](EP::GUI::BlockHolder* bh,const float x,const float y) {
+          EntityData data(0,type,x,y);
+          data.values["position"] = std::vector<std::string>{std::to_string(x),std::to_string(y)};
+          return entityFromData(bh,&data);
+        });
+      };
+      addBlockTemplate("EntityFM","FM Osc.");
+      addBlockTemplate("EntityLFO","LFO Osc.");
+      addBlockTemplate("EntityAudioOut","Audio Out");
+      addBlockTemplate("EntityTrigger","Trigger");
+      addBlockTemplate("EntityEnvelope","Envelope");
+      addBlockTemplate("EntityValuePicker","V Picker");
+      addBlockTemplate("EntityMultiplyAndAdd","Mult Add");
+      addBlockTemplate("EntityKeyPad","KeyPad");
+      addBlockTemplate("EntityChordPicker","Chord Picker");
+      addBlockTemplate("EntityQuantizer","Quantizer");
+      addBlockTemplate("EntityAudioIn","Audio In");
+      addBlockTemplate("EntitySignalAnalyzer","Signal Analyzer");
 
-      EP::GUI::BlockTemplate* btKeyPad = new EP::GUI::BlockTemplate("blockKeyPad",content,5,180,90,20,"KeyPad");
-      btKeyPad->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityKeyPad(bh,x,y);
-      });
-
-      EP::GUI::BlockTemplate* btChord = new EP::GUI::BlockTemplate("blockChordPicker",content,5,205,90,20,"Chord Picker");
-      btChord->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityChordPicker(bh,x,y);
-      });
-
-      EP::GUI::BlockTemplate* btQuantizer = new EP::GUI::BlockTemplate("blockQuantizer",content,5,230,90,20,"Quantizer");
-      btQuantizer->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityQuantizer(bh,x,y);
-      });
-
-      EP::GUI::BlockTemplate* btAudioIn = new EP::GUI::BlockTemplate("blockAudioIn",content,5,255,90,20,"AudioIn");
-      btAudioIn->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntityAudioIn(bh,x,y);
-      });
-
-      EP::GUI::BlockTemplate* btSignalAnalyzer = new EP::GUI::BlockTemplate("blockSignalAnalyzer",content,5,280,90,20,"Signal Analyzer");
-      btSignalAnalyzer->doInstantiateIs([](EP::GUI::BlockHolder* bh,const float x,const float y) {
-        new EntitySignalAnalyzer(bh,x,y);
-      });
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
       content->colorIs(EP::Color(0.1,0,0));
@@ -1080,23 +1100,23 @@ namespace EP {
     static std::string entitiesToString() {
       std::string res = "";
       size_t idCounter = 0;
-      std::map<Entity*, size_t> entitiyToId;
+      std::map<Entity*, size_t> entityToId;
       std::map<Task*, Entity*> taskToEntity;
       for (auto &it : blockToEntity) {
         idCounter++;
         Entity* const e = it.second;
-        entitiyToId.insert({e,idCounter});
+        entityToId.insert({e,idCounter});
         taskToEntity.insert({e->task(),e});
       }
       for (auto &it : blockToEntity) {
         Entity* const e = it.second;
-        res+=e->serialize(entitiyToId,taskToEntity);
+        res+=e->serialize(entityToId,taskToEntity);
       }
       std::cout << res << std::endl;
       return res;
     }
 
-    static void stringToEntities(std::string &input) {
+    static void stringToEntities(std::string &input,EP::GUI::BlockHolder* const bh) {
       std::cout << "clean" << std::endl;
       for (auto &it : blockToEntity) {
         Entity* const e = it.second;
@@ -1104,9 +1124,45 @@ namespace EP {
       }
 
       std::cout << "construct" << std::endl;
+      std::map<size_t, EntityData*> idToData;
+      size_t currentId = 0;
+      std::vector<std::string> lines = split(input,'\n');
+      for (auto &l : lines) {
+        std::cout << l << std::endl;
+        if (l.size()>0 and l[0]=='@') {
+          std::vector<std::string> lparts = split(l,'@');
+          currentId = std::atoi(lparts[1].c_str());
+          std::cout << "## new id: " << currentId << std::endl;
+          std::vector<std::string> llparts = split(lparts[1],' ');
+          std::string type = llparts[1];
+          std::cout << type << std::endl;
+          idToData[currentId] = new EntityData(currentId,type,0,0);
+        } else if(l.size()>0) {
+          std::vector<std::string> lparts = split(l,'=');
+          if (lparts.size()==2) {
+            std::vector<std::string> llparts = split(lparts[1],',');
+            idToData[currentId]->values[lparts[0]] = llparts;
+            if (lparts[0]=="position") {
+              idToData[currentId]->x = std::atof(llparts[0].c_str());
+              idToData[currentId]->y = std::atof(llparts[1].c_str());
+            }
+          } else {
+            std::cout << "ERROR: bad number of =" << std::endl;
+          }
+        }
+      }
+      for (auto &it : idToData) {
+        EntityData* data = it.second;
+        std::cout << data->id << " " << data->type << std::endl;
+        entityFromData(bh,data);
+      }
+
+      for (auto &it : idToData) {
+        delete it.second;
+      }
     }
 
-    static EP::GUI::Window* newDebugWindow(EP::GUI::Area* const parent) {
+    static EP::GUI::Window* newDebugWindow(EP::GUI::Area* const parent,EP::GUI::BlockHolder* const bh) {
       EP::GUI::Window* window = new EP::GUI::Window("debugWindow",parent,10,400,200,400,"Debugging");
 
       EP::GUI::Area* content = new EP::GUI::Area("templateHolder",NULL,0,0,100,400);
@@ -1120,7 +1176,7 @@ namespace EP {
       });
 
       EP::GUI::Button* buttonDeSerialize = new EP::GUI::Button("buttonDeserialize",content,5,30,90,20,"deserialize");
-      buttonDeSerialize->onClickIs([]() {
+      buttonDeSerialize->onClickIs([bh]() {
         std::ifstream myfile;
         myfile.open("save.txt");
         std::stringstream mystream;
@@ -1128,7 +1184,7 @@ namespace EP {
         myfile.close();
         std::string str = mystream.str();
         std::cout << str << std::endl;
-        stringToEntities(str);
+        stringToEntities(str,bh);
       });
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
@@ -1146,22 +1202,23 @@ int main()
   // ------------------------------------ WINDOW
   EP::GUI::MasterWindow* masterWindow = new EP::GUI::MasterWindow(1000,600,"window title",false);
   {
+    EP::GUI::BlockHolder* blockHolder;
 
     EP::GUI::Window* window2 = new EP::GUI::Window("window2",masterWindow->area(),300,150,600,400,"Designer");
     {
       float x,y,dx,dy;
       window2->childSize(dx,dy);
       window2->childOffset(x,y);
-      EP::GUI::Area* content1 = new EP::GUI::BlockHolder("blockHolder1",NULL,0,0,2000,2000);
-      content1->colorIs(EP::Color(0.1,0.1,0.2));
-      EP::GUI::Area* scroll1 = new EP::GUI::ScrollArea("scroll1",window2, content1,x,y,dx,dy);
+      blockHolder = new EP::GUI::BlockHolder("blockHolder1",NULL,0,0,2000,2000);
+      blockHolder->colorIs(EP::Color(0.1,0.1,0.2));
+      EP::GUI::Area* scroll1 = new EP::GUI::ScrollArea("scroll1",window2, blockHolder,x,y,dx,dy);
       scroll1->fillParentIs(true);
       //EP::GUI::Area* button1 = new EP::GUI::Button("button1",content1,10,10,100,20,"X");
       //EP::GUI::Area* button2 = new EP::GUI::Button("button2",content1,300,300,100,20,"Y");
     }
 
     EP::FlowGUI::newBlockTemplateWindow(masterWindow->area());
-    EP::FlowGUI::newDebugWindow(masterWindow->area());
+    EP::FlowGUI::newDebugWindow(masterWindow->area(),blockHolder);
 
     EP::GUI::Window* window1 = new EP::GUI::Window("window1",masterWindow->area(),10,10,200,300,"MyWindow1");
     EP::GUI::Window* w = window1;
