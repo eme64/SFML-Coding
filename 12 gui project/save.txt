@@ -1,21 +1,21 @@
 @1 EntityAudioOut
 position=433.000000,596.000000
-inTask_0=2,0
-inValue_0=0.347628
+inTask_0=0,0
+inValue_0=0.000000
 inTask_1=0,0
-inValue_1=0.076000
+inValue_1=0.000000
 @2 EntityFM
 position=297.000000,242.000000
-inTask_0=4,0
-inValue_0=857.699791
-inTask_1=3,0
-inValue_1=-0.422073
+inTask_0=0,0
+inValue_0=440.000000
+inTask_1=0,0
+inValue_1=0.000000
 inTask_2=0,0
-inValue_2=1.000000
+inValue_2=0.000000
 @3 EntityFM
 position=411.000000,121.000000
-inTask_0=4,0
-inValue_0=857.699791
+inTask_0=0,0
+inValue_0=440.000000
 inTask_1=0,0
 inValue_1=0.000000
 inTask_2=0,0

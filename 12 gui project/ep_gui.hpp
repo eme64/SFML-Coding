@@ -6,9 +6,38 @@
 #include <SFML/Graphics.hpp>
 #include <list>
 #include <functional>
+#include <iomanip> // setprecision
+#include <sstream> // stringstream
 
 
 namespace EP {
+  class Function {
+  public:
+    virtual double fwd(double const x) {return std::min(1.0,std::max(0.0,x));}
+    virtual double bwd(double const y) {return std::min(1.0,std::max(0.0,y));}
+  };
+  class FunctionLin : public Function {
+  public:
+    FunctionLin(double const v0,double const v1) :v0_(v0),v1_(v1) {}
+    virtual double fwd(double const x) {double const tmp = std::min(1.0,std::max(0.0,x)); return v0_+tmp*(v1_-v0_);}
+    virtual double bwd(double const y) {double const tmp = (y-v0_)/(v1_-v0_); return std::min(1.0,std::max(0.0,tmp));}
+  private:
+    double v0_,v1_;
+  };
+  class FunctionExp : public Function {
+  public:
+    FunctionExp(double const v0,double const v1) :v0_(v0),v1_(v1) {}
+    virtual double fwd(double const x) {
+      double const tmp = std::min(1.0,std::max(0.0,x));
+      return std::pow(v1_/v0_,tmp)*v0_;
+    }
+    virtual double bwd(double const y) {
+      double const tmp = std::log(y/v0_)/std::log(v1_/v0_);
+      return std::min(1.0,std::max(0.0,tmp));
+    }
+  private:
+    double v0_,v1_;
+  };
   class Color {
   public:
     float r,g,b,a;//0..1
@@ -69,11 +98,12 @@ namespace EP {
     return font;
   }
 
-  void DrawText(float x, float y, std::string text, float size, sf::RenderTarget &target, const Color& color) {
+  void DrawText(float x, float y, std::string text, float size, sf::RenderTarget &target, const Color& color,float alignX=0,float alignY=0) {
     sf::Text shape(text, getFont());
-    shape.setCharacterSize(size);
+    shape.setCharacterSize(std::floor(size));
     shape.setColor(color.toSFML());
-    shape.setPosition(x,y);
+    sf::FloatRect bounds = shape.getLocalBounds();
+    shape.setPosition(std::floor(x-alignX*bounds.width),std::floor(y-alignY*bounds.height));
     //shape.setStyle(sf::Text::Bold | sf::Text::Underlined);
     target.draw(shape, sf::BlendAlpha);//BlendAdd
   }
@@ -104,6 +134,15 @@ namespace EP {
     target.draw(rectangle, sf::BlendAlpha);//BlendAdd
     DrawOval(x1-width*0.5,y1-width*0.5,width,width,target,color);
     DrawOval(x2-width*0.5,y2-width*0.5,width,width,target,color);
+  }
+  void DrawTriangle(float x0, float y0, float x1, float y1,float x2, float y2, sf::RenderTarget &target, const Color& color) {
+    sf::ConvexShape convex;
+    convex.setPointCount(3);
+    convex.setFillColor(color.toSFML());
+    convex.setPoint(0, sf::Vector2f(x0,y0));
+    convex.setPoint(1, sf::Vector2f(x1,y1));
+    convex.setPoint(2, sf::Vector2f(x2,y2));
+    target.draw(convex, sf::BlendAlpha);
   }
 
   class ViewAnchor {
@@ -288,7 +327,7 @@ namespace EP {
       void doDelete() {
         if (isDeleted_) {return;}
         isDeleted_ = true;
-        
+
         onDeleteNotify(this);
         std::cout << "checkFocus" << std::endl;
         if (isFocus()) {unFocus();}
@@ -442,6 +481,75 @@ namespace EP {
       size_t state_=0;//0:normal, 1:mouse over, 2:pressing, 3:clicked
       std::function<void()> onClick_;
     };
+    class Knob : public Area {
+    public:
+      Knob(const std::string& name,Area* const parent,
+             const float x,const float y,const float dx,const float dy,
+             const std::string text,
+             Function* func = NULL,
+             const Color bgColor = Color(0.1,0.1,0.3),
+             const Color knobColor = Color(1,0.5,0.5),
+             const Color textColor = Color(1,1,1)
+            )
+      : Area(name,parent,x,y,dx,dy),text_(text),bgColor_(bgColor),textColor_(textColor),knobColor_(knobColor){
+        if (func==NULL) {func = new Function();}
+        func_=func;
+      }
+      ~Knob() {delete func_;}
+
+      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+        float gx = x_+px;
+        float gy = y_+py;
+        float centerX = gx+dx_*0.5;
+        float centerY = gy+dy_*0.5;
+        float r = std::min(dx_,dy_)*0.5;
+        DrawOval(centerX-r,centerY-r, r*2,r*2,target,bgColor_);
+        float angle0 = M_PI*2*0.3;
+        float angle2 = M_PI*2*1.2;
+        double val = func_->fwd(value_);
+        float angle1 = angle0+value_*(angle2-angle0);
+        size_t nAngle = 30;
+        float dAngle = (angle1-angle0)/(float)nAngle;
+        for (size_t i = 0; i < nAngle; i++) {
+          DrawTriangle(
+            centerX,centerY,
+            centerX+r*std::cos(angle0+i*dAngle),centerY+r*std::sin(angle0+i*dAngle),
+            centerX+r*std::cos(angle0+(i+1)*dAngle),centerY+r*std::sin(angle0+(i+1)*dAngle),
+            target, knobColor_
+          );
+        }
+        DrawLine(centerX, centerY, centerX+r*std::cos(angle0), centerY+r*std::sin(angle0), target, textColor_,1);
+        DrawLine(centerX, centerY, centerX+r*std::cos(angle1), centerY+r*std::sin(angle1), target, textColor_,1);
+        DrawLine(centerX, centerY, centerX+r*std::cos(angle2), centerY+r*std::sin(angle2), target, textColor_,1);
+        float innerR = r*0.8;
+        DrawOval(centerX-innerR,centerY-innerR, innerR*2,innerR*2,target,bgColor_);
+        std::stringstream ss;
+        int l = std::min(4.0,std::max(0.0,2-std::log10(val)));
+        ss << std::fixed << std::setprecision(l) << val;
+        std::string mystring = ss.str();
+        DrawText(centerX,centerY, mystring, r*0.6, target, textColor_,0.5,0.5);
+      }
+
+      virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
+        if (isFirstDown) {
+          setFocus();
+        }
+        return true;
+      }
+      virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
+        value_+=dy*-0.001;
+        value_ = std::min(1.0,std::max(0.0,value_));
+        return true;
+      }
+      double value() {return func_->fwd(value_);}
+      void valueIs(double const v) {value_ = func_->bwd(v);}
+    protected:
+      std::string text_;
+      Color bgColor_,textColor_,knobColor_;
+      double value_ = 0.5;
+      Function* func_;
+    };
+
     class Window : public Area {
     public:
       Window(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy, const std::string title)

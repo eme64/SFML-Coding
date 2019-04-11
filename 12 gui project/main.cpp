@@ -581,7 +581,7 @@ namespace EP {
           }
           recompileTasks();
         });
-        inSockets_.push_front(socket);
+        inSockets_.push_back(socket);
         return socket;
       }
       void packageInIs(EP::GUI::Block* const block,const float x,const float y,std::string name,
@@ -607,10 +607,10 @@ namespace EP {
           Entity* const e2 = blockToEntity[parent];
           return !e1->canReach(e2);
         });
-        outSockets_.push_front(socket);
+        outSockets_.push_back(socket);
         return socket;
       }
-      std::list<EP::GUI::Socket*>& outSockets() {return outSockets_;}
+      std::vector<EP::GUI::Socket*>& outSockets() {return outSockets_;}
       bool canReach(Entity* other) {
         if (this==other) {return true;}
         for (auto &sOut : this->outSockets()) {
@@ -691,8 +691,9 @@ namespace EP {
       virtual std::string serializeData() {return "";}
     protected:
       EP::GUI::Block* block_ = NULL;
-      std::list<EP::GUI::Socket*> inSockets_;
-      std::list<EP::GUI::Socket*> outSockets_;
+      std::vector<EP::GUI::Socket*> inSockets_;//by port
+      std::vector<EP::GUI::Socket*> outSockets_;//by port
+      std::map<size_t, EP::GUI::Slider*> inSliders_;//by port
       bool isDeleted_ = false;
     };
 
@@ -1187,9 +1188,20 @@ namespace EP {
         stringToEntities(str,bh);
       });
 
+      EP::GUI::Knob* knob1 = new EP::GUI::Knob("knob1",content,5,55,20,20,"t");
+      EP::GUI::Knob* knob2 = new EP::GUI::Knob("knob2",content,5,75,30,30,"t",new EP::FunctionExp(0.0001,10000));
+      knob2->valueIs(1.55);
+      EP::GUI::Knob* knob3 = new EP::GUI::Knob("knob3",content,5,105,35,50,"t",new EP::FunctionExp(0.0001,10000));
+      knob3->valueIs(0.02);
+
+      EP::GUI::Knob* knob4 = new EP::GUI::Knob("knob4",content,5,155,40,100,"t",new EP::FunctionExp(0.0001,10000));
+      knob4->valueIs(0.01);
+
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
       content->colorIs(EP::Color(0.1,0,0));
       scroll->fillParentIs(true);
+
+
     }
   }
 }
