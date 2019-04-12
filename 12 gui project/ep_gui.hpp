@@ -485,13 +485,12 @@ namespace EP {
     public:
       Knob(const std::string& name,Area* const parent,
              const float x,const float y,const float dx,const float dy,
-             const std::string text,
              Function* func = NULL,
              const Color bgColor = Color(0.1,0.1,0.3),
              const Color knobColor = Color(1,0.5,0.5),
              const Color textColor = Color(1,1,1)
             )
-      : Area(name,parent,x,y,dx,dy),text_(text),bgColor_(bgColor),textColor_(textColor),knobColor_(knobColor){
+      : Area(name,parent,x,y,dx,dy),bgColor_(bgColor),textColor_(textColor),knobColor_(knobColor){
         if (func==NULL) {func = new Function();}
         func_=func;
       }
@@ -524,7 +523,7 @@ namespace EP {
         float innerR = r*0.8;
         DrawOval(centerX-innerR,centerY-innerR, innerR*2,innerR*2,target,bgColor_);
         std::stringstream ss;
-        int l = std::min(4.0,std::max(0.0,2-std::log10(val)));
+        int l = std::min(state_?7.0:5.0,std::max(0.0,(state_?5.0:3.0)-std::log10(val)));
         ss << std::fixed << std::setprecision(l) << val;
         std::string mystring = ss.str();
         DrawText(centerX,centerY, mystring, r*0.6, target, textColor_,0.5,0.5);
@@ -533,21 +532,35 @@ namespace EP {
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
         if (isFirstDown) {
           setFocus();
+          knobPan = 0;
+          state_ = true;
         }
         return true;
       }
       virtual bool onMouseDown(const bool isCaptured,const float x,const float y,float &dx, float &dy,Area* const over) {
-        value_+=dy*-0.001;
+        knobPan+=dx;
+        double const knobD = std::pow(10,std::min(1.5,std::max(-2.0,knobPan/100.0)))*0.0001;
+        value_-=dy*knobD;
         value_ = std::min(1.0,std::max(0.0,value_));
+        if(onValue_) {onValue_(func_->fwd(value_));}
         return true;
       }
+      virtual void onMouseDownEnd(const bool isCaptured, const bool isLastDown,const float x,const float y,Area* const over) {
+        state_=false;
+      }
       double value() {return func_->fwd(value_);}
-      void valueIs(double const v) {value_ = func_->bwd(v);}
+      void valueIs(double const v) {
+        value_ = func_->bwd(v);
+        if(onValue_) {onValue_(v);}
+      }
+      void onValueIs(std::function<void(float)> onVal) {onValue_=onVal;}// use to listen to value change
     protected:
-      std::string text_;
       Color bgColor_,textColor_,knobColor_;
       double value_ = 0.5;
+      double knobPan = 0;
       Function* func_;
+      std::function<void(double)> onValue_;
+      bool state_ = false;
     };
 
     class Window : public Area {

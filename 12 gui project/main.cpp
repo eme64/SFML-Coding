@@ -10,7 +10,6 @@
 
 #include "ep_gui.hpp"
 
-
 namespace EP {
   namespace FFT {
     // ------------------------------------------------------ FFT
@@ -585,18 +584,26 @@ namespace EP {
         return socket;
       }
       void packageInIs(EP::GUI::Block* const block,const float x,const float y,std::string name,
-                       Task* const task,const size_t port,std::function<double(double)> sliderToVal,const double sliderDefault=1.0) {
-        EP::GUI::Label*  label = new EP::GUI::Label("label"+name,block,x,y+30,10,"XXX",EP::Color(1,1,1));
-        EP::GUI::Slider* slider = new EP::GUI::Slider("slider"+name,block,x,y+45,20,50,false,0.0,1.0,0,0.2);
-        slider->onValIs([label,task,sliderToVal,port](float val) {
-          label->textIs(std::to_string(int(sliderToVal(val))));
+                       Task* const task,const size_t port,EP::Function* func,double const value=1.0) {
+        EP::GUI::Knob* knob = new EP::GUI::Knob("knob",block,x,y+30,35,35,func);
+        knob->onValueIs([knob,task,port](double val) {
           std::lock_guard<std::mutex> lock(taskListMutex);
           if (!task->inHasTask(port)) {
-            task->inIs(port,std::vector<double>{sliderToVal(val)});
+            task->inIs(port,std::vector<double>{val});
           }
         });
-        slider->valIs(sliderDefault);
-        EP::GUI::Socket* socket = socketInIs(block,x,y,name,port,[slider]() {return slider->val();});
+        knob->valueIs(value);
+        // EP::GUI::Label*  label = new EP::GUI::Label("label"+name,block,x,y+30,10,"XXX",EP::Color(1,1,1));
+        // EP::GUI::Slider* slider = new EP::GUI::Slider("slider"+name,block,x,y+45,20,50,false,0.0,1.0,0,0.2);
+        // slider->onValIs([label,task,sliderToVal,port](float val) {
+        //   label->textIs(std::to_string(int(sliderToVal(val))));
+        //   std::lock_guard<std::mutex> lock(taskListMutex);
+        //   if (!task->inHasTask(port)) {
+        //     task->inIs(port,std::vector<double>{sliderToVal(val)});
+        //   }
+        // });
+        // slider->valIs(sliderDefault);
+        EP::GUI::Socket* socket = socketInIs(block,x,y,name,port,[knob]() {return knob->value();});
       }
       EP::GUI::Socket* socketOutIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,const size_t port) {
         EP::GUI::Socket* socket = new EP::GUI::Socket("socketOut"+name,parent,x,y,EP::GUI::Socket::Direction::Down,name);
@@ -611,6 +618,7 @@ namespace EP {
         return socket;
       }
       std::vector<EP::GUI::Socket*>& outSockets() {return outSockets_;}
+      std::vector<EP::GUI::Socket*>& inSockets() {return inSockets_;}
       bool canReach(Entity* other) {
         if (this==other) {return true;}
         for (auto &sOut : this->outSockets()) {
@@ -689,11 +697,17 @@ namespace EP {
       }
       virtual std::string serializeName() {return "Entity";}
       virtual std::string serializeData() {return "";}
+      void valueIs(size_t const port, std::vector<double> &values) {
+        EP::GUI::Knob* s = inKnobs_[port];
+        if (s) {
+          s->valueIs(values[0]);
+        }
+      }
     protected:
       EP::GUI::Block* block_ = NULL;
       std::vector<EP::GUI::Socket*> inSockets_;//by port
       std::vector<EP::GUI::Socket*> outSockets_;//by port
-      std::map<size_t, EP::GUI::Slider*> inSliders_;//by port
+      std::map<size_t, EP::GUI::Knob*> inKnobs_;//by port
       bool isDeleted_ = false;
     };
 
@@ -702,12 +716,12 @@ namespace EP {
       EntityFM(EP::GUI::Area* const parent,EntityData* const data) {
         taskOsc_ = new TaskOscillator();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,data->x,data->y,100,200,EP::Color(0.5,0.5,1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,data->x,data->y,130,200,EP::Color(0.5,0.5,1));
         blockIs(block);
 
-        packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,[](double in) {return (1.0-in)*440.0+440.0;},1.0);
-        packageInIs(block,30,5,"Mod",task(),TaskOscillator::In::Mod,[](double in) {return (1.0-in)*2.0-1.0;},0.5);
-        packageInIs(block,55,5,"Fac",task(),TaskOscillator::In::ModFactor,[](double in) {return (1.0-in)*1.0;},1.0);
+        packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,new EP::FunctionExp(2,20000),440.0);
+        packageInIs(block,45,5,"Mod",task(),TaskOscillator::In::Mod,new EP::FunctionLin(-1,1),0);
+        packageInIs(block,85,5,"Fac",task(),TaskOscillator::In::ModFactor,new EP::FunctionLin(0,1),0);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"FM Osc.",EP::Color(0.5,0.5,1));
 
@@ -724,12 +738,12 @@ namespace EP {
       EntityLFO(EP::GUI::Area* const parent,EntityData* const data) {
         taskOsc_ = new TaskOscillator();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,data->x,data->y,100,200,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,data->x,data->y,130,200,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
-        packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,[](double in) {return (1.0-in)*10.0;},1.0);
-        packageInIs(block,30,5,"Mod",task(),TaskOscillator::In::Mod,[](double in) {return (1.0-in)*2.0-1.0;},0.5);
-        packageInIs(block,55,5,"Fac",task(),TaskOscillator::In::ModFactor,[](double in) {return (1.0-in)*1.0;},1.0);
+        packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,new EP::FunctionExp(0.0001,100),1);
+        packageInIs(block,45,5,"Mod",task(),TaskOscillator::In::Mod,new EP::FunctionLin(-1,1),0);
+        packageInIs(block,85,5,"Fac",task(),TaskOscillator::In::ModFactor,new EP::FunctionLin(0,1),0);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"LFO Osc.",EP::Color(0.5,0.5,1));
 
@@ -767,30 +781,29 @@ namespace EP {
       EntityValuePicker(EP::GUI::Area* const parent,EntityData* const data) {
         taskInputValue_ = new TaskInputValue();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,data->x,data->y,55,200,EP::Color(0.5,0.5,0.1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,data->x,data->y,50,85,EP::Color(0.5,0.5,0.1));
         blockIs(block);
 
-        EP::GUI::Slider* sliderExp = new EP::GUI::Slider("expSlider",block,5,5,20,150,false,0.0,1.0,0.5,0.1);
-        EP::GUI::Slider* sliderLin = new EP::GUI::Slider("linSlider",block,30,5,20,150,false,0.0,1.0,1,0.1);
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,160,15,"XXX",EP::Color(1,1,0.5));
-
-        std::function<void(double)> recomputeVal = [this,sliderExp,sliderLin,label](double disregard){
-          const double val = std::pow(10.0,(1.0-sliderExp->val())*10.0-5.0)*((1.0-sliderLin->val())*9.0+1.0);
+        knob_ = new EP::GUI::Knob("knob",block,5,5,40,40,new EP::FunctionExp(0.00001,100000));
+        std::function<void(double)> onValF = [this](double val){
           taskInputValue_->setValue(std::vector<double>{val});
-          label->textIs(std::to_string(val));
         };
 
-        sliderExp->onValIs(recomputeVal);
-        sliderLin->onValIs(recomputeVal);
+        knob_->onValueIs(onValF);
+        knob_->valueIs(1);
 
-        recomputeVal(0);
+        if (data->values.find("value") != data->values.end()) {
+          knob_->valueIs(std::atof(data->values["value"][0].c_str()));
+        }
 
-        socketOutIs(block,5,170,"Out",TaskInputValue::Out::Signal);
+        socketOutIs(block,5,50,"Out",TaskInputValue::Out::Signal);
       }
       virtual Task* task() {return taskInputValue_;}
       virtual std::string serializeName() {return "EntityValuePicker";}
+      virtual std::string serializeData() {return "value="+std::to_string(knob_->value())+"\n";}
     protected:
       TaskInputValue* taskInputValue_;
+      EP::GUI::Knob* knob_;
     };
 
     class EntityChordPicker : public Entity {
@@ -861,7 +874,7 @@ namespace EP {
       EntityEnvelope(EP::GUI::Area* const parent,EntityData* const data) {
         taskEnvelope_ = new TaskEnvelope();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,data->x,data->y,200,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,data->x,data->y,260,100,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Envelope",EP::Color(0.5,0.5,1));
@@ -869,11 +882,11 @@ namespace EP {
         socketInIs(block,5,5,"Main",TaskEnvelope::In::Pulse,[]() {return 0;});
         socketInIs(block,30,5,"In",TaskEnvelope::In::Input,[]() {return 0;});
 
-        packageInIs(block,55 ,5,"A" ,task(),TaskEnvelope::In::Attack,[](double in) {return (1.0-in)*0.5;},0.1);
-        packageInIs(block,80 ,5,"D" ,task(),TaskEnvelope::In::Decay,[](double in) {return (1.0-in)*1.0;},0.3);
-        packageInIs(block,105,5,"S" ,task(),TaskEnvelope::In::Sustain,[](double in) {return (1.0-in)*2.0;},0);
-        packageInIs(block,130,5,"SA",task(),TaskEnvelope::In::SustainAmp,[](double in) {return (1.0-in)*1.0;},0.5);
-        packageInIs(block,155,5,"R" ,task(),TaskEnvelope::In::Release,[](double in) {return (1.0-in)*2.0;},0.1);
+        packageInIs(block,55 ,5,"A" ,task(),TaskEnvelope::In::Attack,new EP::FunctionExp(0.0001,10),0.01);
+        packageInIs(block,95 ,5,"D" ,task(),TaskEnvelope::In::Decay,new EP::FunctionExp(0.0001,10),0.1);
+        packageInIs(block,135,5,"S" ,task(),TaskEnvelope::In::Sustain,new EP::FunctionLin(0,10),0);
+        packageInIs(block,175,5,"SA",task(),TaskEnvelope::In::SustainAmp,new EP::FunctionLin(0,1),0.2);
+        packageInIs(block,215,5,"R" ,task(),TaskEnvelope::In::Release,new EP::FunctionExp(0.0001,10),0.2);
 
         socketOutIs(block,5,50,"Amp",TaskEnvelope::Out::Amplitude);
         socketOutIs(block,30,50,"Out",TaskEnvelope::Out::Output);
@@ -982,7 +995,7 @@ namespace EP {
         EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,data->x,data->y,100,100,EP::Color(1,0.5,0.5));
         blockIs(block);
         socketMain_  = socketInIs(block,5,5,"Main",TaskAudioOut::In::Signal,[]() {return 0;});
-        packageInIs(block,30,5,"A",task(),TaskAudioOut::In::Amplitude,[](double in) {return (1.0-in)*0.1;},0);
+        packageInIs(block,30,5,"A",task(),TaskAudioOut::In::Amplitude,new EP::FunctionLin(0,1),1);
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Audio Out",EP::Color(1,0.5,0.5));
       }
       virtual Task* task() {return taskAudioOut_;}
@@ -1152,10 +1165,31 @@ namespace EP {
           }
         }
       }
-      for (auto &it : idToData) {
+      std::map<size_t, Entity*> idToEntity;
+      for (auto &it : idToData) { // generate entities
         EntityData* data = it.second;
         std::cout << data->id << " " << data->type << std::endl;
-        entityFromData(bh,data);
+        idToEntity[data->id] = entityFromData(bh,data);
+      }
+      for (auto &it : idToData) { // link entities
+        EntityData* data = it.second;
+        Entity* e = idToEntity[data->id];
+        for (size_t i = 0; data->values.find("inTask_"+std::to_string(i))!=data->values.end(); i++) {
+          std::vector<std::string> &v = data->values["inTask_"+std::to_string(i)];
+          size_t otherId = std::atoi(v[0].c_str());
+          size_t otherPort = std::atoi(v[1].c_str());
+          if (otherId>0) {
+            std::cout << "connect " << data->id << " to " << otherId << "," << otherPort << std::endl;
+            Entity* other = idToEntity[otherId];
+            EP::GUI::Socket* here = e->inSockets()[i];
+            EP::GUI::Socket* there = other->outSockets()[otherPort];
+            here->sourceIs(there);
+          }
+          std::vector<std::string> &val = data->values["inValue_"+std::to_string(i)];
+          std::vector<double> values;
+          for(auto &vv : val) {values.push_back(std::atof(vv.c_str()));}
+          e->valueIs(i,values);
+        }
       }
 
       for (auto &it : idToData) {
@@ -1187,15 +1221,6 @@ namespace EP {
         std::cout << str << std::endl;
         stringToEntities(str,bh);
       });
-
-      EP::GUI::Knob* knob1 = new EP::GUI::Knob("knob1",content,5,55,20,20,"t");
-      EP::GUI::Knob* knob2 = new EP::GUI::Knob("knob2",content,5,75,30,30,"t",new EP::FunctionExp(0.0001,10000));
-      knob2->valueIs(1.55);
-      EP::GUI::Knob* knob3 = new EP::GUI::Knob("knob3",content,5,105,35,50,"t",new EP::FunctionExp(0.0001,10000));
-      knob3->valueIs(0.02);
-
-      EP::GUI::Knob* knob4 = new EP::GUI::Knob("knob4",content,5,155,40,100,"t",new EP::FunctionExp(0.0001,10000));
-      knob4->valueIs(0.01);
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
       content->colorIs(EP::Color(0.1,0,0));
