@@ -100,8 +100,22 @@ namespace EP {
         }
       }
       virtual void tick(const double dt) = 0;// calculate output from input and internal state
-      inline std::vector<double>& out(const size_t i) {return out_[i];}
-      void inIs(const size_t i,Task* const task,const size_t port) {inTask_[i]=task;inTaskPort_[i]=port;}//inValue_[i]=task->out(port);}
+      inline std::vector<double>& out(const size_t i) {
+        if (i>=out_.size()) {
+          std::cout << "bounds: " << i << std::endl;
+          print();
+          throw;
+        }
+        return out_[i];
+      }
+      inline size_t outSize() {return out_.size();}
+      void inIs(const size_t i,Task* const task,const size_t port) {
+        if (task && task->outSize()<=port) {
+          std::cout << "inIs bounds: " << std::endl;
+          throw;
+        }
+        inTask_[i]=task;inTaskPort_[i]=port;
+      }//inValue_[i]=task->out(port);}
       void inIs(const size_t i,const std::vector<double> value) {inTask_[i]=NULL;inTaskPort_[i]=0;inValue_[i]=value;}
       bool inHasTask(const size_t i) {return inTask_[i]!=NULL;}
       void print() {
@@ -130,7 +144,7 @@ namespace EP {
 
     static double audioOut;
     static std::vector<Task*> taskList;
-    std::mutex taskListMutex;
+    std::recursive_mutex taskListMutex;
 
     class TaskOscillator : public Task {
     public:
@@ -457,7 +471,8 @@ namespace EP {
         samples.clear();
         const double dt = (double)1.0 / (double)sampleRate_;
 
-        std::lock_guard<std::mutex> lock(taskListMutex);
+        std::lock_guard<std::recursive_mutex> lock(taskListMutex);
+
         for (size_t i = 0; i < sampleSize_; i++) {
           audioInBlockNext();
 
@@ -515,7 +530,8 @@ namespace EP {
       const size_t port;
     };
 
-    static std::map<EP::GUI::Socket*,TaskPort> socketToTaskPort;// for both in and out sockets.
+    static std::map<EP::GUI::Socket*,TaskPort> socketToTaskPortIn;// for both in and out sockets.
+    static std::map<EP::GUI::Socket*,TaskPort> socketToTaskPortOut;// for both in and out sockets.
 
     struct EntityData {
       EntityData(size_t id,std::string type,float const x,float const y):id(id),type(type),x(x),y(y){}
@@ -530,19 +546,15 @@ namespace EP {
       Entity() {}
       ~Entity() {
         blockIs(NULL);
-        for(auto &s : inSockets_) {socketToTaskPort.erase(s);}
-        for(auto &s : outSockets_) {socketToTaskPort.erase(s);}
+        for(auto &s : inSockets_) {socketToTaskPortIn.erase(s);}
+        for(auto &s : outSockets_) {socketToTaskPortOut.erase(s);}
       }
       virtual void doDelete() {
         if (isDeleted_) {return;}// prevent multiple entry
         isDeleted_ = true;
-
-        std::cout << "doDelete" << std::endl;
         block()->doDelete();
-        std::cout << "blockIs NULL" << std::endl;
         blockIs(NULL);
-        std::cout << "removeTask" << std::endl;
-        std::lock_guard<std::mutex> lock(taskListMutex);
+        delete this;
       }
       void blockIs(EP::GUI::Block* block) {
         if (block==block_) {return;}
@@ -560,23 +572,24 @@ namespace EP {
       EP::GUI::Block* block() {return block_;}
       EP::GUI::Socket* socketInIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,const size_t port,std::function<double()> defaultVal) {
         EP::GUI::Socket* socket = new EP::GUI::Socket("socketIn"+name,parent,x,y,EP::GUI::Socket::Direction::Up,name);
-        socketToTaskPort.insert({socket,TaskPort(task(),port)});
+        socketToTaskPortIn.insert({socket,TaskPort(task(),port)});
         socket->canTakeSinkIs([]() {return true;});
         socket->canMakeSourceIs([](EP::GUI::Socket* sink) {return false;});
         socket->onSourceIsIs([this,port](EP::GUI::Socket* source) {
           std::cout << "sourceIs" << std::endl;
-          const TaskPort taskPort = socketToTaskPort[source];
+          const TaskPort taskPort = socketToTaskPortOut[source];
           {
-            std::lock_guard<std::mutex> lock(taskListMutex);
+            std::lock_guard<std::recursive_mutex> lock(taskListMutex);
             task()->inIs(port,taskPort.task,taskPort.port);
           }
           recompileTasks();
         });
-        socket->onSourceDelIs([this,port,defaultVal](EP::GUI::Socket* source) {
+        EP::FlowGUI::Task* t = task();
+        socket->onSourceDelIs([t,port,defaultVal](EP::GUI::Socket* source) {
           std::cout << "sourceDel" << std::endl;
           {
-            std::lock_guard<std::mutex> lock(taskListMutex);
-            task()->inIs(port,std::vector<double>{defaultVal()});
+            std::lock_guard<std::recursive_mutex> lock(taskListMutex);
+            t->inIs(port,std::vector<double>{defaultVal()});
           }
           recompileTasks();
         });
@@ -587,17 +600,18 @@ namespace EP {
                        Task* const task,const size_t port,EP::Function* func,double const value=1.0) {
         EP::GUI::Knob* knob = new EP::GUI::Knob("knob",block,x,y+30,35,35,func);
         knob->onValueIs([knob,task,port](double val) {
-          std::lock_guard<std::mutex> lock(taskListMutex);
+          std::lock_guard<std::recursive_mutex> lock(taskListMutex);
           if (!task->inHasTask(port)) {
             task->inIs(port,std::vector<double>{val});
           }
         });
         knob->valueIs(value);
+        inKnobs_[port] = knob;
         // EP::GUI::Label*  label = new EP::GUI::Label("label"+name,block,x,y+30,10,"XXX",EP::Color(1,1,1));
         // EP::GUI::Slider* slider = new EP::GUI::Slider("slider"+name,block,x,y+45,20,50,false,0.0,1.0,0,0.2);
         // slider->onValIs([label,task,sliderToVal,port](float val) {
         //   label->textIs(std::to_string(int(sliderToVal(val))));
-        //   std::lock_guard<std::mutex> lock(taskListMutex);
+        //   std::lock_guard<std::recursive_mutex> lock(taskListMutex);
         //   if (!task->inHasTask(port)) {
         //     task->inIs(port,std::vector<double>{sliderToVal(val)});
         //   }
@@ -607,7 +621,7 @@ namespace EP {
       }
       EP::GUI::Socket* socketOutIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,const size_t port) {
         EP::GUI::Socket* socket = new EP::GUI::Socket("socketOut"+name,parent,x,y,EP::GUI::Socket::Direction::Down,name);
-        socketToTaskPort.insert({socket,TaskPort(task(),port)});
+        socketToTaskPortOut.insert({socket,TaskPort(task(),port)});
         socket->canTakeSinkIs([]() {return false;});
         socket->canMakeSourceIs([parent](EP::GUI::Socket* sink) {
           Entity* const e1 = blockToEntity[dynamic_cast<EP::GUI::Block*>(sink->parent())];
@@ -635,7 +649,7 @@ namespace EP {
       virtual Task* task()  = 0; // override and return corresponding Task
 
       static void recompileTasks() {
-        std::cout << "recompileTasks" << std::endl;
+        std::cout << "recompileTasks " << blockToEntity.size() << std::endl;
         std::map<Task*,int> taskToDependencies;
         std::vector<Task*> newTaskList;
 
@@ -647,6 +661,9 @@ namespace EP {
           Task* const t = it.second->task();
           const std::vector<Task*> &inTask = t->inTask();
           for (auto &t2 : inTask) {
+            if (t2 && taskToDependencies.find(t2)==taskToDependencies.end()) {
+              throw;// link to task not in new tasklist !
+            }
             if (t2!=NULL) {taskToDependencies[t2]++;}
           }
         }
@@ -667,14 +684,16 @@ namespace EP {
         }
         std::reverse(newTaskList.begin(),newTaskList.end());
 
-        for (auto &t : newTaskList) {// bfs each dag
-          t->print();
-        }
+        // for (auto &t : newTaskList) {
+        //   t->print();
+        // }
 
         {
-          std::lock_guard<std::mutex> lock(taskListMutex);
+          std::lock_guard<std::recursive_mutex> lock(taskListMutex);
           newTaskList.swap(taskList);
         }
+        std::cout << "end recompileTasks " << blockToEntity.size() << std::endl;
+
       }
       std::string serialize(std::map<Entity*, size_t> &entityToId, std::map<Task*, Entity*> &taskToEntity){
         const size_t id = entityToId[this];
@@ -686,9 +705,14 @@ namespace EP {
           +std::to_string(entityToId[taskToEntity[task()->inTask()[i]]])+","
           +std::to_string(task()->inTaskPort()[i])+"\n";
           ret+="inValue_"+std::to_string(i)+"=";
-          for (size_t j = 0; j < task()->inValue()[i].size(); j++) {
-            if (j>0) {ret+=",";}
-            ret+=std::to_string(task()->inValue()[i][j]);
+          EP::GUI::Knob* k = inKnobs_[i];
+          if (k) {
+            ret+=std::to_string(k->value());
+          } else {
+            for (size_t j = 0; j < task()->inValue()[i].size(); j++) {
+              if (j>0) {ret+=",";}
+              ret+=std::to_string(task()->inValue()[i][j]);
+            }
           }
           ret+="\n";
         }
@@ -1131,10 +1155,14 @@ namespace EP {
     }
 
     static void stringToEntities(std::string &input,EP::GUI::BlockHolder* const bh) {
-      std::cout << "clean" << std::endl;
-      for (auto &it : blockToEntity) {
-        Entity* const e = it.second;
-        e->doDelete();
+      {
+        std::lock_guard<std::recursive_mutex> lock(taskListMutex);
+        std::cout << "clean" << std::endl;
+        for (auto &it : blockToEntity) {
+          Entity* const e = it.second;
+          e->doDelete();
+        }
+        Entity::recompileTasks();
       }
 
       std::cout << "construct" << std::endl;
@@ -1165,6 +1193,9 @@ namespace EP {
           }
         }
       }
+
+      std::lock_guard<std::recursive_mutex> lock(taskListMutex);
+
       std::map<size_t, Entity*> idToEntity;
       for (auto &it : idToData) { // generate entities
         EntityData* data = it.second;

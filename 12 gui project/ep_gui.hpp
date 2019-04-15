@@ -324,11 +324,14 @@ namespace EP {
       Area* parent() {return parent_;}
       Area* firstChild() {return children_.front();}
       bool isFirstChild() {return parent_?this==parent_->firstChild():true;}
-      void doDelete() {
+      void doDelete(bool const doNotify = true) {
         if (isDeleted_) {return;}
         isDeleted_ = true;
 
-        onDeleteNotify(this);
+        if (doNotify) {
+          goDeleteNotify();
+        }
+
         std::cout << "checkFocus" << std::endl;
         if (isFocus()) {unFocus();}
         std::cout << "doDelete: " << fullName() << std::endl;
@@ -336,7 +339,7 @@ namespace EP {
         // cannot use original, bc is modified by children
         for (auto &c : cCopy) {
           std::cout << "inc" << c->fullName() << std::endl;
-          c->doDelete();
+          c->doDelete(false);
           std::cout << "outc" << std::endl;
         }
         std::cout << "rm from parent: " << fullName() << std::endl;
@@ -346,6 +349,24 @@ namespace EP {
         std::cout << "done." << std::endl;
       }
 
+      void goDeleteNotify() {
+        // goes down the tree, recursively
+        //processing each node for delete notification
+        // post-order
+        for (auto &c : children_) {
+          c->goDeleteNotify();
+        }
+
+        onDeleteNotify(this);
+      }
+      void onDeleteIs(std::function<void(Area*)> f) {onDelete_.push_back(f);}
+      void onDeleteNotify(Area* const a) {
+        // runs up the tree, notifies on each step if required
+        for (auto &f : onDelete_) {f(a);}
+        if (parent_) {
+          parent_->onDeleteNotify(a);
+        }
+      }
       void setFocus(bool isRecursive=false) {
         //std::cout << "setFocus " << fullName() << std::endl;
         if (!isRecursive) {
@@ -389,13 +410,7 @@ namespace EP {
       bool isFocusPath() {return isFocusPath_;}
 
       void colorIs(Color c) {bgColor_=c;}
-      void onDeleteIs(std::function<void(Area*)> f) {onDelete_.push_back(f);}
-      void onDeleteNotify(Area* const a) {
-        for (auto &f : onDelete_) {f(a);}
-        if (parent_) {
-          parent_->onDeleteNotify(a);
-        }
-      }
+
     protected:
       std::string name_;
       Area* parent_ = NULL;
@@ -1250,7 +1265,7 @@ namespace EP {
         sf::Vector2u size = renderWindow_->getSize();
         mainArea_ = (new EP::GUI::Area("main",NULL,0,0,size.x,size.y))->fillParentIs(true);
         mainArea_->onDeleteIs([this](Area* const a) {
-          if(mouseOverArea_==a){mouseOverIs(NULL);}// make sure deleted items are out of mouseOver
+          forgetArea(a);
         });
 
         sf::Vector2i mousepos = sf::Mouse::getPosition(*renderWindow_);
@@ -1259,6 +1274,11 @@ namespace EP {
       }
       sf::RenderWindow* target() {return renderWindow_;}
       Area* area() {return mainArea_;}
+
+      void forgetArea(Area* const a) {
+        if (mouseDownArea_==a) {mouseDownReset();}
+        if(mouseOverArea_==a){mouseOverIs(NULL);}
+      }
 
       void mouseOverIs(Area* const mouseOverNew) {
         if (mouseOverArea_!=mouseOverNew) {
@@ -1364,28 +1384,6 @@ namespace EP {
 
               EP::GUI::Area* mouseOverNew = mainArea_->checkMouseOver(lastMouseX_,lastMouseY_);
               mouseOverIs(mouseOverNew);
-              // if (mouseOverArea_!=mouseOverNew) {
-              //   // end old:
-              //   if (!mouseDownCaptured_ && mouseDownArea_!=NULL && mouseDownArea_!=mouseOverNew) {
-              //     mouseDownArea_->onMouseDownEnd(mouseDownCaptured_,false,lastMouseX_,lastMouseY_,mouseOverArea_);
-              //     mouseDownArea_=NULL;
-              //   }
-              //   if (mouseOverArea_!=NULL) {
-              //     mouseOverArea_->onMouseOverEnd();
-              //     mouseOverArea_=NULL;
-              //   }
-              //   // start new:
-              //   if (mouseOverNew!=NULL) {
-              //     mouseOverArea_ = mouseOverNew;
-              //     mouseOverArea_->onMouseOverStart();
-              //
-              //     if (mouseDown_ && !mouseDownArea_) {
-              //       mouseDownArea_ = mouseOverArea_;
-              //       mouseDownArea_->onMouseDownStart(false,lastMouseX_,lastMouseY_);
-              //       mouseDownCaptured_ = false;
-              //     }
-              //   }
-              // }
               break;
             }
             case sf::Event::KeyPressed: {

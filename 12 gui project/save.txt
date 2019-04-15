@@ -1,123 +1,25 @@
-@1 EntityLFO
-position=37.000000,20.000000
-inTask_0=0,0
-inValue_0=7.113476
-inTask_1=0,0
+@1 EntityFM
+position=383.000000,214.000000
+inTask_0=4,0
+inValue_0=440.000000
+inTask_1=3,0
 inValue_1=0.000000
-inTask_2=0,0
-inValue_2=0.000000
-@2 EntityValuePicker
-position=684.000000,118.000000
-value=690.279057
-@3 EntityFM
-position=819.000000,449.000000
-inTask_0=10,0
-inValue_0=690.279053,869.697144,1034.250000,1380.558105,1739.394287,2068.500000,2761.116211,3478.788574,4137.000000,5522.232422
-inTask_1=5,0
-inValue_1=-0.980274,-0.939719,-0.131226,0.643720,0.960694,0.867910,-0.577443,0.993949,-0.953996,0.369172
-inTask_2=14,1
-inValue_2=0.000000
-@4 EntityKeyPad
-position=199.000000,50.000000
-inTask_0=1,0
-inValue_0=0.565332
-@5 EntityLFO
-position=875.000000,222.000000
-inTask_0=10,0
-inValue_0=690.279053,869.697144,1034.250000,1380.558105,1739.394287,2068.500000,2761.116211,3478.788574,4137.000000,5522.232422
-inTask_1=0,0
-inValue_1=1.000000
 inTask_2=0,0
 inValue_2=1.000000
-@6 EntityEnvelope
-position=397.000000,258.000000
+@2 EntityAudioOut
+position=573.000000,400.000000
+inTask_0=1,0
+inValue_0=-0.576966
+inTask_1=0,0
+inValue_1=0.180802
+@3 EntityFM
+position=607.000000,95.000000
 inTask_0=4,0
-inValue_0=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000
-inTask_1=0,0
-inValue_1=0.000000
-inTask_2=16,0
-inValue_2=0.000844
-inTask_3=0,0
-inValue_3=0.053322
-inTask_4=0,0
-inValue_4=0.000000
-inTask_5=0,0
-inValue_5=0.207172
-inTask_6=0,0
-inValue_6=0.487141
-@7 EntityAudioOut
-position=642.000000,628.000000
-inTask_0=8,0
-inValue_0=0.000000,0.000000,0.000000,0.000000,-0.038543,0.044006,-0.163506,-0.596479,0.000000,0.000000
-inTask_1=0,0
-inValue_1=0.405642
-@8 EntityMultiplyAndAdd
-position=614.000000,507.000000
-inTask_0=6,0
-inValue_0=0.000000,0.000000,0.000000,0.000000,0.045138,0.104928,0.164708,0.812943,0.000000,0.000000
-inTask_1=3,0
-inValue_1=-0.878783,0.774810,0.382278,0.477852,-0.853890,0.419396,-0.992703,-0.733729,-0.405914,0.982673
-inTask_2=0,0
-inValue_2=0.000000
-@9 EntityChordPicker
-position=593.000000,34.000000
-@10 EntityQuantizer
-position=742.000000,219.000000
-inTask_0=4,1
-inValue_0=0.000000,1.000000,2.000000,3.000000,4.000000,5.000000,6.000000,7.000000,8.000000,9.000000
-inTask_1=11,0
-inValue_1=690.279053,869.697144,1034.250000,1380.558105
-@11 EntityMultiplyAndAdd
-position=572.000000,119.000000
-inTask_0=9,0
-inValue_0=1.000000,1.259921,1.498307,2.000000
-inTask_1=2,0
-inValue_1=690.279053
-inTask_2=0,0
-inValue_2=0.000000
-@12 EntityLFO
-position=894.000000,61.000000
-inTask_0=0,0
-inValue_0=0.010950
+inValue_0=440.000000
 inTask_1=0,0
 inValue_1=0.000000
 inTask_2=0,0
 inValue_2=0.000000
-@13 EntityValuePicker
-position=196.000000,298.000000
-value=0.010035
-@14 EntityEnvelope
-position=414.000000,383.000000
-inTask_0=0,0
-inValue_0=0.000000
-inTask_1=0,0
-inValue_1=0.000000
-inTask_2=16,0
-inValue_2=0.000844
-inTask_3=0,0
-inValue_3=0.068062
-inTask_4=0,0
-inValue_4=0.000000
-inTask_5=0,0
-inValue_5=0.216802
-inTask_6=0,0
-inValue_6=1.026382
-@15 EntityLFO
-position=45.000000,281.000000
-inTask_0=0,0
-inValue_0=0.122437
-inTask_1=0,0
-inValue_1=0.000000
-inTask_2=0,0
-inValue_2=0.000000
-@16 EntityMultiplyAndAdd
-position=190.000000,476.000000
-inTask_0=15,0
-inValue_0=-0.977125
-inTask_1=13,0
-inValue_1=0.010035
-inTask_2=17,0
-inValue_2=0.010649
-@17 EntityValuePicker
-position=265.000000,303.000000
-value=0.010649
+@4 EntityValuePicker
+position=118.000000,80.000000
+value=611.512921
