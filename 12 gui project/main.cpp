@@ -873,9 +873,18 @@ namespace EP {
             recomputeValues();
           });
           flipButton(i);
-          if (i%12==0) {
-            flipButton(i);
+        }
+
+        if (data->values.find("dataChord")!=data->values.end()) {
+          std::vector<std::string> &chord = data->values["dataChord"];
+          for (size_t i = 0; i < numFreq; i++) {
+            if (chord[i]=="1") {
+              flipButton(i);
+            }
           }
+        } else {
+          flipButton(0);
+          flipButton(12);
         }
         recomputeValues();
 
@@ -885,6 +894,16 @@ namespace EP {
       }
       virtual Task* task() {return taskInputValue_;}
       virtual std::string serializeName() {return "EntityChordPicker";}
+
+      virtual std::string serializeData() {
+        std::string res = "dataChord=";
+        for (size_t i = 0; i < activated_.size(); i++) {
+          if (i>0) {res+=",";}
+          res+=activated_[i]?"1":"0";
+        }
+        res+="\n";
+        return res;
+      }
     protected:
       TaskInputValue* taskInputValue_;
       std::vector<EP::GUI::Button*> buttons_;
@@ -926,16 +945,16 @@ namespace EP {
       EntityMultiplyAndAdd(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskMultiplyAndAdd();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,data->x,data->y,80,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,data->x,data->y,130,130,EP::Color(0.5,0.1,0.5));
         blockIs(block);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Mult Add",EP::Color(0.5,0.5,1));
 
-        socketInIs(block,5,5,"In",TaskMultiplyAndAdd::In::Input,[]() {return 0;});
-        socketInIs(block,30,5,"Fact",TaskMultiplyAndAdd::In::Factor,[]() {return 0;});
-        socketInIs(block,55,5,"Add",TaskMultiplyAndAdd::In::Shift,[]() {return 0;});
+        packageInIs(block,5 ,5,"A" ,task(),TaskMultiplyAndAdd::In::Input,new EP::FunctionExp(0.0001,10000),1);
+        packageInIs(block,45 ,5,"*B" ,task(),TaskMultiplyAndAdd::In::Factor,new EP::FunctionExp(0.0001,10000),1);
+        packageInIs(block,85 ,5,"+C" ,task(),TaskMultiplyAndAdd::In::Shift,new EP::FunctionExp(0.0001,10000),0);
 
-        socketOutIs(block,5,50,"Out",TaskMultiplyAndAdd::Out::Signal);
+        socketOutIs(block,5,80,"Out",TaskMultiplyAndAdd::Out::Signal);
       }
       virtual Task* task() {return task_;}
       virtual std::string serializeName() {return "EntityMultiplyAndAdd";}
@@ -1000,12 +1019,36 @@ namespace EP {
           }
         });
 
+        if (data->values.find("dataCol_0")!=data->values.end()) {
+          for (size_t c = 0; c < task_->numCols(); c++) {
+            std::vector<std::string> &col = data->values["dataCol_"+std::to_string(c)];
+            for (size_t r = 0; r < task_->numRows(); r++) {
+              if (col[r]=="1") {
+                task_->invertCell(r,c);
+              }
+            }
+          }
+        }
+
         socketOutIs(block,5,170,"Sig",TaskKeyPad::Out::Signal);
         socketOutIs(block,30,170,"Row",TaskKeyPad::Out::Row);
 
       }
       virtual Task* task() {return task_;}
       virtual std::string serializeName() {return "EntityKeyPad";}
+      virtual std::string serializeData() {
+        std::string res = "";
+        for (size_t c = 0; c < task_->numCols(); c++) {
+          res+="dataCol_"+std::to_string(c)+"=";
+          for (size_t r = 0; r < task_->numRows(); r++) {
+            const bool cell = task_->cell(r,c);
+            if (r>0) {res+=",";}
+            res+=cell?"1":"0";
+          }
+          res+="\n";
+        }
+        return res;
+      }
     protected:
       std::vector<std::vector<EP::GUI::Button*>> buttons_;
       TaskKeyPad* task_;
