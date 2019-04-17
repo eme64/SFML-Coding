@@ -1153,10 +1153,10 @@ namespace EP {
         parent_->childSize(cdx,cdy);parent_->childOffset(cx,cy);
 
         if (isCaptured) {
-          moveX=std::max(cx-x_,std::min(cx+cdx-x_-dx_,dx));
-          dx=moveX;
-          moveY=std::max(cy-y_,std::min(cy+cdy-y_-dy_,dy));
-          dy=moveY;
+          moveX=std::max(cx-x_,std::min(cx+cdx-x_-dx_,dx/globalScale()));
+          dx=moveX*globalScale();
+          moveY=std::max(cy-y_,std::min(cy+cdy-y_-dy_,dy/globalScale()));
+          dy=moveY*globalScale();
         }
         if (moveX!=0 || moveY!=0) {positionIs(x_+moveX,y_+moveY);}
         return true;
