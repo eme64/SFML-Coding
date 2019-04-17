@@ -49,6 +49,11 @@ namespace EP {
   }
 
   namespace FlowGUI {
+    static EP::Color blockColRegular = EP::Color(0.2,0.2,0.2);
+    static EP::Color labelColRegular = EP::Color(0.8,0.8,0.8);
+    static EP::Color labelColIO = EP::Color(1,0.5,0.5);
+
+
     class Entity;
 
     // Ideas:
@@ -740,14 +745,14 @@ namespace EP {
       EntityFM(EP::GUI::Area* const parent,EntityData* const data) {
         taskOsc_ = new TaskOscillator();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,data->x,data->y,130,200,EP::Color(0.5,0.5,1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,data->x,data->y,130,200,blockColRegular);
         blockIs(block);
 
         packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,new EP::FunctionExp(2,20000),440.0);
         packageInIs(block,45,5,"Mod",task(),TaskOscillator::In::Mod,new EP::FunctionLin(-1,1),0);
         packageInIs(block,85,5,"Fac",task(),TaskOscillator::In::ModFactor,new EP::FunctionLin(0,1),0);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"FM Osc.",EP::Color(0.5,0.5,1));
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"FM Osc.",labelColRegular);
 
         socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
       }
@@ -762,14 +767,14 @@ namespace EP {
       EntityLFO(EP::GUI::Area* const parent,EntityData* const data) {
         taskOsc_ = new TaskOscillator();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,data->x,data->y,130,200,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,data->x,data->y,130,200,blockColRegular);
         blockIs(block);
 
         packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,new EP::FunctionExp(0.0001,100),1);
         packageInIs(block,45,5,"Mod",task(),TaskOscillator::In::Mod,new EP::FunctionLin(-1,1),0);
         packageInIs(block,85,5,"Fac",task(),TaskOscillator::In::ModFactor,new EP::FunctionLin(0,1),0);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"LFO Osc.",EP::Color(0.5,0.5,1));
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"LFO Osc.",labelColRegular);
 
         socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
       }
@@ -784,10 +789,10 @@ namespace EP {
       EntityTrigger(EP::GUI::Area* const parent,EntityData* const data) {
         taskTrigger_ = new TaskTrigger();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockTrigger",parent,data->x,data->y,100,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockTrigger",parent,data->x,data->y,100,100,blockColRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Trigger",EP::Color(0.5,0.5,1));
+        //EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Trigger",labelColRegular);
 
         EP::GUI::Button* button = new EP::GUI::Button("buttonTrigger",block,5,5,90,20,"Trigger");
         button->onClickIs([this]() {taskTrigger_->setTrigger();});
@@ -805,7 +810,7 @@ namespace EP {
       EntityValuePicker(EP::GUI::Area* const parent,EntityData* const data) {
         taskInputValue_ = new TaskInputValue();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,data->x,data->y,50,85,EP::Color(0.5,0.5,0.1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,data->x,data->y,50,85,blockColRegular);
         blockIs(block);
 
         knob_ = new EP::GUI::Knob("knob",block,5,5,40,40,new EP::FunctionExp(0.00001,100000));
@@ -835,7 +840,7 @@ namespace EP {
       EntityChordPicker(EP::GUI::Area* const parent,EntityData* const data) {
         taskInputValue_ = new TaskInputValue();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockChordPicker",parent,data->x,data->y,200,70,EP::Color(0.5,0.1,0.1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockChordPicker",parent,data->x,data->y,200,70,blockColRegular);
         blockIs(block);
 
         const double ddx = 15;
@@ -917,10 +922,10 @@ namespace EP {
       EntityEnvelope(EP::GUI::Area* const parent,EntityData* const data) {
         taskEnvelope_ = new TaskEnvelope();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,data->x,data->y,260,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,data->x,data->y,260,100,blockColRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Envelope",EP::Color(0.5,0.5,1));
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Envelope",labelColRegular);
 
         socketInIs(block,5,5,"Main",TaskEnvelope::In::Pulse,[]() {return 0;});
         socketInIs(block,30,5,"In",TaskEnvelope::In::Input,[]() {return 0;});
@@ -945,10 +950,10 @@ namespace EP {
       EntityMultiplyAndAdd(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskMultiplyAndAdd();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,data->x,data->y,130,130,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,data->x,data->y,130,130,blockColRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Mult Add",EP::Color(0.5,0.5,1));
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Mult Add",labelColRegular);
 
         packageInIs(block,5 ,5,"A" ,task(),TaskMultiplyAndAdd::In::Input,new EP::FunctionExp(0.0001,10000),1);
         packageInIs(block,45 ,5,"*B" ,task(),TaskMultiplyAndAdd::In::Factor,new EP::FunctionExp(0.0001,10000),1);
@@ -967,10 +972,10 @@ namespace EP {
       EntityQuantizer(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskQuantizer();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockTaskQuantizer",parent,data->x,data->y,80,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockTaskQuantizer",parent,data->x,data->y,80,100,blockColRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Quantizer",EP::Color(0.5,0.5,1));
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Quantizer",labelColRegular);
 
         socketInIs(block,5,5,"In",TaskQuantizer::In::Input,[]() {return 0;});
         socketInIs(block,30,5,"Fq",TaskQuantizer::In::Chord,[]() {return 0;});
@@ -989,7 +994,7 @@ namespace EP {
       EntityKeyPad(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskKeyPad(10,32);
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,data->x,data->y,350,200,EP::Color(0.2,0.1,0.1));
+        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,data->x,data->y,350,200,blockColRegular);
         blockIs(block);
 
         socketInIs(block,5,5,"Clk",TaskKeyPad::In::Clock,[]() {return 0;});
@@ -1059,11 +1064,11 @@ namespace EP {
       EntityAudioOut(EP::GUI::Area* const parent,EntityData* const data) {
         taskAudioOut_ = new TaskAudioOut();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,data->x,data->y,100,100,EP::Color(1,0.5,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,data->x,data->y,100,100,blockColRegular);
         blockIs(block);
         socketMain_  = socketInIs(block,5,5,"Main",TaskAudioOut::In::Signal,[]() {return 0;});
         packageInIs(block,30,5,"A",task(),TaskAudioOut::In::Amplitude,new EP::FunctionLin(0,1),1);
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Audio Out",EP::Color(1,0.5,0.5));
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Audio Out",labelColIO);
       }
       virtual Task* task() {return taskAudioOut_;}
       virtual std::string serializeName() {return "EntityAudioOut";}
@@ -1077,10 +1082,10 @@ namespace EP {
       EntityAudioIn(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskAudioIn();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockAudioIn",parent,data->x,data->y,80,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockAudioIn",parent,data->x,data->y,80,100,blockColRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"AudioIn",EP::Color(0.5,0.5,1));
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"AudioIn",labelColIO);
 
         socketOutIs(block,5,50,"In",TaskAudioIn::Out::Signal);
       }
@@ -1095,10 +1100,10 @@ namespace EP {
       EntitySignalAnalyzer(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskSignalAnalyzer();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockSignalAnalyzer",parent,data->x,data->y,80,100,EP::Color(0.5,0.1,0.5));
+        EP::GUI::Block* block = new EP::GUI::Block("blockSignalAnalyzer",parent,data->x,data->y,80,100,blockColRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"SignalAnalyzer",EP::Color(0.5,0.5,1));
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"SignalAnalyzer",labelColRegular);
 
         socketInIs(block,5,5,"In",TaskSignalAnalyzer::In::Signal,[]() {return 0;});
 
