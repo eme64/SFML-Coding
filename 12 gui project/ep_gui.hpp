@@ -213,7 +213,9 @@ namespace EP {
       float y() const {return y_;}
       float dx() const {return dx_;}
       float dy() const {return dy_;}
-      virtual float globalX() const {return x_+(parent_?parent_->globalX():0);}
+      virtual float scale() const {return 1;}
+      float globalScale() const {return scale()*(parent_?parent_->globalScale():1);}
+      virtual float globalX() const {return x_*globalScale()+(parent_?parent_->globalX():0);}
       virtual float globalY() const {return y_+(parent_?parent_->globalY():0);}
       std::string name() const {return name_;}
       std::string fullName() const {
@@ -223,10 +225,13 @@ namespace EP {
         }
       }
 
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        DrawRect(x_+px, y_+py, dx_, dy_, target, bgColor_);
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        // draw relative to parent scale (pscale)
+        float gx = x_+px*pscale;
+        float gy = y_+py*pscale;
+        DrawRect(gx, gy, dx_*pscale, dy_*pscale, target, bgColor_);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px, y_+py,target);
+          (*rit)->draw(gx, gy,target,pscale);
         }
       }
 
@@ -250,7 +255,7 @@ namespace EP {
       }
 
       virtual void onMouseOverStart() {}
-      virtual void onMouseOver(const float px,const float py) {}// relative to parent
+      virtual void onMouseOver(const float px,const float py,const float pscale) {}// relative to parent
       virtual void onMouseOverEnd() {}
 
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
@@ -271,15 +276,15 @@ namespace EP {
       }
       // isLastDown: if true indicates that mouse physically released, else only left scope bc not captured
 
-      virtual Area* checkMouseOver(const float px,const float py,const bool doNotify=true) {// relative to parent
-        if (px>=x_ and py>=y_ and px<=(x_+dx_) and py<=(y_+dy_)) {
+      virtual Area* checkMouseOver(const float px,const float py,const float pscale,const bool doNotify=true) {// relative to parent
+        if (px>=x_*pscale and py>=y_*pscale and px<=(x_+dx_)*pscale and py<=(y_+dy_)*pscale) {
           for (auto &c : children_) {
-            Area* over = c->checkMouseOver(px-x_,py-y_,doNotify);
+            Area* over = c->checkMouseOver(px-x_*pscale,py-y_*pscale,pscale*scale(),doNotify);
             if (over!=NULL) {
               return over;
             }
           }
-          if (doNotify) {onMouseOver(px,py);}
+          if (doNotify) {onMouseOver(px,py,pscale);}
           return this;
         }
         return NULL;
@@ -438,13 +443,13 @@ namespace EP {
             )
       : Area(name,parent,x,y,1,1),text_(text),textColor_(textColor),fontSize_(fontSize){}
 
-      virtual Area* checkMouseOver(const float px,const float py,const bool doNotify=true) {// relative to parent
+      virtual Area* checkMouseOver(const float px,const float py,const float pscale,const bool doNotify=true) {// relative to parent
         return NULL;
       }
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        float gx = x_+px;
-        float gy = y_+py;
-        DrawText(gx+1, gy+1, text_, fontSize_, target, textColor_);
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        float gx = x_*pscale+px;
+        float gy = y_*pscale+py;
+        DrawText(gx+1, gy+1, text_, fontSize_*pscale, target, textColor_);
       }
       void textIs(std::string text) {text_=text;}
     protected:
@@ -462,13 +467,13 @@ namespace EP {
             )
       : Area(name,parent,x,y,dx,dy),text_(text),bgColors_(bgColors),textColors_(textColors){}
 
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        float gx = x_+px;
-        float gy = y_+py;
-        DrawRect(gx, gy, dx_, dy_, target, bgColors_[state_]);
-        DrawText(gx+1, gy+1, text_, (dy_-2), target, textColors_[state_]);
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        float gx = x_*pscale+px;
+        float gy = y_*pscale+py;
+        DrawRect(gx, gy, dx_*pscale, dy_*pscale, target, bgColors_[state_]);
+        DrawText(gx+1, gy+1, text_, (dy_-2)*pscale, target, textColors_[state_]);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px, y_+py,target);
+          (*rit)->draw(gx,gy,target,pscale);
         }
       }
 
@@ -511,12 +516,12 @@ namespace EP {
       }
       ~Knob() {delete func_;}
 
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        float gx = x_+px;
-        float gy = y_+py;
-        float centerX = gx+dx_*0.5;
-        float centerY = gy+dy_*0.5;
-        float r = std::min(dx_,dy_)*0.5;
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        float gx = x_*pscale+px;
+        float gy = y_*pscale+py;
+        float centerX = gx+dx_*0.5*pscale;
+        float centerY = gy+dy_*0.5*pscale;
+        float r = std::min(dx_,dy_)*0.5*pscale;
         DrawOval(centerX-r,centerY-r, r*2,r*2,target,bgColor_);
         float angle0 = M_PI*2*0.3;
         float angle2 = M_PI*2*1.2;
@@ -589,12 +594,12 @@ namespace EP {
                                       );
       }
 
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {// px global pos of parent
-        float gx = x_+px;
-        float gy = y_+py;
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {// px global pos of parent
+        float gx = x_*pscale+px;
+        float gy = y_*pscale+py;
 
-        DrawRect(gx, gy, dx_, dy_, target, bgColor_*(isFocusPath()?1.0:0.8));
-        DrawText(gx+borderSize+headerSize, gy+borderSize, title_, (headerSize-2*borderSize), target, Color(1,1,1));
+        DrawRect(gx, gy, dx_*pscale, dy_*pscale, target, bgColor_*(isFocusPath()?1.0:0.8));
+        DrawText(gx+borderSize+headerSize, gy+borderSize, title_, (headerSize-2*borderSize)*pscale, target, Color(1,1,1));
 
         {
           float cx,cy,cdx,cdy;childSize(cdx,cdy);childOffset(cx,cy);
@@ -602,12 +607,12 @@ namespace EP {
 
           for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
             if (closeButton_!=(*rit)) {
-              (*rit)->draw(gx,gy,target);
+              (*rit)->draw(gx,gy,target,pscale);
             }
           }
         }
 
-        closeButton_->draw(gx,gy,target);
+        closeButton_->draw(gx,gy,target,pscale);
       }
 
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
@@ -723,12 +728,12 @@ namespace EP {
             state_=0;
           }
         }
-        virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-          float gx = x_+px;
-          float gy = y_+py;
-          DrawRect(gx, gy, dx_, dy_, target, buttonColors_[state_]);
+        virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+          float gx = x_*pscale+px;
+          float gy = y_*pscale+py;
+          DrawRect(gx, gy, dx_*pscale, dy_*pscale, target, buttonColors_[state_]);
           for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-            (*rit)->draw(x_+px, y_+py,target);
+            (*rit)->draw(gx, gy,target,pscale);
           }
         }
       protected:
@@ -813,12 +818,12 @@ namespace EP {
         }
       }
 
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        float gx = x_+px;
-        float gy = y_+py;
-        DrawRect(gx, gy, dx_, dy_, target, bgColors_[state_]);
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        float gx = x_*pscale+px;
+        float gy = y_*pscale+py;
+        DrawRect(gx, gy, dx_*pscale, dy_*pscale, target, bgColors_[state_]);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px, y_+py,target);
+          (*rit)->draw(gx, gy,target,pscale);
         }
       }
 
@@ -840,10 +845,10 @@ namespace EP {
           child_->parentIs(this);
           childIs(child_);
         }
-        virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-          float gx = x_+px;
-          float gy = y_+py;
-          DrawRect(gx, gy, dx_, dy_, target, bgColor_);
+        virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+          float gx = x_*pscale+px;
+          float gy = y_*pscale+py;
+          DrawRect(gx, gy, dx_*pscale, dy_*pscale, target, bgColor_);
 
           sf::View viewOld = target.getView(); // push new view
           sf::View view;
@@ -858,19 +863,19 @@ namespace EP {
           target.setView(view);
 
           for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-              (*rit)->draw(gx+childOffsetX_,gy+childOffsetY_,target);
+              (*rit)->draw(gx+childOffsetX_,gy+childOffsetY_,target,pscale);
           }
           target.setView(viewOld);// pop new view
         }
-        virtual Area* checkMouseOver(const float px,const float py,const bool doNotify=true) {// relative to parent
-          if (px>=x_ and py>=y_ and px<=(x_+dx_) and py<=(y_+dy_)) {
+        virtual Area* checkMouseOver(const float px,const float py,const float pscale,const bool doNotify=true) {// relative to parent
+          if (px>=x_*pscale and py>=y_*pscale and px<=(x_+dx_)*pscale and py<=(y_+dy_)*pscale) {
             for (auto &c : children_) {
-              Area* over = c->checkMouseOver(px-x_-childOffsetX_,py-y_-childOffsetY_,doNotify);
+              Area* over = c->checkMouseOver(px-x_*pscale-childOffsetX_,py-y_*pscale-childOffsetY_,doNotify);
               if (over!=NULL) {
                 return over;
               }
             }
-            if (doNotify) {onMouseOver(px,py);}
+            if (doNotify) {onMouseOver(px,py,pscale);}
             return this;
           }
           return NULL;
@@ -1019,23 +1024,25 @@ namespace EP {
         }
       }
 
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        float gx = x_+px;
-        float gy = y_+py;
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        const float gx = x_*pscale+px;
+        const float gy = y_*pscale+py;
+        const float dx_s = dx_*pscale;
+        const float dy_s = dy_*pscale;
 
         switch (direction_) {
           case Direction::Up:{
-            DrawOval(gx, gy, dx_,dx_,target,bgColor_);
-            DrawRect(gx, gy+dx_*0.5, dx_, dy_-dx_*0.5, target, bgColor_);
-            DrawOval(gx+dx_*0.25, gy+dx_*0.25, dx_*0.5,dx_*0.5,target,socketColor_);
-            DrawText(gx+1, gy+dy_*0.5, text_, (dy_-dx_), target, textColor_);
+            DrawOval(gx, gy, dx_s,dx_s,target,bgColor_);
+            DrawRect(gx, gy+dx_s*0.5, dx_s, dy_s-dx_s*0.5, target, bgColor_);
+            DrawOval(gx+dx_s*0.25, gy+dx_s*0.25, dx_s*0.5,dx_s*0.5,target,socketColor_);
+            DrawText(gx+1, gy+dy_s*0.5, text_, (dy_s-dx_s), target, textColor_);
             break;
           }
           case Direction::Down:{
-            DrawOval(gx, gy+dy_-dx_, dx_,dx_,target,bgColor_);
-            DrawRect(gx, gy, dx_, dy_-dx_*0.5, target, bgColor_);
-            DrawOval(gx+dx_*0.25, gy+dy_-dx_*0.75, dx_*0.5,dx_*0.5,target,socketColor_);
-            DrawText(gx+1, gy+1, text_, (dy_-dx_), target, textColor_);
+            DrawOval(gx, gy+dy_s-dx_s, dx_s,dx_s,target,bgColor_);
+            DrawRect(gx, gy, dx_s, dy_s-dx_s*0.5, target, bgColor_);
+            DrawOval(gx+dx_s*0.25, gy+dy_s-dx_s*0.75, dx_s*0.5,dx_s*0.5,target,socketColor_);
+            DrawText(gx+1, gy+1, text_, (dy_s-dx_s), target, textColor_);
             break;
           }
         }
@@ -1053,7 +1060,7 @@ namespace EP {
         }
 
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px, y_+py,target);
+          (*rit)->draw(gx, gy,target,pscale);
         }
       }
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
@@ -1123,13 +1130,15 @@ namespace EP {
           case sf::Keyboard::Key::Delete:{doDelete(); break;}
         }
       }
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
         if (onDraw_) {onDraw_();}
+        const float gx = px+x_*pscale;
+        const float gy = py+y_*pscale;
 
-        DrawRect(x_+px, y_+py, dx_, dy_, target, bgColor_*(isFocus()?1.0:0.4));
-        DrawRect(x_+px+2, y_+py+2, dx_-4, dy_-4, target, bgColor_*0.7);
+        DrawRect(gx, gy, dx_*pscale, dy_*pscale, target, bgColor_*(isFocus()?1.0:0.4));
+        DrawRect(gx+2, gy+2, dx_*pscale-4, dy_*pscale-4, target, bgColor_*0.7);
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px, y_+py,target);
+          (*rit)->draw(gx,gy,target,pscale);
         }
       }
 
@@ -1165,20 +1174,35 @@ namespace EP {
                   const float x,const float y,const float dx,const float dy
                  )
       : Area(name,parent,x,y,dx,dy){}
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        DrawRect(x_+px, y_+py, dx_, dy_, target, bgColor_);
-        const float tileD = 100.0;
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        const float gx = px+x_*pscale;
+        const float gy = py+y_*pscale;
+
+        DrawRect(gx,gy, dx_*pscale, dy_*pscale, target, bgColor_);
+        const float tileD = 100.0*pscale*scale_;
         for (size_t x = 0; x < dx_/tileD+1; x++) {
           for (size_t y = 0; y < dy_/tileD+1; y++) {
-            DrawRect(x_+px+x*tileD, y_+py+y*tileD, tileD-2, tileD-2, target, bgColor_*0.5);
+            DrawRect(gx+x*tileD, gy+y*tileD, tileD-2, tileD-2, target, bgColor_*0.5);
           }
         }
 
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px, y_+py,target);
+          (*rit)->draw(gx,gy,target,pscale*scale_);
+        }
+      }
+      virtual float scale() const {return scale_;}
+      void scaleMult(const float _factor) {
+        scale_*=_factor;
+        std::cout << "scaleMult: " << scale_ << std::endl;
+      }
+      virtual void onKeyPressed(const sf::Keyboard::Key keyCode) {
+        switch (keyCode) {
+          case sf::Keyboard::Key::Subtract:{scaleMult(0.9); break;}
+          case sf::Keyboard::Key::Add:{scaleMult(1.1); break;}
         }
       }
     protected:
+      float scale_ = 1.0;
     };
 
 
@@ -1199,18 +1223,18 @@ namespace EP {
       }
       void doInstantiateIs(std::function<void(BlockHolder*,const float,const float)> f) {doInstantiate_=f;}
 
-      virtual void draw(const float px,const float py, sf::RenderTarget &target) {
-        float gx = x_+px;
-        float gy = y_+py;
-        DrawRect(gx, gy, dx_, dy_, target, bgColor_);
-        DrawText(gx+1, gy+1, text_, (dy_-2), target, textColor_);
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        float gx = x_*pscale+px;
+        float gy = y_*pscale+py;
+        DrawRect(gx, gy, dx_*pscale, dy_*pscale, target, bgColor_);
+        DrawText(gx+1, gy+1, text_, (dy_-2)*pscale, target, textColor_);
         if (isDraggingTemplate1_) {
           ViewAnchor viewAnchor(target);// jailbreak
-          DrawRect(isDraggingTemplateX_, isDraggingTemplateY_, dx_, dy_, target, bgColor_);
-          DrawText(isDraggingTemplateX_+1, isDraggingTemplateY_+1, text_, (dy_-2), target, textColor_);
+          DrawRect(isDraggingTemplateX_, isDraggingTemplateY_, dx_*pscale, dy_*pscale, target, bgColor_);
+          DrawText(isDraggingTemplateX_+1, isDraggingTemplateY_+1, text_, (dy_-2)*pscale, target, textColor_);
         }
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
-          (*rit)->draw(x_+px, y_+py,target);
+          (*rit)->draw(gx,gy,target,pscale);
         }
       }
       virtual bool onMouseDownStart(const bool isFirstDown,const float x,const float y) {
@@ -1382,7 +1406,7 @@ namespace EP {
                 sf::Mouse::setPosition(sf::Vector2i(lastMouseX_,lastMouseY_),*renderWindow_);
               }
 
-              EP::GUI::Area* mouseOverNew = mainArea_->checkMouseOver(lastMouseX_,lastMouseY_);
+              EP::GUI::Area* mouseOverNew = mainArea_->checkMouseOver(lastMouseX_,lastMouseY_,1.0);
               mouseOverIs(mouseOverNew);
               break;
             }
@@ -1407,7 +1431,7 @@ namespace EP {
       }
       void draw() {
         renderWindow_->clear();
-        mainArea_->draw(0,0,*renderWindow_);
+        mainArea_->draw(0,0,*renderWindow_,1);
         // DrawDot(MOUSE_X, MOUSE_Y, window, sf::Color(255*MOUSE_RIGHT_DOWN,255*MOUSE_LEFT_DOWN,255));
         if (mouseOverArea_) {
           EP::DrawText(5,5, "over: " + mouseOverArea_->fullName(), 10, *renderWindow_, EP::Color(1.0,1.0,1.0));
