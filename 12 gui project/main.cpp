@@ -50,9 +50,13 @@ namespace EP {
   }
 
   namespace FlowGUI {
-    static EP::Color blockColRegular = EP::Color(0.2,0.2,0.2);
-    static EP::Color labelColRegular = EP::Color(0.8,0.8,0.8);
-    static EP::Color labelColIO = EP::Color(1,0.5,0.5);
+    static EP::Color colorBlockRegular = EP::Color(0.2,0.2,0.2);
+    static EP::Color colorLabelRegular = EP::Color(1,1,1);
+
+    static EP::Color colorBlockHolder = EP::Color(0.05,0.05,0.05);
+    static EP::Color colorTrigger = EP::Color(0.5,1,0.5);
+    static EP::Color colorValue = EP::Color(0.5,0.5,1);
+    static EP::Color colorSignal = EP::Color(1,0.5,0.5);
 
 
     class Entity;
@@ -602,7 +606,9 @@ namespace EP {
         inSockets_.push_back(socket);
         return socket;
       }
+
       void packageInIs(EP::GUI::Block* const block,const float x,const float y,std::string name,
+                       EP::Color color,
                        Task* const task,const size_t port,EP::Function* func,double const value=1.0) {
         EP::GUI::Knob* knob = new EP::GUI::Knob("knob",block,x,y+30,35,35,func);
         knob->onValueIs([knob,task,port](double val) {
@@ -613,6 +619,8 @@ namespace EP {
         });
         knob->valueIs(value);
         inKnobs_[port] = knob;
+        knob->knobColorIs(color);
+        knob->colorIs(colorBlockRegular);
         // EP::GUI::Label*  label = new EP::GUI::Label("label"+name,block,x,y+30,10,"XXX",EP::Color(1,1,1));
         // EP::GUI::Slider* slider = new EP::GUI::Slider("slider"+name,block,x,y+45,20,50,false,0.0,1.0,0,0.2);
         // slider->onValIs([label,task,sliderToVal,port](float val) {
@@ -624,8 +632,11 @@ namespace EP {
         // });
         // slider->valIs(sliderDefault);
         EP::GUI::Socket* socket = socketInIs(block,x,y,name,port,[knob]() {return knob->value();});
+        socket->textColorIs(std::vector<EP::Color>{color*0.5,color});
+        socket->connectorColorIs(std::vector<EP::Color>{color,EP::Color(0,0,0)});
       }
-      EP::GUI::Socket* socketOutIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,const size_t port) {
+      EP::GUI::Socket* socketOutIs(EP::GUI::Block* const parent,const float x,const float y,std::string name,
+                                   EP::Color color,const size_t port) {
         EP::GUI::Socket* socket = new EP::GUI::Socket("socketOut"+name,parent,x,y,EP::GUI::Socket::Direction::Down,name);
         socketToTaskPortOut.insert({socket,TaskPort(task(),port)});
         socket->canTakeSinkIs([]() {return false;});
@@ -634,6 +645,8 @@ namespace EP {
           Entity* const e2 = blockToEntity[parent];
           return !e1->canReach(e2);
         });
+        socket->textColorIs(std::vector<EP::Color>{color*0.5,color});
+        socket->connectorColorIs(std::vector<EP::Color>{color,EP::Color(0,0,0)});
         outSockets_.push_back(socket);
         return socket;
       }
@@ -746,16 +759,16 @@ namespace EP {
       EntityFM(EP::GUI::Area* const parent,EntityData* const data) {
         taskOsc_ = new TaskOscillator();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,data->x,data->y,130,200,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockFM",parent,data->x,data->y,130,200,colorBlockRegular);
         blockIs(block);
 
-        packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,new EP::FunctionExp(2,20000),440.0);
-        packageInIs(block,45,5,"Mod",task(),TaskOscillator::In::Mod,new EP::FunctionLin(-1,1),0);
-        packageInIs(block,85,5,"Fac",task(),TaskOscillator::In::ModFactor,new EP::FunctionLin(0,1),0);
+        packageInIs(block,5 ,5,"Fq" ,colorValue,task(),TaskOscillator::In::Freq,new EP::FunctionExp(2,20000),440.0);
+        packageInIs(block,45,5,"Mod",colorValue,task(),TaskOscillator::In::Mod,new EP::FunctionLin(-1,1),0);
+        packageInIs(block,85,5,"Fac",colorValue,task(),TaskOscillator::In::ModFactor,new EP::FunctionLin(0,1),0);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"FM Osc.",labelColRegular);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"FM Osc.",colorLabelRegular);
 
-        socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
+        socketOutIs(block,5,150,"Out",colorSignal,TaskOscillator::Out::Signal);
       }
       virtual Task* task() {return taskOsc_;}
       virtual std::string serializeName() {return "EntityFM";}
@@ -768,16 +781,16 @@ namespace EP {
       EntityLFO(EP::GUI::Area* const parent,EntityData* const data) {
         taskOsc_ = new TaskOscillator();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,data->x,data->y,130,200,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockLFO",parent,data->x,data->y,130,200,colorBlockRegular);
         blockIs(block);
 
-        packageInIs(block,5 ,5,"Fq" ,task(),TaskOscillator::In::Freq,new EP::FunctionExp(0.0001,100),1);
-        packageInIs(block,45,5,"Mod",task(),TaskOscillator::In::Mod,new EP::FunctionLin(-1,1),0);
-        packageInIs(block,85,5,"Fac",task(),TaskOscillator::In::ModFactor,new EP::FunctionLin(0,1),0);
+        packageInIs(block,5 ,5,"Fq" ,colorValue,task(),TaskOscillator::In::Freq,new EP::FunctionExp(0.0001,100),1);
+        packageInIs(block,45,5,"Mod",colorValue,task(),TaskOscillator::In::Mod,new EP::FunctionLin(-1,1),0);
+        packageInIs(block,85,5,"Fac",colorValue,task(),TaskOscillator::In::ModFactor,new EP::FunctionLin(0,1),0);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"LFO Osc.",labelColRegular);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,105,20,"LFO Osc.",colorLabelRegular);
 
-        socketOutIs(block,5,150,"Out",TaskOscillator::Out::Signal);
+        socketOutIs(block,5,150,"Out",colorValue,TaskOscillator::Out::Signal);
       }
       virtual Task* task() {return taskOsc_;}
       virtual std::string serializeName() {return "EntityLFO";}
@@ -790,15 +803,15 @@ namespace EP {
       EntityTrigger(EP::GUI::Area* const parent,EntityData* const data) {
         taskTrigger_ = new TaskTrigger();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockTrigger",parent,data->x,data->y,100,100,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockTrigger",parent,data->x,data->y,100,100,colorBlockRegular);
         blockIs(block);
 
-        //EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Trigger",labelColRegular);
+        //EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Trigger",colorLabelRegular);
 
         EP::GUI::Button* button = new EP::GUI::Button("buttonTrigger",block,5,5,90,20,"Trigger");
         button->onClickIs([this]() {taskTrigger_->setTrigger();});
 
-        socketOutIs(block,5,50,"Out",TaskOscillator::Out::Signal);
+        socketOutIs(block,5,50,"Out",colorTrigger,TaskOscillator::Out::Signal);
       }
       virtual Task* task() {return taskTrigger_;}
       virtual std::string serializeName() {return "EntityTrigger";}
@@ -811,10 +824,12 @@ namespace EP {
       EntityValuePicker(EP::GUI::Area* const parent,EntityData* const data) {
         taskInputValue_ = new TaskInputValue();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,data->x,data->y,50,85,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockValuePicker",parent,data->x,data->y,50,85,colorBlockRegular);
         blockIs(block);
 
         knob_ = new EP::GUI::Knob("knob",block,5,5,40,40,new EP::FunctionExp(0.00001,100000));
+        knob_->colorIs(colorBlockRegular);
+        knob_->knobColorIs(EP::Color(0.9,0.9,0.9));
         std::function<void(double)> onValF = [this](double val){
           taskInputValue_->setValue(std::vector<double>{val});
         };
@@ -826,7 +841,7 @@ namespace EP {
           knob_->valueIs(std::atof(data->values["value"][0].c_str()));
         }
 
-        socketOutIs(block,5,50,"Out",TaskInputValue::Out::Signal);
+        socketOutIs(block,5,50,"Out",colorValue,TaskInputValue::Out::Signal);
       }
       virtual Task* task() {return taskInputValue_;}
       virtual std::string serializeName() {return "EntityValuePicker";}
@@ -841,7 +856,7 @@ namespace EP {
       EntityChordPicker(EP::GUI::Area* const parent,EntityData* const data) {
         taskInputValue_ = new TaskInputValue();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockChordPicker",parent,data->x,data->y,200,70,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockChordPicker",parent,data->x,data->y,200,70,colorBlockRegular);
         blockIs(block);
 
         const double ddx = 15;
@@ -894,7 +909,7 @@ namespace EP {
         }
         recomputeValues();
 
-        socketOutIs(block,5,30,"Out",TaskInputValue::Out::Signal);
+        socketOutIs(block,5,30,"Out",colorValue,TaskInputValue::Out::Signal);
 
         EP::GUI::Label* label = new EP::GUI::Label("label",block,40,30,20,"Chord Picker",EP::Color(1,0.6,0.1));
       }
@@ -923,22 +938,26 @@ namespace EP {
       EntityEnvelope(EP::GUI::Area* const parent,EntityData* const data) {
         taskEnvelope_ = new TaskEnvelope();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,data->x,data->y,260,100,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockEnvelope",parent,data->x,data->y,300,100,colorBlockRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Envelope",labelColRegular);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Envelope",colorLabelRegular);
 
-        socketInIs(block,5,5,"Main",TaskEnvelope::In::Pulse,[]() {return 0;});
-        socketInIs(block,30,5,"In",TaskEnvelope::In::Input,[]() {return 0;});
+        EP::GUI::Socket* s1 = socketInIs(block,5,5,"Main",TaskEnvelope::In::Pulse,[]() {return 0;});
+        s1->textColorIs(std::vector<EP::Color>{colorTrigger*0.5,colorTrigger});
+        s1->connectorColorIs(std::vector<EP::Color>{colorTrigger,EP::Color(0,0,0)});
+        EP::GUI::Socket* s2 = socketInIs(block,55,5,"In",TaskEnvelope::In::Input,[]() {return 0;});
+        s2->textColorIs(std::vector<EP::Color>{colorSignal*0.5,colorSignal});
+        s2->connectorColorIs(std::vector<EP::Color>{colorSignal,EP::Color(0,0,0)});
 
-        packageInIs(block,55 ,5,"A" ,task(),TaskEnvelope::In::Attack,new EP::FunctionExp(0.0001,10),0.01);
-        packageInIs(block,95 ,5,"D" ,task(),TaskEnvelope::In::Decay,new EP::FunctionExp(0.0001,10),0.1);
-        packageInIs(block,135,5,"S" ,task(),TaskEnvelope::In::Sustain,new EP::FunctionLin(0,10),0);
-        packageInIs(block,175,5,"SA",task(),TaskEnvelope::In::SustainAmp,new EP::FunctionLin(0,1),0.2);
-        packageInIs(block,215,5,"R" ,task(),TaskEnvelope::In::Release,new EP::FunctionExp(0.0001,10),0.2);
+        packageInIs(block,95 ,5,"A" ,colorValue,task(),TaskEnvelope::In::Attack,new EP::FunctionExp(0.0001,10),0.01);
+        packageInIs(block,135 ,5,"D" ,colorValue,task(),TaskEnvelope::In::Decay,new EP::FunctionExp(0.0001,10),0.1);
+        packageInIs(block,175,5,"S" ,colorValue,task(),TaskEnvelope::In::Sustain,new EP::FunctionLin(0,10),0);
+        packageInIs(block,215,5,"SA",colorValue,task(),TaskEnvelope::In::SustainAmp,new EP::FunctionLin(0,1),0.2);
+        packageInIs(block,255,5,"R" ,colorValue,task(),TaskEnvelope::In::Release,new EP::FunctionExp(0.0001,10),0.2);
 
-        socketOutIs(block,5,50,"Amp",TaskEnvelope::Out::Amplitude);
-        socketOutIs(block,30,50,"Out",TaskEnvelope::Out::Output);
+        socketOutIs(block,5,80,"Amp",colorValue,TaskEnvelope::Out::Amplitude);
+        socketOutIs(block,55,80,"Out",colorSignal,TaskEnvelope::Out::Output);
       }
       virtual Task* task() {return taskEnvelope_;}
       virtual std::string serializeName() {return "EntityEnvelope";}
@@ -951,16 +970,16 @@ namespace EP {
       EntityMultiplyAndAdd(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskMultiplyAndAdd();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,data->x,data->y,130,130,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockMultiplyAndAdd",parent,data->x,data->y,130,130,colorBlockRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Mult Add",labelColRegular);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Mult Add",colorLabelRegular);
 
-        packageInIs(block,5 ,5,"A" ,task(),TaskMultiplyAndAdd::In::Input,new EP::FunctionExp(0.0001,10000),1);
-        packageInIs(block,45 ,5,"*B" ,task(),TaskMultiplyAndAdd::In::Factor,new EP::FunctionExp(0.0001,10000),1);
-        packageInIs(block,85 ,5,"+C" ,task(),TaskMultiplyAndAdd::In::Shift,new EP::FunctionExp(0.0001,10000),0);
+        packageInIs(block,5 ,5,"A" ,colorValue,task(),TaskMultiplyAndAdd::In::Input,new EP::FunctionExp(0.0001,10000),1);
+        packageInIs(block,45 ,5,"*B" ,colorValue,task(),TaskMultiplyAndAdd::In::Factor,new EP::FunctionExp(0.0001,10000),1);
+        packageInIs(block,85 ,5,"+C" ,colorValue,task(),TaskMultiplyAndAdd::In::Shift,new EP::FunctionExp(0.0001,10000),0);
 
-        socketOutIs(block,5,80,"Out",TaskMultiplyAndAdd::Out::Signal);
+        socketOutIs(block,5,80,"Out",colorValue,TaskMultiplyAndAdd::Out::Signal);
       }
       virtual Task* task() {return task_;}
       virtual std::string serializeName() {return "EntityMultiplyAndAdd";}
@@ -973,15 +992,20 @@ namespace EP {
       EntityQuantizer(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskQuantizer();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockTaskQuantizer",parent,data->x,data->y,80,100,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockTaskQuantizer",parent,data->x,data->y,80,100,colorBlockRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"Quantizer",labelColRegular);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,30,20,"Quantizer",colorLabelRegular);
 
-        socketInIs(block,5,5,"In",TaskQuantizer::In::Input,[]() {return 0;});
-        socketInIs(block,30,5,"Fq",TaskQuantizer::In::Chord,[]() {return 0;});
+        EP::GUI::Socket* s1 = socketInIs(block,5,5,"In",TaskQuantizer::In::Input,[]() {return 0;});
+        s1->textColorIs(std::vector<EP::Color>{colorValue*0.5,colorValue});
+        s1->connectorColorIs(std::vector<EP::Color>{colorValue,EP::Color(0,0,0)});
 
-        socketOutIs(block,5,50,"Fq",TaskQuantizer::Out::Freq);
+        EP::GUI::Socket* s2 = socketInIs(block,55,5,"Fq",TaskQuantizer::In::Chord,[]() {return 0;});
+        s2->textColorIs(std::vector<EP::Color>{colorValue*0.5,colorValue});
+        s2->connectorColorIs(std::vector<EP::Color>{colorValue,EP::Color(0,0,0)});
+
+        socketOutIs(block,5,50,"Fq",colorValue,TaskQuantizer::Out::Freq);
       }
       virtual Task* task() {return task_;}
       virtual std::string serializeName() {return "EntityQuantizer";}
@@ -995,10 +1019,13 @@ namespace EP {
       EntityKeyPad(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskKeyPad(10,32);
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,data->x,data->y,350,200,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockKeyPad",parent,data->x,data->y,350,200,colorBlockRegular);
         blockIs(block);
 
-        socketInIs(block,5,5,"Clk",TaskKeyPad::In::Clock,[]() {return 0;});
+        EP::GUI::Socket* s1 = socketInIs(block,5,5,"Clk",TaskKeyPad::In::Clock,[]() {return 0;});
+        s1->textColorIs(std::vector<EP::Color>{colorTrigger*0.5,colorTrigger});
+        s1->connectorColorIs(std::vector<EP::Color>{colorTrigger,EP::Color(0,0,0)});
+
 
         buttons_.resize(task_->numCols());
         const double d = 10;
@@ -1036,8 +1063,8 @@ namespace EP {
           }
         }
 
-        socketOutIs(block,5,170,"Sig",TaskKeyPad::Out::Signal);
-        socketOutIs(block,30,170,"Row",TaskKeyPad::Out::Row);
+        socketOutIs(block,5,170,"Sig",colorTrigger,TaskKeyPad::Out::Signal);
+        socketOutIs(block,30,170,"Row",colorValue,TaskKeyPad::Out::Row);
 
       }
       virtual Task* task() {return task_;}
@@ -1065,11 +1092,14 @@ namespace EP {
       EntityAudioOut(EP::GUI::Area* const parent,EntityData* const data) {
         taskAudioOut_ = new TaskAudioOut();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,data->x,data->y,100,100,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockAudioOut",parent,data->x,data->y,100,100,colorBlockRegular);
         blockIs(block);
         socketMain_  = socketInIs(block,5,5,"Main",TaskAudioOut::In::Signal,[]() {return 0;});
-        packageInIs(block,30,5,"A",task(),TaskAudioOut::In::Amplitude,new EP::FunctionLin(0,1),1);
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Audio Out",labelColIO);
+        socketMain_->textColorIs(std::vector<EP::Color>{colorSignal*0.5,colorSignal});
+        socketMain_->connectorColorIs(std::vector<EP::Color>{colorSignal,EP::Color(0,0,0)});
+
+        packageInIs(block,55,5,"A",colorValue,task(),TaskAudioOut::In::Amplitude,new EP::FunctionLin(0,1),1);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,40,20,"Audio Out",colorSignal);
       }
       virtual Task* task() {return taskAudioOut_;}
       virtual std::string serializeName() {return "EntityAudioOut";}
@@ -1083,12 +1113,12 @@ namespace EP {
       EntityAudioIn(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskAudioIn();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockAudioIn",parent,data->x,data->y,80,100,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockAudioIn",parent,data->x,data->y,80,100,colorBlockRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"AudioIn",labelColIO);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"AudioIn",colorSignal);
 
-        socketOutIs(block,5,50,"In",TaskAudioIn::Out::Signal);
+        socketOutIs(block,5,50,"In",colorSignal,TaskAudioIn::Out::Signal);
       }
       virtual Task* task() {return task_;}
       virtual std::string serializeName() {return "EntityAudioIn";}
@@ -1101,15 +1131,15 @@ namespace EP {
       EntitySignalAnalyzer(EP::GUI::Area* const parent,EntityData* const data) {
         task_ = new TaskSignalAnalyzer();
 
-        EP::GUI::Block* block = new EP::GUI::Block("blockSignalAnalyzer",parent,data->x,data->y,80,100,blockColRegular);
+        EP::GUI::Block* block = new EP::GUI::Block("blockSignalAnalyzer",parent,data->x,data->y,150,70,colorBlockRegular);
         blockIs(block);
 
-        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,5,20,"SignalAnalyzer",labelColRegular);
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,5,25,20,"SignalAnalyzer",colorLabelRegular);
 
         socketInIs(block,5,5,"In",TaskSignalAnalyzer::In::Signal,[]() {return 0;});
 
-        socketOutIs(block,5,50,"Amp",TaskSignalAnalyzer::Out::Amplitude);
-        socketOutIs(block,30,50,"Fq",TaskSignalAnalyzer::Out::Freq);
+        socketOutIs(block,5,50,"Amp",colorValue,TaskSignalAnalyzer::Out::Amplitude);
+        socketOutIs(block,55,50,"Fq",colorValue,TaskSignalAnalyzer::Out::Freq);
       }
       virtual Task* task() {return task_;}
       virtual std::string serializeName() {return "EntitySignalAnalyzer";}
@@ -1312,7 +1342,6 @@ namespace EP {
 }
 
 
-
 //-------------------------------------------------------- Main
 int main()
 {
@@ -1327,7 +1356,7 @@ int main()
       window2->childSize(dx,dy);
       window2->childOffset(x,y);
       blockHolder = new EP::GUI::BlockHolder("blockHolder1",NULL,0,0,2000,2000);
-      blockHolder->colorIs(EP::Color(0.1,0.1,0.2));
+      blockHolder->colorIs(EP::FlowGUI::colorBlockHolder);
       EP::GUI::Area* scroll1 = new EP::GUI::ScrollArea("scroll1",window2, blockHolder,x,y,dx,dy);
       scroll1->fillParentIs(true);
       //EP::GUI::Area* button1 = new EP::GUI::Button("button1",content1,10,10,100,20,"X");

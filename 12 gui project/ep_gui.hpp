@@ -216,7 +216,7 @@ namespace EP {
       virtual float scale() const {return 1;}
       float globalScale() const {return scale()*(parent_?parent_->globalScale():1);}
       virtual float globalX() const {return x_*globalScale()+(parent_?parent_->globalX():0);}
-      virtual float globalY() const {return y_+(parent_?parent_->globalY():0);}
+      virtual float globalY() const {return y_*globalScale()+(parent_?parent_->globalY():0);}
       std::string name() const {return name_;}
       std::string fullName() const {
         if (parent_) {
@@ -506,15 +506,18 @@ namespace EP {
       Knob(const std::string& name,Area* const parent,
              const float x,const float y,const float dx,const float dy,
              Function* func = NULL,
-             const Color bgColor = Color(0.1,0.1,0.3),
-             const Color knobColor = Color(1,0.5,0.5),
+             const Color bgColor = Color(0,0,0),
+             const Color knobColor = Color(0.5,0.5,0.5),
              const Color textColor = Color(1,1,1)
             )
-      : Area(name,parent,x,y,dx,dy),bgColor_(bgColor),textColor_(textColor),knobColor_(knobColor){
+      : Area(name,parent,x,y,dx,dy),textColor_(textColor),knobColor_(knobColor){
         if (func==NULL) {func = new Function();}
         func_=func;
+        colorIs(bgColor);
       }
       ~Knob() {delete func_;}
+
+      void knobColorIs(const Color _knobColor) {knobColor_=_knobColor;}
 
       virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
         float gx = x_*pscale+px;
@@ -575,7 +578,7 @@ namespace EP {
       }
       void onValueIs(std::function<void(float)> onVal) {onValue_=onVal;}// use to listen to value change
     protected:
-      Color bgColor_,textColor_,knobColor_;
+      Color textColor_,knobColor_;
       double value_ = 0.5;
       double knobPan = 0;
       Function* func_;
@@ -587,7 +590,7 @@ namespace EP {
     public:
       Window(const std::string& name,Area* const parent, const float x,const float y,const float dx,const float dy, const std::string title)
       : Area(name,parent,x,y,dx,dy),title_(title){
-        bgColor_ = Color(0.1,0.5,0.1);
+        bgColor_ = Color(0.5,0.5,0.5);
         closeButton_ = new Button("close",this,borderSize,borderSize,headerSize-2*borderSize,headerSize-2*borderSize,"X",
                                         std::vector<Color>{Color(0.5,0,0),Color(0.4,0,0),Color(0.2,0,0),Color(0.2,0,0)},
                                         std::vector<Color>{Color(1,0.5,0.5),Color(1,0.8,0.8),Color(0.6,0.1,0.1),Color(0.5,0,0)}
@@ -743,8 +746,8 @@ namespace EP {
       Slider(const std::string& name,Area* const parent,
              const float x,const float y,const float dx,const float dy,
              const bool isHorizontal,const float minVal,const float maxVal,const float initVal,const float buttonLength,
-             const std::vector<Color> bgColors = std::vector<Color>{Color(0.2,0.2,0.4),Color(0.15,0.15,0.3),Color(0.1,0.1,0.2)},
-             const std::vector<Color> buttonColors = std::vector<Color>{Color(0.3,0.3,0.6),Color(0.35,0.35,0.7),Color(0.4,0.4,0.8)}
+             const std::vector<Color> bgColors = std::vector<Color>{Color(0.2,0.2,0.2),Color(0.15,0.15,0.15),Color(0.1,0.1,0.1)},
+             const std::vector<Color> buttonColors = std::vector<Color>{Color(0.3,0.3,0.3),Color(0.35,0.35,0.35),Color(0.4,0.4,0.4)}
             )
       : Area(name,parent,x,y,dx,dy),
         isHorizontal_(isHorizontal),minVal_(minVal),maxVal_(maxVal),val_(initVal),buttonLength_(buttonLength),
@@ -939,17 +942,16 @@ namespace EP {
       Socket(const std::string& name,Area* const parent,
              const float x,const float y,Direction direction,
              const std::string text,
-             const Color bgColor = Color(0.2,0.2,0.4),
-             const Color textColor = Color(1,1,1),
-             const Color socketColor = Color(0,0,0),
-             const Color connectorColor = Color(0.4,0.4,0.8)
+             const Color bgColor = Color(1,1,1,0),
+             const std::vector<Color> textColor = std::vector<Color>{Color(0.5,0.5,0.5),Color(1,1,1)},
+             const std::vector<Color> connectorColor = std::vector<Color>{Color(1,1,1),Color(0,0,0)}
             )
-      : Area(name,parent,x,y,20,20),text_(text),textColor_(textColor),socketColor_(socketColor),connectorColor_(connectorColor),direction_(direction){
+      : Area(name,parent,x,y,20,20),text_(text),textColor_(textColor),connectorColor_(connectorColor),direction_(direction){
         colorIs(bgColor);
         switch (direction_) {
           case Direction::Up:
           case Direction::Down:{
-            sizeIs(20,30);
+            sizeIs(35,15);
             break;
           }
         }
@@ -971,6 +973,10 @@ namespace EP {
         });
       }
 
+      void textColorIs(const std::vector<Color> _textColor) {textColor_=_textColor;};
+      void connectorColorIs(const std::vector<Color> _connectorColor) {connectorColor_=_connectorColor;};
+      std::vector<Color> connectorColor() {return connectorColor_;}
+
       void canTakeSinkIs(std::function<bool()> f) {canTakeSink=f;}
       void canMakeSourceIs(std::function<bool(Socket*)> f) {canMakeSource=f;}
       void onSinkIsIs(std::function<void(Socket*)> f) {onSinkIs=f;}
@@ -980,17 +986,16 @@ namespace EP {
 
       float socketX() {
         switch (direction_) {
-          case Direction::Up:return dx_*0.5;
-          case Direction::Down:return dx_*0.5;
+          case Direction::Up:return dx_*0.5*globalScale();
+          case Direction::Down:return dx_*0.5*globalScale();
         }
       };
       float socketY() {
         switch (direction_) {
-          case Direction::Up:return dx_*0.5;
-          case Direction::Down:return dy_-dx_*0.5;
+          case Direction::Up:return 0;//return dx_*0.5*globalScale();
+          case Direction::Down:return dy_*globalScale();//return (dy_-dx_*0.5)*globalScale();
         }
       };
-      Color connectorColor() {return connectorColor_;}
 
       // for client use
       void sourceIs(Socket* source) {
@@ -1032,31 +1037,40 @@ namespace EP {
 
         switch (direction_) {
           case Direction::Up:{
-            DrawOval(gx, gy, dx_s,dx_s,target,bgColor_);
-            DrawRect(gx, gy+dx_s*0.5, dx_s, dy_s-dx_s*0.5, target, bgColor_);
-            DrawOval(gx+dx_s*0.25, gy+dx_s*0.25, dx_s*0.5,dx_s*0.5,target,socketColor_);
-            DrawText(gx+1, gy+dy_s*0.5, text_, (dy_s-dx_s), target, textColor_);
+            // DrawOval(gx, gy, dx_s,dx_s,target,bgColor_);
+            // DrawRect(gx, gy+dx_s*0.5, dx_s, dy_s-dx_s*0.5, target, bgColor_);
+            // DrawOval(gx+dx_s*0.25, gy+dx_s*0.25, dx_s*0.5,dx_s*0.5,target,socketColor_);
+            DrawRect(gx, gy, dx_s, dy_s, target, bgColor_);
+            DrawText(gx+1, gy+1, text_, dy_s*0.9, target, textColor_[not mouseOver_]);
             break;
           }
           case Direction::Down:{
-            DrawOval(gx, gy+dy_s-dx_s, dx_s,dx_s,target,bgColor_);
-            DrawRect(gx, gy, dx_s, dy_s-dx_s*0.5, target, bgColor_);
-            DrawOval(gx+dx_s*0.25, gy+dy_s-dx_s*0.75, dx_s*0.5,dx_s*0.5,target,socketColor_);
-            DrawText(gx+1, gy+1, text_, (dy_s-dx_s), target, textColor_);
+            // DrawOval(gx, gy+dy_s-dx_s, dx_s,dx_s,target,bgColor_);
+            // DrawRect(gx, gy, dx_s, dy_s-dx_s*0.5, target, bgColor_);
+            // DrawOval(gx+dx_s*0.25, gy+dy_s-dx_s*0.75, dx_s*0.5,dx_s*0.5,target,socketColor_);
+            // DrawText(gx+1, gy+1, text_, (dy_s-dx_s), target, textColor_);
+            DrawRect(gx, gy, dx_s, dy_s, target, bgColor_);
+            DrawText(gx+1, gy+1, text_, dy_s*0.9, target, textColor_[not mouseOver_]);
             break;
           }
         }
+        const float sx = gx+socketX();
+        const float sy = gy+socketY();
         if (source_) {
-          DrawLine(x_+px+socketX(),y_+py+socketY(),source_->globalX()+source_->socketX(),source_->globalY()+source_->socketY(),target,Color(0,0,0),dx_*0.5);
-          DrawLine(x_+px+socketX(),y_+py+socketY(),source_->globalX()+source_->socketX(),source_->globalY()+source_->socketY(),target,connectorColor_,dx_*0.5-4);
+          const float ox = source_->globalX()+source_->socketX();
+          const float oy = source_->globalY()+source_->socketY();
+          DrawLine(sx,sy,ox,oy,target,connectorColor_[1],5);
+          DrawLine(sx,sy,ox,oy,target,connectorColor_[0],3);
         }
         for (std::list<Socket*>::reverse_iterator rit=sink_.rbegin(); rit!=sink_.rend(); ++rit) {
-          DrawLine(x_+px+socketX(),y_+py+socketY(),(*rit)->globalX()+(*rit)->socketX(),(*rit)->globalY()+(*rit)->socketY(),target,Color(0,0,0),dx_*0.5);
-          DrawLine(x_+px+socketX(),y_+py+socketY(),(*rit)->globalX()+(*rit)->socketX(),(*rit)->globalY()+(*rit)->socketY(),target,(*rit)->connectorColor(),dx_*0.5-4);
+          const float ox = (*rit)->globalX()+(*rit)->socketX();
+          const float oy = (*rit)->globalY()+(*rit)->socketY();
+          DrawLine(sx,sy,ox,oy,target,(*rit)->connectorColor()[1],5);
+          DrawLine(sx,sy,ox,oy,target,(*rit)->connectorColor()[0],3);
         }
         if (isSettingSource) {
-          DrawLine(x_+px+socketX(),y_+py+socketY(),isSettingSourceX_,isSettingSourceY_,target,Color(0,0,0),dx_*0.5);
-          DrawLine(x_+px+socketX(),y_+py+socketY(),isSettingSourceX_,isSettingSourceY_,target,connectorColor_,dx_*0.5-4);
+          DrawLine(sx,sy,isSettingSourceX_,isSettingSourceY_,target,connectorColor_[1],5);
+          DrawLine(sx,sy,isSettingSourceX_,isSettingSourceY_,target,connectorColor_[0],3);
         }
 
         for (std::list<Area*>::reverse_iterator rit=children_.rbegin(); rit!=children_.rend(); ++rit) {
@@ -1094,9 +1108,14 @@ namespace EP {
         }
       }
 
+      virtual void onMouseOverStart() {mouseOver_=true;}
+      virtual void onMouseOver(const float px,const float py,const float pscale) {}// relative to parent
+      virtual void onMouseOverEnd() {mouseOver_=false;}
+
     protected:
       std::string text_;
-      Color textColor_,socketColor_,connectorColor_;
+      std::vector<Color> textColor_, connectorColor_;
+      bool mouseOver_=false;
       Direction direction_;
       Socket* source_=NULL;
 
@@ -1178,11 +1197,11 @@ namespace EP {
         const float gx = px+x_*pscale;
         const float gy = py+y_*pscale;
 
-        DrawRect(gx,gy, dx_*pscale, dy_*pscale, target, bgColor_);
+        DrawRect(gx,gy, dx_*pscale, dy_*pscale, target, bgColor_*0);
         const float tileD = 100.0*pscale*scale_;
         for (size_t x = 0; x < dx_/tileD+1; x++) {
           for (size_t y = 0; y < dy_/tileD+1; y++) {
-            DrawRect(gx+x*tileD, gy+y*tileD, tileD-2, tileD-2, target, bgColor_*0.5);
+            DrawRect(gx+x*tileD, gy+y*tileD, tileD-2, tileD-2, target, bgColor_);
           }
         }
 

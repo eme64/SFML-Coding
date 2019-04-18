@@ -1,108 +1,126 @@
 @1 EntityFM
-position=4.000000,11.000000
-inTask_0=0,0
+position=724.185303,637.691162
+inTask_0=2,0
+inValue_0=96.241351
+inTask_1=4,0
+inValue_1=0.000000
+inTask_2=0,0
+inValue_2=1.000000
+@2 EntityMultiplyAndAdd
+position=734.000000,481.000000
+inTask_0=11,0
+inValue_0=1.000000
+inTask_1=0,0
+inValue_1=415.681427
+inTask_2=0,0
+inValue_2=0.000100
+@3 EntityChordPicker
+position=748.000000,360.000000
+dataChord=1,0,0,0,0,1,0,0,1,0,0,0,1
+@4 EntityFM
+position=865.000000,637.290100
+inTask_0=2,0
 inValue_0=440.000000
 inTask_1=0,0
 inValue_1=0.000000
 inTask_2=0,0
 inValue_2=0.000000
-@2 EntityTrigger
-position=434.000000,18.000000
-@3 EntityLFO
-position=150.000000,14.000000
-inTask_0=0,0
-inValue_0=1.000000
-inTask_1=0,0
-inValue_1=0.000000
-inTask_2=0,0
-inValue_2=0.000000
-@4 EntityAudioOut
-position=292.000000,17.000000
-inTask_0=0,0
-inValue_0=0.000000
-inTask_1=0,0
+@5 EntityValuePicker
+position=31.000000,60.000000
+value=2.541422
+@6 EntityKeyPad
+position=345.000000,257.000000
+inTask_0=14,0
+inValue_0=0.876777
+dataCol_0=0,0,0,0,0,0,0,0,1,0
+dataCol_1=0,0,0,0,0,0,0,0,0,1
+dataCol_2=0,0,0,0,0,0,0,1,0,0
+dataCol_3=0,0,0,0,0,0,1,0,0,0
+dataCol_4=0,0,0,0,0,0,0,0,0,0
+dataCol_5=0,0,0,0,0,1,0,0,0,0
+dataCol_6=1,0,0,0,0,0,0,0,0,0
+dataCol_7=0,0,1,0,0,0,0,0,0,0
+dataCol_8=0,0,0,0,0,0,0,0,0,0
+dataCol_9=0,0,1,0,0,0,0,0,0,0
+dataCol_10=0,0,0,1,0,1,0,0,0,0
+dataCol_11=0,0,0,0,0,0,1,0,0,0
+dataCol_12=0,0,0,1,0,0,0,0,0,0
+dataCol_13=0,0,0,0,0,0,0,1,0,0
+dataCol_14=0,0,0,0,0,0,0,0,0,1
+dataCol_15=0,0,0,0,0,0,0,0,0,0
+dataCol_16=0,0,0,0,0,0,0,1,0,0
+dataCol_17=0,0,0,0,0,0,0,0,0,0
+dataCol_18=0,0,0,0,0,0,0,0,0,0
+dataCol_19=0,0,0,0,0,0,0,0,0,0
+dataCol_20=0,0,0,0,0,0,0,0,0,0
+dataCol_21=0,0,0,0,0,1,0,0,0,0
+dataCol_22=0,0,0,0,0,0,0,0,0,1
+dataCol_23=0,0,0,0,0,0,0,0,0,0
+dataCol_24=0,0,0,0,1,0,0,1,0,0
+dataCol_25=0,0,0,0,0,0,0,0,0,0
+dataCol_26=0,0,0,0,0,0,0,0,0,0
+dataCol_27=0,0,0,0,0,0,0,0,0,0
+dataCol_28=0,0,0,0,0,0,0,0,0,0
+dataCol_29=0,1,0,0,0,1,0,0,0,0
+dataCol_30=0,0,0,0,0,0,0,0,0,0
+dataCol_31=0,0,0,0,1,0,0,0,0,1
+@7 EntityTrigger
+position=196.000000,76.000000
+@8 EntityLFO
+position=32.000000,375.000000
+inTask_0=13,0
+inValue_0=4.679120
+inTask_1=15,0
 inValue_1=1.000000
-@5 EntityAudioOut
-position=282.000000,132.000000
-inTask_0=0,0
-inValue_0=0.000000
-inTask_1=0,0
-inValue_1=1.000000
-@6 EntityEnvelope
-position=3.000000,118.000000
-inTask_0=0,0
-inValue_0=0.000000
-inTask_1=0,0
-inValue_1=0.000000
 inTask_2=0,0
-inValue_2=0.010000
+inValue_2=1.000000
+@9 EntityAudioOut
+position=420.728333,956.320679
+inTask_0=10,1
+inValue_0=-0.000000,-0.000000,0.000000,-0.000000,-0.000000,-0.000000,-0.000000,0.000000,0.000000,0.000000
+inTask_1=0,0
+inValue_1=0.367725
+@10 EntityEnvelope
+position=417.012512,825.925720
+inTask_0=6,0
+inValue_0=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000
+inTask_1=1,0
+inValue_1=-0.273242,-0.134522,0.112130,-0.696453,-0.032046,-0.999777,-0.710205,0.842801,0.432730,0.029261
+inTask_2=0,0
+inValue_2=0.002136
 inTask_3=0,0
-inValue_3=0.100000
+inValue_3=0.084840
 inTask_4=0,0
 inValue_4=0.000000
 inTask_5=0,0
 inValue_5=0.200000
 inTask_6=0,0
-inValue_6=0.200000
-@7 EntityValuePicker
-position=417.000000,135.000000
-value=1.000000
-@8 EntityMultiplyAndAdd
-position=423.000000,137.000000
-inTask_0=0,0
-inValue_0=1.000000
-inTask_1=0,0
-inValue_1=1.000000
-inTask_2=0,0
-inValue_2=0.000100
-@9 EntityChordPicker
-position=109.000000,310.000000
-dataChord=1,0,0,0,0,0,0,0,0,0,0,0,1
-@10 EntityKeyPad
-position=0.000000,330.000000
-inTask_0=0,0
-inValue_0=0.000000
-dataCol_0=0,0,0,0,0,0,0,0,0,0
-dataCol_1=0,0,0,0,0,0,0,0,0,0
-dataCol_2=0,0,0,0,0,0,0,0,0,0
-dataCol_3=0,0,0,0,0,0,0,0,0,0
-dataCol_4=0,0,0,0,0,0,0,0,0,0
-dataCol_5=0,0,0,0,0,0,0,0,0,0
-dataCol_6=0,0,0,0,0,0,0,0,0,0
-dataCol_7=0,0,0,0,0,0,0,0,0,0
-dataCol_8=0,0,0,0,0,0,0,0,0,0
-dataCol_9=0,0,0,0,0,0,0,0,0,0
-dataCol_10=0,0,0,0,0,0,0,0,0,0
-dataCol_11=0,0,0,0,0,0,0,0,0,0
-dataCol_12=0,0,0,0,0,0,0,0,0,0
-dataCol_13=0,0,0,0,0,0,0,0,0,0
-dataCol_14=0,0,0,0,0,0,0,0,0,0
-dataCol_15=0,0,0,0,0,0,0,0,0,0
-dataCol_16=0,0,0,0,0,0,0,0,0,0
-dataCol_17=0,0,0,0,0,0,0,0,0,0
-dataCol_18=0,0,0,0,0,0,0,0,0,0
-dataCol_19=0,0,0,0,0,0,0,0,0,0
-dataCol_20=0,0,0,0,0,0,0,0,0,0
-dataCol_21=0,0,0,0,0,0,0,0,0,0
-dataCol_22=0,0,0,0,0,0,0,0,0,0
-dataCol_23=0,0,0,0,0,0,0,0,0,0
-dataCol_24=0,0,0,0,0,0,0,0,0,0
-dataCol_25=0,0,0,0,0,0,0,0,0,0
-dataCol_26=0,0,0,0,0,0,0,0,0,0
-dataCol_27=0,0,0,0,0,0,0,0,0,0
-dataCol_28=0,0,0,0,0,0,0,0,0,0
-dataCol_29=0,0,0,0,0,0,0,0,0,0
-dataCol_30=0,0,0,0,0,0,0,0,0,0
-dataCol_31=0,0,0,0,0,0,0,0,0,0
+inValue_6=0.080552
 @11 EntityQuantizer
-position=45.000000,223.000000
+position=578.000000,467.000000
+inTask_0=6,1
+inValue_0=0.000000,1.000000,2.000000,3.000000,4.000000,5.000000,6.000000,7.000000,8.000000,9.000000
+inTask_1=3,0
+inValue_1=1.000000,1.334840,1.587401,2.000000
+@12 EntityAudioIn
+position=76.000000,38.000000
+@13 EntitySignalAnalyzer
+position=46.000000,258.000000
+inTask_0=12,0
+inValue_0=-0.009000
+@14 EntityLFO
+position=350.000000,41.000000
 inTask_0=0,0
-inValue_0=0.000000
+inValue_0=11.444126
 inTask_1=0,0
 inValue_1=0.000000
-@12 EntityAudioIn
-position=150.000000,227.000000
-@13 EntitySignalAnalyzer
-position=269.000000,227.000000
-inTask_0=0,0
-inValue_0=0.000000
+inTask_2=0,0
+inValue_2=0.000000
+@15 EntityLFO
+position=175.000000,369.132294
+inTask_0=13,0
+inValue_0=1.000000
+inTask_1=0,0
+inValue_1=0.011579
+inTask_2=0,0
+inValue_2=0.000000
