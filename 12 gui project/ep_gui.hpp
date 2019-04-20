@@ -55,6 +55,34 @@ namespace EP {
     }
   protected:
   };
+  Color ColorHue(float hue) {
+    hue = fmod(hue,1.0);
+    hue*=6.0;
+      if (hue<1.0) {
+        return Color(1,1*hue,0);
+      }
+      hue-=1.0;
+      if (hue<1.0) {
+        return Color(1-1*hue,1,0);
+      }
+      hue-=1.0;
+      if (hue<1.0) {
+        return Color(0,1,1*hue);
+      }
+      hue-=1.0;
+      if (hue<1.0) {
+        return Color(0,1-1*hue,1);
+      }
+      hue-=1.0;
+      if (hue<1.0) {
+        return Color(1*hue,0,1);
+      }
+      hue-=1.0;
+      if (hue<1.0) {
+        return Color(1,0,1-1*hue);
+      }
+      return Color(1,1,1);
+  }
   // sf::Color HueToRGB(float hue) {
   //   hue = fmod(hue,1.0);
   //   hue*=6.0;
@@ -449,13 +477,16 @@ namespace EP {
       virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
         float gx = x_*pscale+px;
         float gy = y_*pscale+py;
-        DrawText(gx+1, gy+1, text_, fontSize_*pscale, target, textColor_);
+        DrawText(gx+1, gy+1, text_, fontSize_*pscale, target, textColor_,allignX_,allignY_);
       }
       void textIs(std::string text) {text_=text;}
+      void allignIs(const float x,const float y) {allignX_=x;allignY_=y;}
     protected:
       std::string text_;
       float fontSize_;
       Color textColor_;
+      float allignX_=0;
+      float allignY_=0;
     };
     class Button : public Area {
     public:
@@ -584,6 +615,29 @@ namespace EP {
       Function* func_;
       std::function<void(double)> onValue_;
       bool state_ = false;
+    };
+
+    class AreaDraw : public Area {
+    public:
+      AreaDraw(const std::string& name,Area* const parent,
+             const float x,const float y,const float dx,const float dy,
+             const Color bgColor = Color(0,0,0)
+            )
+      : Area(name,parent,x,y,dx,dy){
+        colorIs(bgColor);
+      }
+
+      virtual void draw(const float px,const float py, sf::RenderTarget &target, const float pscale) {
+        float gx = x_*pscale+px;
+        float gy = y_*pscale+py;
+        float dx_s = dx_*pscale;
+        float dy_s = dy_*pscale;
+        DrawRect(gx, gy, dx_s,dy_s, target, bgColor_);
+        if (onDraw_) {onDraw_(gx,gy,dx_,dy_,pscale,target);}
+      }
+      void onDrawIs(std::function<void(float,float,float,float,float,sf::RenderTarget&)> _onDraw) {onDraw_=_onDraw;}
+    protected:
+      std::function<void(float,float,float,float,float,sf::RenderTarget&)> onDraw_;//gx,gy,dx,dy,scale,target
     };
 
     class Window : public Area {
@@ -1041,7 +1095,7 @@ namespace EP {
             // DrawRect(gx, gy+dx_s*0.5, dx_s, dy_s-dx_s*0.5, target, bgColor_);
             // DrawOval(gx+dx_s*0.25, gy+dx_s*0.25, dx_s*0.5,dx_s*0.5,target,socketColor_);
             DrawRect(gx, gy, dx_s, dy_s, target, bgColor_);
-            DrawText(gx+1, gy+1, text_, dy_s*0.9, target, textColor_[not mouseOver_]);
+            DrawText(gx+dx_s*0.5, gy+1, text_, dy_s*0.9, target, textColor_[not mouseOver_],0.5,0);
             break;
           }
           case Direction::Down:{

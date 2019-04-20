@@ -10,6 +10,11 @@
 
 #include "ep_gui.hpp"
 
+//---------------------- IDEAS:
+//
+// sound buffers vs sound buffer readers
+//
+
 
 namespace EP {
   namespace FFT {
@@ -57,6 +62,8 @@ namespace EP {
     static EP::Color colorTrigger = EP::Color(0.5,1,0.5);
     static EP::Color colorValue = EP::Color(0.5,0.5,1);
     static EP::Color colorSignal = EP::Color(1,0.5,0.5);
+    static EP::Color colorBuffer = EP::Color(1,1,0.5);
+
 
 
     class Entity;
@@ -526,6 +533,57 @@ namespace EP {
         }
     public:
     private:
+    };
+
+    class TaskBuffer : public Task {
+    public:
+      enum In : size_t {Signal=0};
+      enum Out : size_t {Pointer=0};
+      TaskBuffer() : Task(1,1) {bufferSizeIs(1,44000);}
+      virtual void tick(const double dt) {
+        if (isRecording_) {
+          buffers_[0][writeIndex_] = inValue_[In::Signal][0];
+          writeIndex_++;
+          if (writeIndex_>=buffers_[0].size()) {
+            writeIndex_=0;
+          }
+        }
+        // const size_t sFreq = inValue_[In::Freq].size();
+        // const size_t sMod = inValue_[In::Mod].size();
+        // const size_t sModFactor = inValue_[In::ModFactor].size();
+        // const size_t maxSize = std::max(sFreq,std::max(sMod,sModFactor));
+        //
+        // if (t_.size()!=maxSize) {t_.resize(maxSize,0);}
+        // if (out_[Out::Signal].size()!=maxSize) {out_[Out::Signal].resize(maxSize,0);}
+        //
+        // for (size_t i = 0; i < maxSize; i++) {
+        //   const float freq = inValue_[In::Freq][sFreq==maxSize?i:0];
+        //   const float mod = inValue_[In::Mod][sMod==maxSize?i:0];
+        //   const float modFactor = inValue_[In::ModFactor][sModFactor==maxSize?i:0];
+        //
+        //   t_[i]+=dt*(freq+freq*mod*modFactor)*2.0*M_PI;
+        //   out_[Out::Signal][i] =std::sin(t_[i]);
+        // }
+      }
+      void bufferSizeIs(const size_t _channels, const size_t _size) {
+        buffers_.resize(_channels);
+        for (size_t i = 0; i < _channels; i++) {
+          buffers_[i].resize(_size,0);
+        }
+      }
+      double readAtIndex(const size_t _channel, const size_t _index) {
+        if (_channel<buffers_.size() and _index<buffers_[_channel].size()) {
+          return buffers_[_channel][_index];
+        }
+        return 0;
+      }
+      std::vector<std::vector<double>>& buffers() {return buffers_;}
+      bool isRecording() {return isRecording_;}
+      void isRecordingIs(const bool _isRecording) {isRecording_=_isRecording;}
+    protected:
+      std::vector<std::vector<double>> buffers_;
+      size_t writeIndex_ = 0;
+      bool isRecording_ = false;
     };
 
 
@@ -1147,6 +1205,54 @@ namespace EP {
       TaskSignalAnalyzer* task_;
     };
 
+    class EntityBuffer : public Entity {
+    public:
+      EntityBuffer(EP::GUI::Area* const parent,EntityData* const data) {
+        taskBuffer_ = new TaskBuffer();
+        std::vector<std::vector<double>> &buffers = taskBuffer_->buffers();
+        for (size_t c = 0; c < buffers.size(); c++) {
+          for (size_t i = 0; i < buffers[c].size(); i++) {
+            buffers[c][i] = ((double)rand() / RAND_MAX) * 2.0 - 1.0;
+          }
+        }
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockBuffer",parent,data->x,data->y,200,100,colorBlockRegular);
+        blockIs(block);
+
+        EP::GUI::Button* buttonRecord = new EP::GUI::Button("buttonRecord",block,100,5,95,20,"record");
+        buttonRecord->onClickIs([this]() {
+          taskBuffer_->isRecordingIs(not taskBuffer_->isRecording());
+        });
+
+        EP::GUI::Socket* sIn  = socketInIs(block,5,5,"In",TaskBuffer::In::Signal,[]() {return 0;});
+        sIn->textColorIs(std::vector<EP::Color>{colorSignal*0.5,colorSignal});
+        sIn->connectorColorIs(std::vector<EP::Color>{colorSignal,EP::Color(0,0,0)});
+
+        EP::GUI::AreaDraw* aDraw = new EP::GUI::AreaDraw("draw",block,5,30,190,50);
+        aDraw->onDrawIs([this](const float gx,const float gy,const float dx,const float dy,const float scale,sf::RenderTarget &target) {
+          const float dx_s=dx*scale;
+          const float dy_s=dy*scale;
+
+          std::vector<std::vector<double>> &buffers = taskBuffer_->buffers();
+          size_t channels = buffers.size();
+          size_t size = buffers[0].size();
+
+          for (size_t c = 0; c < channels; c++) {
+            for (size_t x = 0; x < dx; x++) {
+              size_t i = x*size/dx;
+              double v = std::max(-1.0,std::min(1.0,buffers[c][i]));
+              EP::DrawRect(gx+x*scale,gy+dy_s*(c+0.5+0.5*v)/(channels),1,1, target, EP::ColorHue((float)c/(float)channels));
+            }
+          }
+        });
+        socketOutIs(block,5,80,"Buffer",colorBuffer,TaskBuffer::Out::Pointer);
+      }
+      virtual Task* task() {return taskBuffer_;}
+      virtual std::string serializeName() {return "EntityBuffer";}
+    protected:
+      TaskBuffer* taskBuffer_;
+    };
+
     static Entity* entityFromData(EP::GUI::BlockHolder* const bh, EntityData* const data) {
       std::cout << "instantiate " << data->type << std::endl;
       if(data->type=="EntityFM") {
@@ -1173,6 +1279,8 @@ namespace EP {
         return new EntityAudioIn(bh,data);
       } else if(data->type=="EntitySignalAnalyzer") {
         return new EntitySignalAnalyzer(bh,data);
+      } else if(data->type=="EntityBuffer") {
+        return new EntityBuffer(bh,data);
       } else {
         std::cout << "do not know " << data->type << std::endl;
         return NULL;
@@ -1207,6 +1315,7 @@ namespace EP {
       addBlockTemplate("EntityQuantizer","Quantizer");
       addBlockTemplate("EntityAudioIn","Audio In");
       addBlockTemplate("EntitySignalAnalyzer","Signal Analyzer");
+      addBlockTemplate("EntityBuffer","Buffer");
 
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);
