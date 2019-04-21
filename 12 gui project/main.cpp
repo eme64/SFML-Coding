@@ -539,7 +539,7 @@ namespace EP {
     public:
       enum In : size_t {Signal=0};
       enum Out : size_t {Pointer=0};
-      TaskBuffer() : Task(1,1) {bufferSizeIs(1,44000);}
+      TaskBuffer() : Task(1,1) {bufferSizeIs(1,44000*10);}
       virtual void tick(const double dt) {
         if (isRecording_) {
           buffers_[0][writeIndex_] = inValue_[In::Signal][0];
@@ -548,22 +548,6 @@ namespace EP {
             writeIndex_=0;
           }
         }
-        // const size_t sFreq = inValue_[In::Freq].size();
-        // const size_t sMod = inValue_[In::Mod].size();
-        // const size_t sModFactor = inValue_[In::ModFactor].size();
-        // const size_t maxSize = std::max(sFreq,std::max(sMod,sModFactor));
-        //
-        // if (t_.size()!=maxSize) {t_.resize(maxSize,0);}
-        // if (out_[Out::Signal].size()!=maxSize) {out_[Out::Signal].resize(maxSize,0);}
-        //
-        // for (size_t i = 0; i < maxSize; i++) {
-        //   const float freq = inValue_[In::Freq][sFreq==maxSize?i:0];
-        //   const float mod = inValue_[In::Mod][sMod==maxSize?i:0];
-        //   const float modFactor = inValue_[In::ModFactor][sModFactor==maxSize?i:0];
-        //
-        //   t_[i]+=dt*(freq+freq*mod*modFactor)*2.0*M_PI;
-        //   out_[Out::Signal][i] =std::sin(t_[i]);
-        // }
       }
       void bufferSizeIs(const size_t _channels, const size_t _size) {
         buffers_.resize(_channels);
@@ -586,7 +570,68 @@ namespace EP {
       bool isRecording_ = false;
     };
 
+    class TaskGranulator : public Task {
+    public:
+      enum In : size_t {Buffer=0, Position=1, Density=2, Length=3, Pitch=4};
+      enum Out : size_t {Signal=0};
+      TaskGranulator() : Task(5,1) {
+        outBuffer_.resize(44000*10,0);
+      }
+      virtual void tick(const double dt) {
+        lastGrain_+=dt;
+        const double position = inValue_[In::Position][0];
+        const double density = inValue_[In::Density][0];
+        const size_t size = inValue_[In::Length][0]/dt;
+        const double pitch = inValue_[In::Pitch][0];
+        if (lastGrain_>=density) {
+          lastGrain_-=density;
 
+          TaskBuffer* taskBuffer = dynamic_cast<TaskBuffer*>(inTask_[In::Buffer]);
+          if (taskBuffer) {
+            std::vector<std::vector<double>>& buffers = taskBuffer->buffers();
+            const size_t buffersSize = buffers[0].size();
+            const size_t outSize = outBuffer_.size();
+            for (size_t i = 0; i < size; i++) {
+              const double relpos = (double)i/(double)size;
+              const double amp = (relpos<0.5)?2*relpos:2-2*relpos;
+              const size_t readI = (size_t)(i*pitch+(position*buffersSize))%buffersSize;
+              const size_t writeI = (outBufferIndex_+i)%outSize;
+              outBuffer_[writeI]+= buffers[0][readI]*amp;
+            }
+          } else {
+            outBuffer_[outBufferIndex_] = 1;
+          }
+        }
+
+        out_[Out::Signal][0] = outBuffer_[outBufferIndex_];
+        outBuffer_[outBufferIndex_] = 0;
+
+        outBufferIndex_++;
+        if (outBufferIndex_>=outBuffer_.size()) {
+          outBufferIndex_ = 0;
+        }
+        // const size_t sFreq = inValue_[In::Freq].size();
+        // const size_t sMod = inValue_[In::Mod].size();
+        // const size_t sModFactor = inValue_[In::ModFactor].size();
+        // const size_t maxSize = std::max(sFreq,std::max(sMod,sModFactor));
+        //
+        // if (t_.size()!=maxSize) {t_.resize(maxSize,0);}
+        // if (out_[Out::Signal].size()!=maxSize) {out_[Out::Signal].resize(maxSize,0);}
+        //
+        // for (size_t i = 0; i < maxSize; i++) {
+        //   const float freq = inValue_[In::Freq][sFreq==maxSize?i:0];
+        //   const float mod = inValue_[In::Mod][sMod==maxSize?i:0];
+        //   const float modFactor = inValue_[In::ModFactor][sModFactor==maxSize?i:0];
+        //
+        //   t_[i]+=dt*(freq+freq*mod*modFactor)*2.0*M_PI;
+        //   out_[Out::Signal][i] =std::sin(t_[i]);
+        // }
+      }
+    protected:
+      std::vector<double> outBuffer_;
+      size_t outBufferIndex_=0;
+      double lastGrain_=0;
+    };
 
     static std::map<EP::GUI::Block*,Entity*> blockToEntity;
 
@@ -1253,6 +1298,33 @@ namespace EP {
       TaskBuffer* taskBuffer_;
     };
 
+
+    class EntityGranulator : public Entity {
+    public:
+      EntityGranulator(EP::GUI::Area* const parent,EntityData* const data) {
+        task_ = new TaskGranulator();
+
+        EP::GUI::Block* block = new EP::GUI::Block("blockGranulator",parent,data->x,data->y,210,100,colorBlockRegular);
+        blockIs(block);
+
+        EP::GUI::Label* label = new EP::GUI::Label("label",block,50,70,20,"Granulator",colorLabelRegular);
+
+        EP::GUI::Socket* sBuffer  = socketInIs(block,5,5,"In",TaskGranulator::In::Buffer,[]() {return 0;});
+        sBuffer->textColorIs(std::vector<EP::Color>{colorBuffer*0.5,colorBuffer});
+        sBuffer->connectorColorIs(std::vector<EP::Color>{colorBuffer,EP::Color(0,0,0)});
+        packageInIs(block,45 ,5,"Pos" ,colorValue,task(),TaskGranulator::In::Position,new EP::FunctionLin(0,1),0);
+        packageInIs(block,85 ,5,"Den" ,colorValue,task(),TaskGranulator::In::Density,new EP::FunctionExp(0.01,100),1);
+        packageInIs(block,125 ,5,"Len" ,colorValue,task(),TaskGranulator::In::Length,new EP::FunctionExp(0.001,1),0.1);
+        packageInIs(block,165 ,5,"Pitch" ,colorValue,task(),TaskGranulator::In::Pitch,new EP::FunctionExp(0.01,100),1);
+
+        socketOutIs(block,5,80,"Out",colorSignal,TaskGranulator::Out::Signal);
+      }
+      virtual Task* task() {return task_;}
+      virtual std::string serializeName() {return "EntityGranulator";}
+    protected:
+      TaskGranulator* task_;
+    };
+
     static Entity* entityFromData(EP::GUI::BlockHolder* const bh, EntityData* const data) {
       std::cout << "instantiate " << data->type << std::endl;
       if(data->type=="EntityFM") {
@@ -1281,6 +1353,8 @@ namespace EP {
         return new EntitySignalAnalyzer(bh,data);
       } else if(data->type=="EntityBuffer") {
         return new EntityBuffer(bh,data);
+      } else if(data->type=="EntityGranulator") {
+        return new EntityGranulator(bh,data);
       } else {
         std::cout << "do not know " << data->type << std::endl;
         return NULL;
@@ -1316,6 +1390,7 @@ namespace EP {
       addBlockTemplate("EntityAudioIn","Audio In");
       addBlockTemplate("EntitySignalAnalyzer","Signal Analyzer");
       addBlockTemplate("EntityBuffer","Buffer");
+      addBlockTemplate("EntityGranulator","Granulator");
 
 
       EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,content,0,0,100,100);

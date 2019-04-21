@@ -1,6 +1,65 @@
 @1 EntityBuffer
-position=76.000000,205.000000
+position=142.000000,76.000000
+inTask_0=6,0
+inValue_0=0.052200
+@2 EntityGranulator
+position=117.000000,360.000000
+inTask_0=1,0
+inValue_0=0.000000
+inTask_1=10,0
+inValue_1=0.569930
+inTask_2=0,0
+inValue_2=0.018884
+inTask_3=0,0
+inValue_3=0.123011
+inTask_4=8,0
+inValue_4=1.496627
+@3 EntityAudioOut
+position=8.000000,365.000000
 inTask_0=2,0
-inValue_0=1.130400
-@2 EntityAudioIn
-position=51.000000,49.000000
+inValue_0=-0.126421
+inTask_1=0,0
+inValue_1=0.424027
+@4 EntityChordPicker
+position=306.000000,240.000000
+dataChord=1,0,0,0,1,0,0,0,0,1,0,0,1
+@5 EntityLFO
+position=370.000000,23.000000
+inTask_0=0,0
+inValue_0=0.075006
+inTask_1=0,0
+inValue_1=0.000000
+inTask_2=0,0
+inValue_2=0.000000
+@6 EntityAudioIn
+position=29.000000,29.000000
+@7 EntityLFO
+position=515.000000,12.000000
+inTask_0=0,0
+inValue_0=0.364513
+inTask_1=0,0
+inValue_1=0.000000
+inTask_2=0,0
+inValue_2=0.000000
+@8 EntityQuantizer
+position=355.000000,336.000000
+inTask_0=9,0
+inValue_0=10.990358
+inTask_1=4,0
+inValue_1=1.000000,1.259921,1.681793,2.000000
+@9 EntityMultiplyAndAdd
+position=515.000000,191.000000
+inTask_0=7,0
+inValue_0=1.000000
+inTask_1=0,0
+inValue_1=6.449594
+inTask_2=0,0
+inValue_2=6.845529
+@10 EntityMultiplyAndAdd
+position=168.000000,199.000000
+inTask_0=5,0
+inValue_0=1.000000
+inTask_1=0,0
+inValue_1=0.229029
+inTask_2=0,0
+inValue_2=0.876530
