@@ -1522,8 +1522,162 @@ namespace EP {
 
 
     }
-  }
-}
+  } // namespace EP::FlowGUI
+  namespace Apps {
+    class ParticleLife {
+    public:
+      class Particle {
+      public:
+        Particle(const double _x,const double _y,const size_t _color)
+        : x_(_x),y_(_y),color_(_color){}
+        double x_,y_;
+        double vx_,vy_;
+        double ax_,ay_;
+        const size_t color_;
+        void inline step(const double friction) {
+          vx_+=ax_; vy_+=ay_;
+          ax_=0;ay_=0;
+          if (x_<0) {vx_=std::abs(vx_);x_=0;}
+          if (y_<0) {vy_=std::abs(vy_);y_=0;}
+          if (x_>1) {vx_=-std::abs(vx_);x_=1;}
+          if (y_>1) {vy_=-std::abs(vy_);y_=1;}
+          vx_*=friction;vy_*=friction;
+          x_+=vx_;y_+=vy_;
+        }
+      };
+      class ForceConfig {
+      public:
+        ForceConfig(float _d1,float _d2Md1,float _polarity)
+        : d1(_d1),d2Md1(_d2Md1),polarity(_polarity) {}
+        float d1;
+        float d2Md1;
+        float polarity;
+      };
+
+      ParticleLife(EP::GUI::Area* const parent) {
+        EP::GUI::Window* window = new EP::GUI::Window("particleWindow",parent,50,20,600,600,"ParticleLife");
+
+        aDraw_ = new EP::GUI::AreaDraw("draw",NULL,0,0,1000,1000);
+        aDraw_->onDrawIs([this](const float gx,const float gy,const float dx,const float dy,const float scale,sf::RenderTarget &target) {
+          const float dx_s=dx*scale;
+          const float dy_s=dy*scale;
+          for (double i = 0; i < 1; i+=0.001) {
+            EP::DrawRect(gx+i*dx_s,gy+(0.5-0.1*force(i*3,d1_,d2MinusD1_+d1_,polarity_))*dy_s,2,2, target, EP::Color(1,1,1));
+          }
+          if (not isRunning_) {return;}
+
+          for (auto &p : particles_) {
+            for (auto &p2 : particles_) {
+              if (not (&p==&p2)) {
+                ForceConfig& fc = forceConfig_[p.color_][p2.color_];
+                const double dx = p2.x_-p.x_;
+                const double dy = p2.y_-p.y_;
+                const double dist = std::sqrt(dx*dx+dy*dy);
+                const double angle = std::atan2(dy,dx);
+                const double dd1 = d1_*fc.d1;
+                const double dd2 = dd1 + d2MinusD1_*fc.d2Md1;
+                const double f = amplitude_*force(dist*10,dd1,dd2,polarity_*fc.polarity);
+                p.ax_-=f*std::cos(angle);
+                p.ay_-=f*std::sin(angle);
+              }
+            }
+            p.ax_+=10*amplitude_*force(p.x_,0.2,0.3,0);
+            p.ay_+=10*amplitude_*force(p.y_,0.2,0.3,0);
+            p.ax_-=10*amplitude_*force(1-p.x_,0.2,0.3,0);
+            p.ay_-=10*amplitude_*force(1-p.y_,0.2,0.3,0);
+            p.step(friction_);
+          }
+          for (auto &p : particles_) {
+            EP::DrawRect(gx+p.x_*dx_s-1,gy+p.y_*dy_s-1,2,2, target, colors_[p.color_]);
+          }
+        });
+
+        EP::GUI::Area* scroll = new EP::GUI::ScrollArea("scroll",window,aDraw_,0,0,100,100);
+        scroll->fillParentIs(true);
+
+        // -------------------------- CONFIG
+        EP::GUI::Window* windowConf = new EP::GUI::Window("particleWindowConfig",parent,700,20,150,300,"ParticleLife Config");
+        EP::GUI::Area* contentConf = new EP::GUI::Area("particleConfigArea",NULL,0,0,100,400);
+
+        EP::GUI::Knob* knob1 = new EP::GUI::Knob("knob1",contentConf,5,5,50,50,new EP::FunctionLin(0.0,4.0));
+        knob1->onValueIs([this](double val) {d1_ = val;});
+        knob1->valueIs(1);
+        EP::GUI::Knob* knob2 = new EP::GUI::Knob("knob2",contentConf,5,60,50,50,new EP::FunctionLin(0.0,4.0));
+        knob2->onValueIs([this](double val) {d2MinusD1_ = val;});
+        knob2->valueIs(1);
+        EP::GUI::Knob* knob3 = new EP::GUI::Knob("knob3",contentConf,5,115,50,50,new EP::FunctionLin(-10.0,10.0));
+        knob3->onValueIs([this](double val) {polarity_ = val;});
+        knob3->valueIs(1);
+        EP::GUI::Knob* knob4 = new EP::GUI::Knob("knob4",contentConf,5,170,50,50,new EP::FunctionExp(0.000001,1));
+        knob4->onValueIs([this](double val) {amplitude_ = val;});
+        knob4->valueIs(0.000001);
+        EP::GUI::Knob* knob5 = new EP::GUI::Knob("knob5",contentConf,5,225,50,50,new EP::FunctionExp(0.000001,1));
+        knob5->onValueIs([this](double val) {friction_ = val;});
+        knob5->valueIs(0.001);
+        EP::GUI::Button* butttonReset = new EP::GUI::Button("resetButton",contentConf,5,280,90,20,"reset");
+        butttonReset->onClickIs([this]() {
+          resetForces();
+        });
+
+        EP::GUI::Button* buttonRun = new EP::GUI::Button("buttonRun",contentConf,5,305,90,20,"run/stop");
+        buttonRun->onClickIs([this]() {
+          isRunning_ = not isRunning_;
+        });
+
+        EP::GUI::Area* scrollConf = new EP::GUI::ScrollArea("scroll",windowConf,contentConf,0,0,100,100);
+        contentConf->colorIs(EP::Color(0.1,0,0));
+        scrollConf->fillParentIs(true);
+
+        // ------------------------- Fill in particles:
+        const size_t N = 500;
+        const size_t NCol = 10;
+        particles_.reserve(N);
+        for (size_t i = 0; i < N; i++) {
+          const double xx = (double)rand() / RAND_MAX;
+          const double yy = (double)rand() / RAND_MAX;
+          particles_.push_back(Particle(xx,yy,i%NCol));
+        }
+        for (size_t i = 0; i < NCol; i++) {
+          colors_.push_back(EP::ColorHue((double)(i%NCol)/(double)NCol));
+        }
+        resetForces();
+      }
+      void resetForces() {
+        forceConfig_.clear();
+        forceConfig_.resize(colors_.size());
+        for (size_t i = 0; i < colors_.size(); i++) {
+          for (size_t j = 0; j < colors_.size(); j++) {
+            const float v1 = ((double)rand() / RAND_MAX)+0.01;
+            const float v2 = ((double)rand() / RAND_MAX)+0.01;
+            const float v3 = ((double)rand() / RAND_MAX)*2-1.0;
+            forceConfig_[i].push_back(ForceConfig(v1,v2,v3));
+          }
+        }
+      }
+
+      double force(const double d,const double d1=1,const double d2=2,const double polarity=1) const {
+        if (d>=d2) {return 0;}
+        if (d>=d1) {
+          const double tmp = (d-d1)/(d2-d1)*2;
+          const double tmp2 = (tmp<1.0)?tmp:2.0-tmp;
+          return polarity*tmp2;
+        }
+        return 1.0/(d)*d1-1.0;
+      }
+    protected:
+      EP::GUI::AreaDraw* aDraw_;
+      double d1_ = 1;
+      double d2MinusD1_ = 1;
+      double polarity_ = 1;
+      double amplitude_ = 0;
+      double friction_ = 0.1;
+      std::vector<Particle> particles_;
+      std::vector<EP::Color> colors_;
+      std::vector<std::vector<ForceConfig>> forceConfig_;
+      bool isRunning_ = false;
+    };
+  } // namespace EP::Apps
+} // namespace EP
 
 
 //-------------------------------------------------------- Main
@@ -1532,6 +1686,8 @@ int main()
   // ------------------------------------ WINDOW
   EP::GUI::MasterWindow* masterWindow = new EP::GUI::MasterWindow(1000,600,"window title",false);
   {
+    EP::Apps::ParticleLife* pl = new EP::Apps::ParticleLife(masterWindow->area());
+
     EP::GUI::BlockHolder* blockHolder;
 
     EP::GUI::Window* window2 = new EP::GUI::Window("window2",masterWindow->area(),300,150,600,400,"Designer");
@@ -1562,6 +1718,7 @@ int main()
       EP::GUI::Window* ww = new EP::GUI::Window("w"+std::to_string(i),content1,10,10,100,100,"w"+std::to_string(i));
       w = ww;
     }
+
   }
   // ------------------------------------ AUDIO
   EP::FlowGUI::AudioOutStream audioOutStream;
