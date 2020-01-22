@@ -2,68 +2,84 @@
 #include <map>
 #include <vector>
 #include <SFML/Network.hpp>
+#include <SFML/Graphics.hpp>
 #include <cassert>
 #include <string>
 
-std::vector<std::string> split(const std::string &text, char sep) {
-   std::vector<std::string> tokens;
-   std::size_t start = 0, end = 0;
-   while ((end = text.find(sep, start)) != std::string::npos) {
-      tokens.push_back(text.substr(start, end - start));
-      start = end + 1;
+#include "evp_server.hpp"
+
+class Color {
+public:
+   float r,g,b,a;//0..1
+   Color(const float r,const float g,const float b,const float a=1.0) {
+     this->r = std::min(1.0f,std::max(0.0f,r));
+     this->g = std::min(1.0f,std::max(0.0f,g));
+     this->b = std::min(1.0f,std::max(0.0f,b));
+     this->a = std::min(1.0f,std::max(0.0f,a));
    }
-   tokens.push_back(text.substr(start));
-   return tokens;
+ 
+   Color operator*(const float scale) {return Color(scale*r,scale*g,scale*b,a);}
+ 
+   sf::Color toSFML() const {
+     return sf::Color(255.0*r,255.0*g,255.0*b,255.0*a);
+   }
+protected:
+};
+
+
+void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, const Color& color) {
+   sf::RectangleShape rectangle;
+   rectangle.setSize(sf::Vector2f(dx, dy));
+   rectangle.setFillColor(color.toSFML());
+   rectangle.setPosition(x, y);
+   target.draw(rectangle, sf::BlendAlpha);//BlendAdd
 }
 
 
-
 int main(int argc, char** argv) {
-    std::cout << "Starting..." << std::endl;
-    
-    sf::TcpListener listener;
-    if (listener.listen(sf::Socket::AnyPort) != sf::Socket::Done) {
-       std::cout << "ERROR port" << std::endl;
-       assert(false);
-    }
-    unsigned short port = listener.getLocalPort();
-    std::cout << "Port: " << port << std::endl;
-    
-    while(true) {
-       sf::TcpSocket socket;
-       if (listener.accept(socket) != sf::Socket::Done) {
-          std::cout << "ERROR socket" << std::endl;
-          assert(false);
-       }
-       std::cout << "Client connected: " << socket.getRemoteAddress() << std::endl;
-       
-       char in[2048];
-       std::size_t received;
-       if (socket.receive(in, sizeof(in), received) != sf::Socket::Done) {
-          std::cout << "ERROR rcv" << std::endl;
-          assert(false);
-       }
-       std::cout << "Answer received from the client: \"" << in << "\"" << std::endl;
-       
-       std::string s(in);
-       std::vector<std::string> lines(split(s,'\n'));
-       std::vector<std::string> first(split(lines[0],' '));
+   std::cout << "Starting..." << std::endl;
+   
+   evp::Server server;
+   
+   sf::ContextSettings settings;
+   settings.antialiasingLevel = 8;
+   sf::RenderWindow* window = new sf::RenderWindow(
+       	    sf::VideoMode(800,600),
+       	    "Window",
+       	    sf::Style::Default,
+       	    settings
+       	    );
+   
+   float mouseX;
+   float mouseY;
 
-       std::cout << "Request: " << first[0] << " - " << first[1] << std::endl;
-       
-       std::string resp = "HTTP/ 1.1 200 OK\nContent-Type: text/html\n\n";
+   while(true) {
+      // --------------- Server
+      server.run();
+      
+      // --------------- Events
+      sf::Event event;
+      while (window->pollEvent(event)) {
+         switch (event.type) {
+            case sf::Event::Closed: {
+	      std::cout << "closing window?" << std::endl;
+              break;
+            }
+  	    case sf::Event::MouseMoved: {
+               mouseX = event.mouseMove.x;
+               mouseY = event.mouseMove.y;
+               break;
+	    }
+	 }
+      }
 
-       resp+= "Requested:\n";
-       resp+= first[1];
-       
-       if (socket.send(resp.c_str(), resp.size()) != sf::Socket::Done) {
-          std::cout << "ERROR snd" << std::endl;
-          assert(false);
-       }
-    }
+      // --------------- DRAW
+      window->clear();
+      
+      DrawRect(mouseX, mouseY, 5,5, *window, Color(1,1,1));
 
-    //std::cout << "Press enter to exit..." << std::endl;
-    //std::cin.ignore(10000, '\n');
-
-    return 0;
+      window->display();
+   }
+   
+   return 0;
 }
