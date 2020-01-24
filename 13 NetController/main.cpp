@@ -40,8 +40,8 @@ void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, co
 
 class TestServer : public evp::Server {
    void handleRequest(std::string &ret, const std::string &url) {
-      if(url == "/img.png") {
-	 std::ifstream t("img.png");
+      if(url == "img.png") {
+	 std::ifstream t(url);
 	 std::string data((std::istreambuf_iterator<char>(t)),
                  std::istreambuf_iterator<char>());
          ret = std::string("HTTP/1.0 200 Ok\n")
@@ -51,12 +51,24 @@ class TestServer : public evp::Server {
 		 +data;
          return;
       }
-      
+      if(url == "script.js") {
+	 std::ifstream t(url);
+	 std::string data((std::istreambuf_iterator<char>(t)),
+                 std::istreambuf_iterator<char>());
+         ret = std::string("HTTP/1.0 200 Ok\n")
+                 + "Content-Type: text/javascript;charset=UTF-8\n"
+		 + "Content-Length: " + std::to_string(data.size()) + "\n"
+		 + "\n"
+		 +data;
+         return;
+      }
+
       ret = evp::Server::HTTP_text
 	      +"<html> <head> <title> TITLE </title> </head>\n"
 	      +"<body>\n"
 	      +"<p> hello world\n"
-	      +"<img src='img.png' alt='subtitle'>"
+	      +"<img src='img.png' alt='subtitle'>\n"
+	      +"<script src='script.js'></script>"
 	      +"</body> </html>";
    }
 };

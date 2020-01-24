@@ -129,7 +129,7 @@ public:
 	       // log error
 	       handleError(ret, "request not GET.\nFirst line:\n" + lines[0]);
 	    } else {
-	       std::string &url = first[1];
+	       std::string url = first[1].substr(1,-1);
 
 	       // handle GET
 	       handleRequest(ret, url);
