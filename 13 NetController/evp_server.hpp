@@ -7,18 +7,12 @@
 #include <cassert>
 #include <string>
 
+#ifndef EVP_SERVER_HPP
+#define EVP_SERVER_HPP
+
 namespace evp {
 
-std::vector<std::string> split(const std::string &text, char sep) {
-   std::vector<std::string> tokens;
-   std::size_t start = 0, end = 0;
-   while ((end = text.find(sep, start)) != std::string::npos) {
-      tokens.push_back(text.substr(start, end - start));
-      start = end + 1;
-   }
-   tokens.push_back(text.substr(start));
-   return tokens;
-}
+std::vector<std::string> split(const std::string &text, char sep);
 
 class Connection {
 public:
@@ -124,14 +118,23 @@ public:
 	    std::string s = c->rcvdPop();
             std::vector<std::string> lines(split(s,'\n'));
             std::vector<std::string> first(split(lines[0],' '));
-            std::cout << "Request: " << first[0] << " - " << first[1] << std::endl;
-            
-            // TODO: continue handling requests here.
 
-            std::string resp = "HTTP/ 1.1 200 OK\nContent-Type: text/html\n\n";
-            resp+= "Requested:\n";
-            resp+= first[1];
-	    c->send(resp);
+	    std::string ret = "";
+	    if(first.size() < 2) {
+	       // call handle error: give it first line?
+	       // log error
+	       handleError(ret, "bad request.\nFirst line:\n" + lines[0]);
+	    } else if(first[0] != "GET") {
+	       // call handle error: not GET
+	       // log error
+	       handleError(ret, "request not GET.\nFirst line:\n" + lines[0]);
+	    } else {
+	       std::string &url = first[1];
+
+	       // handle GET
+	       handleRequest(ret, url);
+	    }
+	    c->send(ret);
 	 }
 
 	 if(!c->isConnected()) {
@@ -140,7 +143,13 @@ public:
 	    std::cout << "connections " << connections.size() << std::endl;
 	 }
       }
-  }
+   }
+
+   const static std::string HTTP_text;
+   
+   // override these below for impl
+   virtual void handleError(std::string &ret, const std::string &error);
+   virtual void handleRequest(std::string &ret, const std::string &url);
 private:
    sf::TcpListener listener;
    unsigned short port;
@@ -148,4 +157,6 @@ private:
    sf::TcpSocket* socket_; // used to accept sockets from listener
    std::set<Connection*> connections;
 };
+
 } // namespace evp
+#endif //EVP_SERVER_HPP

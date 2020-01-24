@@ -35,11 +35,17 @@ void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, co
    target.draw(rectangle, sf::BlendAlpha);//BlendAdd
 }
 
+class TestServer : public evp::Server {
+   void handleRequest(std::string &ret, const std::string &url) {
+      ret = evp::Server::HTTP_text + "Test Server.";
+   }
+};
+
 
 int main(int argc, char** argv) {
    std::cout << "Starting..." << std::endl;
    
-   evp::Server server;
+   TestServer server;
    
    sf::ContextSettings settings;
    settings.antialiasingLevel = 8;
