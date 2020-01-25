@@ -115,7 +115,18 @@ function run() {
    cnt++;
    console.log("run " + cnt);
    
-   var url = "data?hello" + cnt;
+   var isDown = false;
+   var dx = 0;
+   var dy = 0;
+   if(drag) {
+      dx = (dragEnd.x - dragStart.x) / canvas.width;
+      dy = (dragEnd.y - dragStart.y) / canvas.height;
+   } else if(tdata[0].drag) {
+      dx = (tdata[0].x1 - tdata[0].x0) / canvas.width;
+      dy = (tdata[0].y1 - tdata[0].y0) / canvas.height;
+   }
+   
+   var url = "data?c="+cnt+"&dx="+dx+"&dy="+dy;
    fetch(url)
    .then(data => {console.log("data"); console.log(data)})
    .then(res => {console.log("res"); console.log(res)})
@@ -124,7 +135,7 @@ function run() {
 
 run()
 
-var timer = setInterval(run, 500);
+var timer = setInterval(run, 50);
 
 clear();
 

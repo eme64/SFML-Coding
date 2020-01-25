@@ -39,6 +39,8 @@ void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, co
 }
 
 class TestServer : public evp::Server {
+public:
+   double dx,dy;
    void handleRequest(std::string &ret, const std::string &url) {
       std::cout << "url: " << url << std::endl;
       if(url == "img.png") {
@@ -72,7 +74,7 @@ class TestServer : public evp::Server {
          return;
       }
       
-      if(url.find("data/") == 0) {
+      if(url.find("data") == 0) {
          std::cout << "data/ -> " << url << std::endl;
 	 std::string data = "hello world";
          ret = std::string("HTTP/1.0 200 Ok\n")
@@ -80,6 +82,21 @@ class TestServer : public evp::Server {
 		 + "Content-Length: " + std::to_string(data.size()) + "\n"
 		 + "\n"
 		 +data;
+
+	 std::vector<std::string> urlParts = evp::split(url,'?');
+	 if(urlParts.size()>1) {
+	    std::vector<std::string> parts = evp::split(urlParts[1],'&');
+	    for(std::string &s : parts) {
+	       std::vector<std::string> param = evp::split(s,'=');
+	       if(param.size()>1) {
+	          if(param[0]=="dx") {
+		     dx = std::stod(param[1]);
+		  } else if(param[0]=="dy") {
+		     dy = std::stod(param[1]);
+		  }
+	       }
+	    }
+	 }
 	 return;
       }
 
@@ -111,6 +128,9 @@ int main(int argc, char** argv) {
    
    float mouseX;
    float mouseY;
+   
+   float posX = 0;
+   float posY = 0;
 
    while(true) {
       // --------------- Server
@@ -136,7 +156,10 @@ int main(int argc, char** argv) {
       window->clear();
       
       DrawRect(mouseX, mouseY, 5,5, *window, Color(1,1,1));
-
+      
+      posX = std::min(800.0, std::max(0.0, posX + 5*server.dx));
+      posY = std::min(600.0, std::max(0.0, posY + 5*server.dy));
+      DrawRect(posX-5, posY-5, 10,10, *window, Color(1,0,0));
       window->display();
    }
    
