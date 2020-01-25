@@ -48,7 +48,7 @@ public:
 	    break;
          }
          case sf::Socket::Error: {
-	    std::cout << "Error" << std::endl;
+	    std::cout << "Error connected " << connected_ << std::endl;
 	    break;
          }
       }
@@ -72,6 +72,8 @@ public:
 	 std::cout << s << std::endl;
          assert(false);
       }
+      socket_->disconnect();
+      connected_ = false;
    }
 private:
    sf::TcpSocket *socket_;
