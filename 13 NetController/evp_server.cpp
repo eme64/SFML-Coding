@@ -34,7 +34,7 @@ evp::FileServer::handleRequest(std::string &ret, const std::string &url) {
    std::cout << "path: " << u.path << " ext: " << u.pathExt << std::endl;
    const auto &it = files_.find(u.path);
    if(it!=files_.end()) {
-      ret = it->second->get();
+      ret = it->second->get(u);
 
       if(u.pathExt == "") {
          ret = evp::Server::HTTP_text + ret;
@@ -60,10 +60,15 @@ evp::FileServer::handleRequest(std::string &ret, const std::string &url) {
 
 void
 evp::FileServer::registerFile(const std::string &url, const std::string &filename) {
-   files_[url] = new evp::FileServer::File(filename);
+   files_[url] = new evp::FileServer::FileItem(filename);
 }
 
 void
 evp::FileServer::registerString(const std::string &url, const std::string &data) {
+   files_[url] = new evp::FileServer::StringItem(data);
+}
+void
+evp::FileServer::registerFunction(const std::string &url, const evp::FileServer::FunctionItem::F f) {
+   files_[url] = new evp::FileServer::FunctionItem(f);
 }
 

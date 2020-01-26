@@ -52,75 +52,22 @@ public:
       registerFile("index.html","index.html");
       registerFile("script.js","script.js");
       registerFile("img.png","img.png");
+
+      registerString("hello.html",std::string("")
+              +"<html> <head> <title> TITLE </title> </head>\n"
+              +"<body>\n"
+              +"<p> hello world\n"
+              +"<img src='img.png' alt='subtitle'>\n"
+              +"</body> </html>"
+      );
+
+      evp::FileServer::FunctionItem::F func = [&](const evp::URL &url) -> std::string {
+         dx = std::stod(url.paramString("dx","0"));
+         dy = std::stod(url.paramString("dy","0"));
+         return std::string("hello");
+      };
+      registerFunction("data", func);
    }
-   //void handleRequest(std::string &ret, const std::string &url) {
-   //   std::cout << "url: " << url << std::endl;
-   //   if(url == "img.png") {
-   //      std::ifstream t(url);
-   //      std::string data((std::istreambuf_iterator<char>(t)),
-   //              std::istreambuf_iterator<char>());
-   //      ret = std::string("HTTP/1.0 200 Ok\n")
-   //     	 + "Content-Type: image/png\n"
-   //     	 + "Content-Length: " + std::to_string(data.size()) + "\n"
-   //     	 + "\n"
-   //     	 +data;
-   //      return;
-   //   }
-   //   if(url == "script.js") {
-   //      std::ifstream t(url);
-   //      std::string data((std::istreambuf_iterator<char>(t)),
-   //              std::istreambuf_iterator<char>());
-   //      ret = std::string("HTTP/1.0 200 Ok\n")
-   //              + "Content-Type: text/javascript;charset=UTF-8\n"
-   //     	 + "Content-Length: " + std::to_string(data.size()) + "\n"
-   //     	 + "\n"
-   //     	 +data;
-   //      return;
-   //   }
-   //   if(url == "") {
-   //      std::ifstream t("index.html");
-   //      std::string data((std::istreambuf_iterator<char>(t)),
-   //              std::istreambuf_iterator<char>());
-   //      ret = evp::Server::HTTP_text
-   //     	 +data;
-   //      return;
-   //   }
-   //   
-   //   if(url.find("data") == 0) {
-   //      std::cout << "data/ -> " << url << std::endl;
-   //      std::string data = "hello world";
-   //      ret = std::string("HTTP/1.0 200 Ok\n")
-   //              + "Content-Type: text/javascript;charset=UTF-8\n"
-   //     	 + "Content-Length: " + std::to_string(data.size()) + "\n"
-   //     	 + "\n"
-   //     	 +data;
-
-   //      std::vector<std::string> urlParts = evp::split(url,'?');
-   //      if(urlParts.size()>1) {
-   //         std::vector<std::string> parts = evp::split(urlParts[1],'&');
-   //         for(std::string &s : parts) {
-   //            std::vector<std::string> param = evp::split(s,'=');
-   //            if(param.size()>1) {
-   //               if(param[0]=="dx") {
-   //     	     dx = std::stod(param[1]);
-   //     	  } else if(param[0]=="dy") {
-   //     	     dy = std::stod(param[1]);
-   //     	  }
-   //            }
-   //         }
-   //      }
-   //      return;
-   //   }
-
-   //   
-   //   ret = evp::Server::HTTP_text
-   //           +"<html> <head> <title> TITLE </title> </head>\n"
-   //           +"<body>\n"
-   //           +"<p> hello world\n"
-   //           +"<img src='img.png' alt='subtitle'>\n"
-   //           +"<script src='script.js'></script>"
-   //           +"</body> </html>";
-   //}
 };
 
 

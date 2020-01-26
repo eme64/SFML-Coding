@@ -10,6 +10,8 @@
 #include <fstream>
 #include <streambuf>
 
+#include <functional>
+
 #ifndef EVP_SERVER_HPP
 #define EVP_SERVER_HPP
 
@@ -187,6 +189,14 @@ public:
          }
       }
    }
+   std::string paramString(const std::string &p, const std::string &def) const {
+      const auto &it = param.find(p);
+      if(it!=param.end()) {
+	 return it->second;
+      } else {
+         return def;
+      }
+   }
    std::string path;
    std::string pathExt;
    std::map<std::string,std::string> param;
@@ -195,11 +205,11 @@ private:
 
 class FileServer : public Server {
 public:
-   class Item{ public: virtual const std::string get() {return "XXX";}; };
-   class File : public Item {
+   class Item{ public: virtual const std::string get(const URL &url) {return "XXX";}; };
+   class FileItem : public Item {
    public:
-      File(const std::string &filename) : filename_(filename) {}
-      virtual const std::string get() {
+      FileItem(const std::string &filename) : filename_(filename) {}
+      virtual const std::string get(const URL &url) {
          std::ifstream t(filename_);
          std::string ret((std::istreambuf_iterator<char>(t)),
                  std::istreambuf_iterator<char>());
@@ -208,9 +218,29 @@ public:
    private:
       std::string filename_;
    };
+   class StringItem : public Item {
+   public:
+      StringItem(const std::string &s) : str_(s) {}
+      virtual const std::string get(const URL &url) { return str_; }
+   private:
+      std::string str_;
+   };
+
+   class FunctionItem : public Item {
+   public:
+      typedef std::function<std::string(const evp::URL&)> F;
+      FunctionItem(const F &f) : f_(f) {}
+      virtual const std::string get(const URL &url) {
+	 return f_(url);
+      }
+   private:
+      F f_;
+   };
+
    virtual void handleRequest(std::string &ret, const std::string &url);
    void registerFile(const std::string &url, const std::string &filename);
    void registerString(const std::string &url, const std::string &data);
+   void registerFunction(const std::string &url, const FunctionItem::F f);
 private:
    std::map<std::string, Item*> files_;
 };
