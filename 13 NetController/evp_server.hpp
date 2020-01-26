@@ -7,6 +7,9 @@
 #include <cassert>
 #include <string>
 
+#include <fstream>
+#include <streambuf>
+
 #ifndef EVP_SERVER_HPP
 #define EVP_SERVER_HPP
 
@@ -158,6 +161,58 @@ private:
 
    sf::TcpSocket* socket_; // used to accept sockets from listener
    std::set<Connection*> connections;
+};
+
+class URL {
+public:
+   URL(const std::string &url) {
+      std::vector<std::string> urlParts = evp::split(url,'?');
+      path = urlParts[0];
+      std::vector<std::string> pathParts = evp::split(path,'.');
+      if(pathParts.size()>1) {
+         pathExt = pathParts[pathParts.size()-1];
+      } else {
+         pathExt = "";
+      }
+
+      if(urlParts.size()>1) {
+         std::vector<std::string> parts = evp::split(urlParts[1],'&');
+         for(std::string &s : parts) {
+            std::vector<std::string> paramX = evp::split(s,'=');
+            if(paramX.size()>1) {
+	       param[paramX[0]] = paramX[1];
+            } else {
+	       param[paramX[0]] = "";
+	    }
+         }
+      }
+   }
+   std::string path;
+   std::string pathExt;
+   std::map<std::string,std::string> param;
+private:
+};
+
+class FileServer : public Server {
+public:
+   class Item{ public: virtual const std::string get() {return "XXX";}; };
+   class File : public Item {
+   public:
+      File(const std::string &filename) : filename_(filename) {}
+      virtual const std::string get() {
+         std::ifstream t(filename_);
+         std::string ret((std::istreambuf_iterator<char>(t)),
+                 std::istreambuf_iterator<char>());
+	 return ret;
+      }
+   private:
+      std::string filename_;
+   };
+   virtual void handleRequest(std::string &ret, const std::string &url);
+   void registerFile(const std::string &url, const std::string &filename);
+   void registerString(const std::string &url, const std::string &data);
+private:
+   std::map<std::string, Item*> files_;
 };
 
 } // namespace evp

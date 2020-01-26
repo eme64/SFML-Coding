@@ -26,3 +26,44 @@ evp::Server::handleRequest(std::string &ret, const std::string &url) {
 
 const std::string
 evp::Server::HTTP_text ="HTTP/ 1.1 200 OK\nContent-Type: text/html\n\n";
+
+// ---------- FILE SERVER
+void
+evp::FileServer::handleRequest(std::string &ret, const std::string &url) {
+   URL u(url);
+   std::cout << "path: " << u.path << " ext: " << u.pathExt << std::endl;
+   const auto &it = files_.find(u.path);
+   if(it!=files_.end()) {
+      ret = it->second->get();
+
+      if(u.pathExt == "") {
+         ret = evp::Server::HTTP_text + ret;
+      } else if(u.pathExt == "html") {
+         ret = evp::Server::HTTP_text + ret;
+      } else if(u.pathExt == "js") {
+         ret = std::string("HTTP/1.0 200 Ok\n")
+                 + "Content-Type: text/javascript;charset=UTF-8\n"
+        	 + "Content-Length: " + std::to_string(ret.size()) + "\n"
+        	 + "\n"
+        	 +ret;
+      } else if(u.pathExt == "png") {
+         ret = std::string("HTTP/1.0 200 Ok\n")
+                 + "Content-Type: image/png\n"
+                 + "Content-Length: " + std::to_string(ret.size()) + "\n"
+                 + "\n"
+                 +ret;
+      }
+   } else {
+      ret = HTTP_text + std::string("404: ") + url;
+   }
+}
+
+void
+evp::FileServer::registerFile(const std::string &url, const std::string &filename) {
+   files_[url] = new evp::FileServer::File(filename);
+}
+
+void
+evp::FileServer::registerString(const std::string &url, const std::string &data) {
+}
+
