@@ -48,7 +48,22 @@ public:
    double dx,dy;
    TestServer() {
       // register files:
-      registerFile("","index.html");
+      registerString("",std::string("")
+              +"<html> <head> <title> REDIRECT </title>\n"
+	      +"<meta http-equiv='Refresh' content='0; url=login.html'/>\n"
+	      +"</head>\n"
+              +"<body>\n"
+              +"<p> redirecting...\n"
+              +"</body> </html>"
+      );
+      registerFile("login.html","login.html");
+
+      evp::FileServer::FunctionItem::F loginFunc = [&](const evp::URL &url) -> std::string {
+	 std::string name = url.paramString("name","");
+         return std::string("Hello ") + name + "!";
+      };
+      registerFunction("login2.html", loginFunc);
+
       registerFile("index.html","index.html");
       registerFile("script.js","script.js");
       registerFile("img.png","img.png");
