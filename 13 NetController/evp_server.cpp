@@ -52,6 +52,12 @@ evp::FileServer::handleRequest(std::string &ret, const std::string &url) {
                  + "Content-Length: " + std::to_string(ret.size()) + "\n"
                  + "\n"
                  +ret;
+      } else if(u.pathExt == "ico") {
+         ret = std::string("HTTP/1.0 200 Ok\n")
+                 + "Content-Type: image/x-icon\n"
+                 + "Content-Length: " + std::to_string(ret.size()) + "\n"
+                 + "\n"
+                 +ret;
       }
    } else {
       ret = HTTP_text + std::string("404: ") + url;

@@ -67,6 +67,7 @@ public:
       registerFile("index.html","index.html");
       registerFile("script.js","script.js");
       registerFile("img.png","img.png");
+      registerFile("favicon.ico","favicon.ico");
 
       registerString("hello.html",std::string("")
               +"<html> <head> <title> TITLE </title> </head>\n"
