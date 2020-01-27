@@ -23,10 +23,10 @@ class Connection {
 public:
    Connection(sf::TcpSocket* socket) : socket_(socket) {
       // assume socket was accepted.
-      std::cout << "Connection: " << socket_->getRemoteAddress() << std::endl;
+      //std::cout << "Connection: " << socket_->getRemoteAddress() << std::endl;
    }
    ~Connection() {
-      std::cout << "~Connection" << std::endl;
+      //std::cout << "~Connection" << std::endl;
       delete(socket_);
    }
    void run() {
@@ -36,7 +36,6 @@ public:
 
       switch(status) {
          case sf::Socket::Done: {
-	    std::cout << "Done" << std::endl;
 	    rcvd.push(in);
 	    break;
          }
@@ -112,7 +111,7 @@ public:
 	 
 	 connections.insert(c);
 
-	 std::cout << "connections " << connections.size() << std::endl;
+	 //std::cout << "connections " << connections.size() << std::endl;
       }
 
       for(std::set<Connection*>::iterator it = connections.begin(); it!=connections.end(); it++) {
@@ -147,7 +146,7 @@ public:
 	 if(!c->isConnected()) {
 	    connections.erase(current);
 	    delete(c);
-	    std::cout << "connections " << connections.size() << std::endl;
+	    //std::cout << "connections " << connections.size() << std::endl;
 	 }
       }
    }

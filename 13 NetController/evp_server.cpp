@@ -31,7 +31,6 @@ evp::Server::HTTP_text ="HTTP/ 1.1 200 OK\nContent-Type: text/html\n\n";
 void
 evp::FileServer::handleRequest(std::string &ret, const std::string &url) {
    URL u(url);
-   std::cout << "path: " << u.path << " ext: " << u.pathExt << std::endl;
    const auto &it = files_.find(u.path);
    if(it!=files_.end()) {
       ret = it->second->get(u);
@@ -58,6 +57,8 @@ evp::FileServer::handleRequest(std::string &ret, const std::string &url) {
                  + "Content-Length: " + std::to_string(ret.size()) + "\n"
                  + "\n"
                  +ret;
+      } else {
+         std::cout << "unknown ext: " << u.pathExt << " " << u.path << std::endl;
       }
    } else {
       ret = HTTP_text + std::string("404: ") + url;
