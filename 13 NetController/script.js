@@ -128,8 +128,8 @@ function run() {
    
    var url = "data?uid="+getCookie("userid")+"&c="+cnt+"&dx="+dx+"&dy="+dy;
    fetch(url)
-   .then(data => {console.log("data"); console.log(data)})
-   .then(res => {console.log("res"); console.log(res)})
+   .then(data => {return data.text()})
+   .then(txt => {console.log("data: "+txt)})
    .catch(error => console.log(error))
 }
 
