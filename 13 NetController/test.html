@@ -1,0 +1,17 @@
+<html>
+   <head>
+      <title>TEST</title>
+   </head>
+   <body>
+      <script src="util.js"></script>
+      <div id="txt"></div>
+      <script>
+         var txt = document.getElementById("txt");
+         txt.innerHTML = "name: " + getCookie("user")
+                        +" id: " + getCookie("userid");
+      </script>
+   </body>
+</html>
+
+
+

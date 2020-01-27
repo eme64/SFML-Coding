@@ -45,7 +45,6 @@ void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, co
 
 class TestServer : public evp::FileServer {
 public:
-   double dx,dy;
    TestServer() {
       // register files:
       registerString("",std::string("")
@@ -60,12 +59,39 @@ public:
 
       evp::FileServer::FunctionItem::F loginFunc = [&](const evp::URL &url) -> std::string {
 	 std::string name = url.paramString("name","");
-         return std::string("Hello ") + name + "!";
+         // validate name:
+	 bool success = false;
+	 std::string id;
+	 login(name, id, success);
+	 if(!success) {
+            return std::string("")
+              +"<html> <head> <title>LOGIN FAILED</title>\n"
+	      +"<meta http-equiv='Refresh' content='10; url=login.html'/>\n"
+	      +"</head>\n"
+              +"<body>\n"
+	      +"<p>Login failed, name "+name+" already in use!</br>\n"
+	      +"<button onclick='window.location=\"login.html\"'>Try Again</button>\n"
+	      +"</body> </html>";
+	 } else {
+            return std::string("")
+              +"<html> <head> <title>LOGIN SUCESS - Redirect</title>\n"
+	      +"<meta http-equiv='Refresh' content='1; url=index.html'/>\n"
+	      +"</head>\n"
+              +"<body>\n"
+              +"<script>\n"
+	      +"document.cookie = 'user="+name+"'\n"
+	      +"document.cookie = 'userid="+id+"'\n"
+              +"</script>\n"
+	      +"<p> Welcome, "+name+"!\n"
+	      +"</body> </html>";
+	 }
       };
       registerFunction("login2.html", loginFunc);
 
       registerFile("index.html","index.html");
+      registerFile("test.html","test.html");
       registerFile("script.js","script.js");
+      registerFile("util.js","util.js");
       registerFile("img.png","img.png");
       registerFile("favicon.ico","favicon.ico");
 
@@ -78,12 +104,74 @@ public:
       );
 
       evp::FileServer::FunctionItem::F func = [&](const evp::URL &url) -> std::string {
-         dx = std::stod(url.paramString("dx","0"));
-         dy = std::stod(url.paramString("dy","0"));
-         return std::string("hello");
+	 std::string id = url.paramString("uid","");
+	 User* u = id2user(id);
+	 if(u) {
+            float dx = std::stod(url.paramString("dx","0"));
+            float dy = std::stod(url.paramString("dy","0"));
+            u->set(dx,dy);
+	    return std::string("ok");
+	 } else {
+            return std::string("error: user");
+	 }
       };
       registerFunction("data", func);
    }
+   
+   void draw(sf::RenderTarget &target) {
+      for(auto &it : name2user_) {
+         it.second->draw(target);
+      }
+   }
+   
+   class User {
+   public:
+      User(const std::string &name) : name_(name) {}
+      void setId(const std::string &id) {id_=id;}
+      std::string name() const {return name_;}
+      std::string id() const {return id_;}
+      void set(float dx, float dy) {dx_=dx; dy_=dy;}
+      void draw(sf::RenderTarget &target) {
+         x_ = std::min(800.0, std::max(0.0, x_ + 5*dx_));
+         y_ = std::min(600.0, std::max(0.0, y_ + 5*dy_));
+         DrawRect(x_-5, y_-5, 10,10, target, Color(1,0,0));
+      }
+   private:
+      std::string name_;
+      std::string id_;
+      double x_,y_,dx_,dy_;
+   };
+private:
+   void login(const std::string &inName, std::string &outId, bool &outSuccess) {
+      const auto &it = name2user_.find(inName);
+      if(it == name2user_.end()) {
+         // user does not exist yet
+	 outSuccess = true;
+         User* u = new User(inName);
+	 outId = newId();
+	 u->setId(outId);
+	 name2user_[inName] = u;
+	 id2user_[outId] = u;
+      } else {
+         // user exists
+	 outSuccess = false;
+      }
+   }
+   std::string newId() {
+      return std::to_string(++idCnt);
+   }
+   User* id2user(const std::string &id) {
+      const auto &it = id2user_.find(id);
+      if(it==id2user_.end()) {
+         return NULL;
+      } else {
+         return it->second;
+      }
+   }
+   
+   int idCnt = 0;
+   std::map<std::string, User*> name2user_;
+   std::map<std::string, User*> id2user_;
 };
 
 
@@ -131,10 +219,8 @@ int main(int argc, char** argv) {
       window->clear();
       
       DrawRect(mouseX, mouseY, 5,5, *window, Color(1,1,1));
+      server.draw(*window);
       
-      posX = std::min(800.0, std::max(0.0, posX + 5*server.dx));
-      posY = std::min(600.0, std::max(0.0, posY + 5*server.dy));
-      DrawRect(posX-5, posY-5, 10,10, *window, Color(1,0,0));
       window->display();
    }
    
