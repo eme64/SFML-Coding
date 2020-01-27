@@ -12,6 +12,8 @@
 
 #include <functional>
 
+#include <chrono>
+
 #ifndef EVP_SERVER_HPP
 #define EVP_SERVER_HPP
 
@@ -22,6 +24,7 @@ std::vector<std::string> split(const std::string &text, char sep);
 class Connection {
 public:
    Connection(sf::TcpSocket* socket) : socket_(socket) {
+      lastAccess_ = std::chrono::system_clock::now();
       // assume socket was accepted.
       //std::cout << "Connection: " << socket_->getRemoteAddress() << std::endl;
    }
@@ -30,30 +33,42 @@ public:
       delete(socket_);
    }
    void run() {
+      std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+      long t = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastAccess_).count();
+      if(t>5000) {
+	 std::cout << "timeout: cnt " << rcvdCnt << std::endl;
+	 socket_->disconnect();
+         connected_ = false;
+         return;
+      }
       char in[2048];
       std::size_t received;
-      auto status = socket_->receive(in, sizeof(in), received);
+      while(true) {
+         auto status = socket_->receive(in, sizeof(in), received);
 
-      switch(status) {
-         case sf::Socket::Done: {
-	    rcvd.push(in);
-	    break;
-         }
-         case sf::Socket::NotReady: {
-	    // ignore
-	    break;
-         }
-         case sf::Socket::Partial: {
-	    std::cout << "Partial" << std::endl;
-	    break;
-         }
-         case sf::Socket::Disconnected: {
-	    connected_ = false;
-	    break;
-         }
-         case sf::Socket::Error: {
-	    std::cout << "Error connected " << connected_ << std::endl;
-	    break;
+         switch(status) {
+            case sf::Socket::Done: {
+               rcvd.push(in);
+               rcvdCnt++;
+               lastAccess_ = std::chrono::system_clock::now();
+               //std::cout << "rcvd: " << rcvdCnt << std::endl;
+               break;
+            }
+            case sf::Socket::NotReady: {
+               return;
+            }
+            case sf::Socket::Partial: {
+               std::cout << "Partial" << std::endl;
+               return;
+            }
+            case sf::Socket::Disconnected: {
+               connected_ = false;
+               return;
+            }
+            case sf::Socket::Error: {
+               std::cout << "Error connected " << connected_ << std::endl;
+               return;
+            }
          }
       }
    }
@@ -76,13 +91,15 @@ public:
 	 std::cout << s << std::endl;
          assert(false);
       }
-      socket_->disconnect();
-      connected_ = false;
+      //socket_->disconnect();
+      //connected_ = false;
    }
 private:
    sf::TcpSocket *socket_;
    std::queue<std::string> rcvd;
    bool connected_ = true;
+   int rcvdCnt = 0;
+   std::chrono::system_clock::time_point lastAccess_;
 };
 
 class Server {
@@ -111,7 +128,7 @@ public:
 	 
 	 connections.insert(c);
 
-	 //std::cout << "connections " << connections.size() << std::endl;
+	 std::cout << "connections " << connections.size() << std::endl;
       }
 
       for(std::set<Connection*>::iterator it = connections.begin(); it!=connections.end(); it++) {
@@ -146,12 +163,19 @@ public:
 	 if(!c->isConnected()) {
 	    connections.erase(current);
 	    delete(c);
-	    //std::cout << "connections " << connections.size() << std::endl;
+	    std::cout << "connections " << connections.size() << std::endl;
 	 }
       }
    }
-
-   const static std::string HTTP_text;
+   static std::string HTTP_response(const std::string &txt) {
+      return std::string("")
+	      +"HTTP/ 1.1 200 OK\n"
+	      +"Connection: Keep-Alive\n"
+	      +"Content-Type: text/html\n"
+              +"Content-Length: " + std::to_string(txt.size()) + "\n"
+	      +"\n"
+	      +txt;
+   }
    
    // override these below for impl
    virtual void handleError(std::string &ret, const std::string &error);

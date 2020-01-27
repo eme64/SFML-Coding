@@ -16,16 +16,14 @@ evp::split(const std::string &text, char sep) {
 // --------- SERVER
 void
 evp::Server::handleError(std::string &ret, const std::string &error) {
-   ret = HTTP_text + std::string("Error: ") + error;
+   ret = HTTP_response(std::string("Error: ") + error);
 }
 
 void
 evp::Server::handleRequest(std::string &ret, const std::string &url) {
-   ret = HTTP_text + std::string("404: ") + url;
+   ret = HTTP_response(std::string("404: ") + url);
 }
 
-const std::string
-evp::Server::HTTP_text ="HTTP/ 1.1 200 OK\nContent-Type: text/html\n\n";
 
 // ---------- FILE SERVER
 void
@@ -36,23 +34,26 @@ evp::FileServer::handleRequest(std::string &ret, const std::string &url) {
       ret = it->second->get(u);
 
       if(u.pathExt == "") {
-         ret = evp::Server::HTTP_text + ret;
+         ret = evp::Server::HTTP_response(ret);
       } else if(u.pathExt == "html") {
-         ret = evp::Server::HTTP_text + ret;
+         ret = evp::Server::HTTP_response(ret);
       } else if(u.pathExt == "js") {
          ret = std::string("HTTP/1.0 200 Ok\n")
+	         +"Connection: Keep-Alive\n"
                  + "Content-Type: text/javascript;charset=UTF-8\n"
         	 + "Content-Length: " + std::to_string(ret.size()) + "\n"
         	 + "\n"
         	 +ret;
       } else if(u.pathExt == "png") {
          ret = std::string("HTTP/1.0 200 Ok\n")
+	         +"Connection: Keep-Alive\n"
                  + "Content-Type: image/png\n"
                  + "Content-Length: " + std::to_string(ret.size()) + "\n"
                  + "\n"
                  +ret;
       } else if(u.pathExt == "ico") {
          ret = std::string("HTTP/1.0 200 Ok\n")
+	         +"Connection: Keep-Alive\n"
                  + "Content-Type: image/x-icon\n"
                  + "Content-Length: " + std::to_string(ret.size()) + "\n"
                  + "\n"
@@ -61,7 +62,7 @@ evp::FileServer::handleRequest(std::string &ret, const std::string &url) {
          std::cout << "unknown ext: " << u.pathExt << " " << u.path << std::endl;
       }
    } else {
-      ret = HTTP_text + std::string("404: ") + url;
+      ret = HTTP_response(std::string("404: ") + url);
    }
 }
 
