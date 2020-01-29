@@ -107,9 +107,19 @@ public:
 	 std::string id = url.paramString("uid","");
 	 User* u = id2user(id);
 	 if(u) {
-            float dx = std::stod(url.paramString("dx","0"));
-            float dy = std::stod(url.paramString("dy","0"));
-            u->set(dx,dy);
+            std::string s = url.paramString("0","");
+	    if(s=="f") {
+               u->set(0,0);
+	    } else {
+               const auto& pp = evp::split(s,',');
+	       float dx = std::stod(pp[0]);
+               float dy = std::stod(pp[1]);
+               u->set(dx,dy);
+	    }
+
+            std::string s2 = url.paramString("5","");
+	    u->setDown(s2=="t");
+
 	    return std::string("ok");
 	 } else {
             return std::string("error: user");
@@ -132,14 +142,17 @@ public:
       std::string id() const {return id_;}
       void set(float dx, float dy) {dx_=dx; dy_=dy;}
       void draw(sf::RenderTarget &target) {
-         x_ = std::min(800.0, std::max(0.0, x_ + 5*dx_));
-         y_ = std::min(600.0, std::max(0.0, y_ + 5*dy_));
-         DrawRect(x_-5, y_-5, 10,10, target, Color(1,0,0));
+         x_ = std::min(800.0, std::max(0.0, x_ + 0.1*dx_));
+         y_ = std::min(600.0, std::max(0.0, y_ + 0.1*dy_));
+         DrawRect(x_-5, y_-5, 10,10, target, Color(down_,1-down_,0));
       }
+      void setDown(bool d) {down_=d;}
+      bool down() {return down_;}
    private:
       std::string name_;
       std::string id_;
       double x_,y_,dx_,dy_;
+      bool down_;
    };
 private:
    void login(const std::string &inName, std::string &outId, bool &outSuccess) {

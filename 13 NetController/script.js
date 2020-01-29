@@ -1,5 +1,197 @@
 console.log("Loading");
 
+// Idea:
+// string defines what elements should be on screen.
+// - buttons - key?
+// - 2d-knobs (steering) - keys?
+// each element has an id.
+// when some buttons (dis)appear: still keep knobs same (continuity).
+// server keeps mapping of id-elements also -> interpred input.
+// expect screen in landscape.
+
+elementsString = "";
+elements = {}
+// id -> element
+
+class Element {
+   constructor(id,x0,y0,x1,y1) {
+      this.id = id;
+      this.x0=parseFloat(x0);
+      this.y0=parseFloat(y0);
+      this.x1=parseFloat(x1);
+      this.y1=parseFloat(y1);
+      this.canCapture = true;
+      this.isCaptured = undefined;
+      this.color = "#FF0000"
+   }
+   draw() {
+      ctx.fillStyle = this.color;
+      ctx.fillRect(this.x0*canvas.width, this.y0*canvas.height,
+	           this.x1*canvas.width, this.y1*canvas.height);
+   }
+   overlap(x,y) {
+      return ((x>=this.x0) && (x<=(this.x1+this.x0))) && y>=this.y0 && y<=this.y1+this.y0;
+   }
+   handleTouchCapture(x,y) {
+      console.log("handleTouchCapture " + this.id);
+   }
+   handleTouchCapturedMove(x,y) {
+      console.log("handleTouchCaptureMove " + this.id);
+   }
+   handleTouchCapturedEnd() {
+      console.log("handleTouchCaptureEnd " + this.id);
+   }
+   handleTouch(x,y) {
+      console.log("handleTouch " + this.id);
+   }
+   handleTouchMove(x,y) {
+      console.log("handleTouchMove " + this.id);
+   }
+   handleTouchEnd() {
+      console.log("handleTouchEnd " + this.id);
+   }
+   // may want to add more handlers for enter / leave without capture?
+
+   get() {
+      // returns string to send to server
+      // if "", then send nothing
+      return "";
+   }
+}
+
+class Knob extends Element {
+   constructor(id,x0,y0,x1,y1) {
+      super(id,x0,y0,x1,y1);
+      this.color = "#AAAA00"
+      this.drag = false;
+      this.x0_ = 0;
+      this.y0_ = 0;
+      this.x1_ = 0;
+      this.y1_ = 0;
+      this.dmax = 0.05;
+   }
+   handleTouchCapture(x,y) {
+      this.color = "#CCCC00"
+      this.drag = true;
+      this.x0_ = x;
+      this.y0_ = y;
+      this.x1_ = x;
+      this.y1_ = y;
+   }
+   handleTouchCapturedMove(x,y) {
+      this.color = rgb(255*x,255*y,0);
+      this.x1_ = x;
+      this.y1_ = y;
+      var dx = this.x1_ - this.x0_;
+      var dy = this.y1_ - this.y0_;
+      var d = Math.sqrt(dx*dx + dy*dy);
+      if(d>this.dmax) {
+         this.x0_ = this.x1_ - dx*this.dmax/d;
+         this.y0_ = this.y1_ - dy*this.dmax/d;
+      }
+   }
+   handleTouchCapturedEnd() {
+      this.color = "#AAAA00"
+      this.drag = false;
+   }
+   get() {
+      var dx = String((this.x1_-this.x0_)/this.dmax).substring(0,7);
+      var dy = String((this.y1_-this.y0_)/this.dmax).substring(0,7);
+      return this.drag ? (dx+","+dy) : "f";
+   }
+}
+
+class Button extends Element {
+   constructor(id,x0,y0,x1,y1) {
+      super(id,x0,y0,x1,y1);
+      this.color = "#00AAAA"
+      this.drag = false;
+      this.canCapture = true;
+   }
+   handleTouchCapture(x,y) {
+      this.drag = true;
+   }
+   handleTouchCapturedMove(x,y) {
+      this.color = rgb(0,255*x,255*y);
+   }
+   handleTouchCapturedEnd() {
+      this.drag = false;
+      this.color = "#00AAAA"
+   }
+   get() {
+      return this.drag ? "t" : "f";
+   }
+}
+
+function loadElements(s) {
+   if(s != elementsString) {
+      console.log("Load elements...");
+      var els = s.split(";");
+      newIds = {}
+      for(var i=0; i<els.length; i++) {
+         var eParts = els[i].split(":");
+	 var eKind = eParts[0];
+	 var eId = eParts[1];
+	 var eP = eParts[2].split(",");
+         
+	 newIds[eId] = 1;
+
+	 if(eId in elements) {
+	 }else{
+	    switch(eKind) {
+	       case "k": // knob
+	          console.log(eId + " Knob")
+	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3]);
+	          break;
+	       case "b": // button
+	          console.log(eId + " Button")
+	          elements[String(eId)] = new Button(eId,eP[0],eP[1],eP[2],eP[3]);
+	          break;
+
+	       default:
+	          console.log(eId + " error! " + els[i])
+	    }
+	 }
+      }
+      for(var i in elements) {
+         if(!(i in newIds)) {
+	    console.log("delete "+i)
+            delete elements[i];
+	 }
+      }
+   }
+}
+
+function drawElements() {
+   for(var i in elements) {
+      elements[i].draw();
+   }
+}
+
+function findElement(x,y) {
+   for(var i in elements) {
+      if(elements[i].overlap(x,y)) {return i;}
+   }
+   return undefined;
+}
+
+function getElementsData() {
+   var list = []
+   for(var i in elements) {
+      var s = elements[i].get();
+      if(s!="") {
+         list.push(i+"="+s)
+      }
+   }
+   return list.join("&");
+}
+
+
+
+loadElements("k:0:0.1,0.1,0.8,0.2;k:3:0.1,0.6,0.8,0.3");
+
+loadElements("k:0:0.1,0.1,0.8,0.2;k:4:0.1,0.4,0.8,0.2;b:5:0.1,0.7,0.3,0.2;b:6:0.6,0.7,0.3,0.2");
+
 var canvas = document.getElementById("canvas");
 var ctx = canvas.getContext("2d");
 
@@ -68,6 +260,7 @@ function initTData() {
 	 x1: 0,
 	 y1: 0,
 	 color: rgb(i*30 % 256, i*50 % 256, i*70 % 256),
+	 element: undefined, // if captured
       }
    }
 }
@@ -80,34 +273,65 @@ canvas.addEventListener("touchstart", function(event) {
       var id = touches[i].identifier;
       
       tdata[id].drag = true;
-      tdata[id].x0 = (touches[i].pageX - canvas.offsetLeft);
-      tdata[id].y0 = (touches[i].pageY - canvas.offsetTop);
+      tdata[id].x0 = (touches[i].pageX - canvas.offsetLeft)/canvas.width;
+      tdata[id].y0 = (touches[i].pageY - canvas.offsetTop)/canvas.height;
       tdata[id].x1 = tdata[id].x0;
       tdata[id].y1 = tdata[id].y0;
       
-      ctx.fillStyle = tdata[id].color;
-      ctx.fillRect(tdata[id].x0, tdata[id].y0, 50, 50);
+      var e = findElement(tdata[id].x0,tdata[id].y0);
+      console.log("touch: " + e);
+      if(e!=undefined) {
+         var cc = elements[e].canCapture;
+         var ic = elements[e].isCaptured;
+         if(cc && ic==undefined) {
+	    // capture it myself
+            tdata[id].element = e;
+            elements[e].isCaptured = id;
+            elements[e].handleTouchCapture(tdata[id].x0,tdata[id].y0);
+	 }
+	 if(!cc) {
+	    // inform it
+            elements[e].handleTouch(tdata[id].x0,tdata[id].y0);
+	 }
+      }
+
+      //ctx.fillStyle = tdata[id].color;
+      //ctx.fillRect(tdata[id].x0, tdata[id].y0, 50, 50);
    }
 });
 canvas.addEventListener("touchmove", function(event) {
    var touches = event.changedTouches;
    for(var i=0; i<touches.length; i++) {
       var id = touches[i].identifier;
+
+      tdata[id].x1 = (touches[i].pageX - canvas.offsetLeft)/canvas.width;
+      tdata[id].y1 = (touches[i].pageY - canvas.offsetTop)/canvas.height;
       
-      tdata[id].x1 = (touches[i].pageX - canvas.offsetLeft);
-      tdata[id].y1 = (touches[i].pageY - canvas.offsetTop);
-      
-      var dx = tdata[id].x1 - tdata[id].x0;
-      var dy = tdata[id].y1 - tdata[id].y0;
-      var d = Math.sqrt(dx*dx + dy*dy);
-      var dmax = 0.01*Math.min(canvas.height,canvas.width);
-      if(d>dmax) {
-         tdata[id].x0 = tdata[id].x1 - dmax*dx/d
-         tdata[id].y0 = tdata[id].y1 - dmax*dy/d
+      if(tdata[id].element != undefined) {
+         // we were captured
+	 var e = tdata[id].element;
+	 elements[e].handleTouchCapturedMove(tdata[id].x1,tdata[id].y1);
+      } else {
+	 // just inform who we are over:
+         var e = findElement(tdata[id].x1,tdata[id].y1);
+	 if(e!=undefined) {
+            var cc = elements[e].canCapture;
+	    if(!cc) {
+	       elements[e].handleTouchMove(tdata[id].x1,tdata[id].y1)
+	    }
+	 }
       }
-      
-      ctx.fillStyle = tdata[id].color;
-      ctx.fillRect(tdata[id].x1, tdata[id].y1, 10,10);
+      //var dx = tdata[id].x1 - tdata[id].x0;
+      //var dy = tdata[id].y1 - tdata[id].y0;
+      //var d = Math.sqrt(dx*dx + dy*dy);
+      //var dmax = 0.01*Math.min(canvas.height,canvas.width);
+      //if(d>dmax) {
+      //   tdata[id].x0 = tdata[id].x1 - dmax*dx/d
+      //   tdata[id].y0 = tdata[id].y1 - dmax*dy/d
+      //}
+      //
+      //ctx.fillStyle = tdata[id].color;
+      //ctx.fillRect(tdata[id].x1, tdata[id].y1, 10,10);
    }
 });
 canvas.addEventListener("touchend", function(event) {
@@ -116,30 +340,41 @@ canvas.addEventListener("touchend", function(event) {
       var id = touches[i].identifier;
       
       tdata[id].drag = false;
+      
+      if(tdata[id].element != undefined) {
+         // we were captured
+	 var e = tdata[id].element;
+	 elements[e].handleTouchCapturedEnd();
+	 elements[e].isCaptured = undefined;
+	 tdata[id].element = undefined;
+      } else {
+	 // just inform who we are over:
+         var e = findElement(tdata[id].x1,tdata[id].y1);
+	 if(e!=undefined) {
+            var cc = elements[e].canCapture;
+	    if(!cc) {
+	       elements[e].handleTouchEnd(tdata[id].x1,tdata[id].y1)
+	    }
+	 }
+      }
    }
 });
 
 var cnt = 0;
 function run() {
    cnt++;
-   console.log("run " + cnt);
+   //console.log("run " + cnt);
    
-   var isDown = false;
-   var dx = 0;
-   var dy = 0;
-   if(drag) {
-      dx = (dragEnd.x - dragStart.x) / canvas.width;
-      dy = (dragEnd.y - dragStart.y) / canvas.height;
-   } else if(tdata[0].drag) {
-      dx = (tdata[0].x1 - tdata[0].x0) / canvas.width;
-      dy = (tdata[0].y1 - tdata[0].y0) / canvas.height;
-   }
-   
-   var url = "data?uid="+getCookie("userid")+"&c="+cnt+"&dx="+dx+"&dy="+dy;
+   var s = getElementsData()
+   if(s!="") {s="&"+s}
+   var url = "data?uid="+getCookie("userid")+s;
    fetch(url)
    .then(data => {return data.text()})
-   .then(txt => {console.log("data: "+txt)})
+   .then(txt => {/*console.log("data: "+txt)*/})
    .catch(error => console.log(error))
+
+   clear();
+   drawElements();
 }
 
 run()
