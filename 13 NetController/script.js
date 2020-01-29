@@ -55,7 +55,7 @@ function rgb(r, g, b){
 }
 
 
-var ntouches = 10;
+var ntouches = 20;
 var tdata = {};
 
 function initTData() {
@@ -96,6 +96,15 @@ canvas.addEventListener("touchmove", function(event) {
       
       tdata[id].x1 = (touches[i].pageX - canvas.offsetLeft);
       tdata[id].y1 = (touches[i].pageY - canvas.offsetTop);
+      
+      var dx = tdata[id].x1 - tdata[id].x0;
+      var dy = tdata[id].y1 - tdata[id].y0;
+      var d = Math.sqrt(dx*dx + dy*dy);
+      var dmax = 0.01*Math.min(canvas.height,canvas.width);
+      if(d>dmax) {
+         tdata[id].x0 = tdata[id].x1 - dmax*dx/d
+         tdata[id].y0 = tdata[id].y1 - dmax*dy/d
+      }
       
       ctx.fillStyle = tdata[id].color;
       ctx.fillRect(tdata[id].x1, tdata[id].y1, 10,10);
