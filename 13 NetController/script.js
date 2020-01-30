@@ -60,15 +60,16 @@ class Element {
 }
 
 class Knob extends Element {
-   constructor(id,x0,y0,x1,y1) {
+   constructor(id,x0,y0,x1,y1,type="direction") {
       super(id,x0,y0,x1,y1);
       this.color = "#AAAA00"
+      this.type = type;
       this.drag = false;
       this.x0_ = 0;
       this.y0_ = 0;
       this.x1_ = 0;
       this.y1_ = 0;
-      this.dmax = 0.05;
+      this.dmax = 0.05;//directon distance - sensitivity
    }
    handleTouchCapture(x,y) {
       this.color = "#CCCC00"
@@ -82,12 +83,20 @@ class Knob extends Element {
       this.color = rgb(255*x,255*y,0);
       this.x1_ = x;
       this.y1_ = y;
-      var dx = this.x1_ - this.x0_;
-      var dy = this.y1_ - this.y0_;
-      var d = Math.sqrt(dx*dx + dy*dy);
-      if(d>this.dmax) {
-         this.x0_ = this.x1_ - dx*this.dmax/d;
-         this.y0_ = this.y1_ - dy*this.dmax/d;
+      switch(this.type) {
+         case "direction":
+            var dx = this.x1_ - this.x0_;
+            var dy = this.y1_ - this.y0_;
+            var d = Math.sqrt(dx*dx + dy*dy);
+            if(d>this.dmax) {
+               this.x0_ = this.x1_ - dx*this.dmax/d;
+               this.y0_ = this.y1_ - dy*this.dmax/d;
+            }
+	    break;
+	 case "slide":
+            break;
+         default:
+	    console.log("Error: bad knob type " + this.type);
       }
    }
    handleTouchCapturedEnd() {
@@ -95,9 +104,22 @@ class Knob extends Element {
       this.drag = false;
    }
    get() {
-      var dx = String((this.x1_-this.x0_)/this.dmax).substring(0,7);
-      var dy = String((this.y1_-this.y0_)/this.dmax).substring(0,7);
-      return this.drag ? (dx+","+dy) : "f";
+      switch(this.type) {
+         case "direction":
+            var dx = String((this.x1_-this.x0_)/this.dmax).substring(0,7);
+            var dy = String((this.y1_-this.y0_)/this.dmax).substring(0,7);
+            return this.drag ? (dx+","+dy) : "f";
+	 case "slide":
+            var dx = String(this.x1_-this.x0_).substring(0,7);
+            var dy = String(this.y1_-this.y0_).substring(0,7);
+	    this.x0_=this.x1_;
+	    this.y0_=this.y1_;
+	    this.x0_=this.x1_;
+            return this.drag ? (dx+","+dy) : "f";
+         default:
+	    console.log("Error: bad knob type " + this.type);
+	    return "";
+      }
    }
 }
 
@@ -139,9 +161,13 @@ function loadElements(s) {
 	 if(eId in elements) {
 	 }else{
 	    switch(eKind) {
-	       case "k": // knob
-	          console.log(eId + " Knob")
-	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3]);
+	       case "kd": // knob direction
+	          console.log(eId + " Knob direction")
+	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],"direction");
+	          break;
+	       case "ks": // knob slide
+	          console.log(eId + " Knob slide")
+	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],"slide");
 	          break;
 	       case "b": // button
 	          console.log(eId + " Button")
@@ -188,9 +214,9 @@ function getElementsData() {
 
 
 
-loadElements("k:0:0.1,0.1,0.8,0.2;k:3:0.1,0.6,0.8,0.3");
+loadElements("ks:0:0.1,0.1,0.8,0.2;kd:3:0.1,0.6,0.8,0.3");
 
-loadElements("k:0:0.1,0.1,0.8,0.2;k:4:0.1,0.4,0.8,0.2;b:5:0.1,0.7,0.3,0.2;b:6:0.6,0.7,0.3,0.2");
+loadElements("ks:0:0.1,0.1,0.8,0.2;kd:4:0.1,0.4,0.8,0.2;b:5:0.1,0.7,0.3,0.2;b:6:0.6,0.7,0.3,0.2");
 
 var canvas = document.getElementById("canvas");
 var ctx = canvas.getContext("2d");
