@@ -15,6 +15,13 @@
 //  - file adapter
 //  - login: unique name - nonce
 
+// Idea Rooms:
+//  - idea is to use a "room" for things like lobby, one per game, ...
+//  - one room active, gets to display also.
+//  - can switch to next room
+//  - rooms set inputs / register listeners
+//     - automatic id/string generation
+//  - rooms can have their own userid->data map
 
 class Color {
 public:
