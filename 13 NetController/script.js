@@ -320,9 +320,6 @@ canvas.addEventListener("touchstart", function(event) {
             elements[e].handleTouch(tdata[id].x0,tdata[id].y0);
 	 }
       }
-
-      //ctx.fillStyle = tdata[id].color;
-      //ctx.fillRect(tdata[id].x0, tdata[id].y0, 50, 50);
    }
 });
 canvas.addEventListener("touchmove", function(event) {
@@ -347,17 +344,6 @@ canvas.addEventListener("touchmove", function(event) {
 	    }
 	 }
       }
-      //var dx = tdata[id].x1 - tdata[id].x0;
-      //var dy = tdata[id].y1 - tdata[id].y0;
-      //var d = Math.sqrt(dx*dx + dy*dy);
-      //var dmax = 0.01*Math.min(canvas.height,canvas.width);
-      //if(d>dmax) {
-      //   tdata[id].x0 = tdata[id].x1 - dmax*dx/d
-      //   tdata[id].y0 = tdata[id].y1 - dmax*dy/d
-      //}
-      //
-      //ctx.fillStyle = tdata[id].color;
-      //ctx.fillRect(tdata[id].x1, tdata[id].y1, 10,10);
    }
 });
 canvas.addEventListener("touchend", function(event) {
@@ -389,7 +375,6 @@ canvas.addEventListener("touchend", function(event) {
 var cnt = 0;
 function run() {
    cnt++;
-   //console.log("run " + cnt);
    
    var s = getElementsData()
    if(s!="") {s="&"+s}
