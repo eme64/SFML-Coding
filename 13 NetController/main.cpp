@@ -22,6 +22,11 @@
 //  - rooms set inputs / register listeners
 //     - automatic id/string generation
 //  - rooms can have their own userid->data map
+//
+// Impl:
+//  - RoomServer extends FileServer
+//  - map of id->Room, room has ptr to RoomServer
+//  - RoomServer has active Room, Room can call other Room
 
 class Color {
 public:
