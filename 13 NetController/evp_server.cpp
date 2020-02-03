@@ -86,6 +86,17 @@ evp::Room::Room(const std::string &name, RoomServer* server)
 : name_(name), server_(server) {
    server_->addRoom(this);
 }
+void
+evp::Room::onUserNew(User* const u) {
+   user2data_[u] = newUserData(u);
+   if(server_->active() == this) { onActivateUser(u); }
+}
+void
+evp::Room::onUserLeave(User* const u) {
+   user2data_.erase(u);
+}
+
+
 // ------------------ RoomServer
 evp::RoomServer::RoomServer() {
    // set up basic handlers:
@@ -152,20 +163,26 @@ evp::RoomServer::RoomServer() {
       std::string id = url.paramString("uid","");
       User* u = id2user(id);
       if(u) {
-         std::string s = url.paramString("0","");
-         if(s=="f") {
-            //u->set(0,0);
-         } else {
-            const auto& pp = evp::split(s,',');
-            float dx = std::stod(pp[0]);
-            float dy = std::stod(pp[1]);
-            //u->set(dx,dy);
-            std::cout << dx << " " << dy << std::endl;
+	 // notify user about input:
+	 for(const auto &it : url.param) {
+	    if(it.first != "uid") {
+	       u->handleInput(it.first,it.second);
+	    }
 	 }
+         //std::string s = url.paramString("0","");
+         //if(s=="f") {
+         //   //u->set(0,0);
+         //} else {
+         //   const auto& pp = evp::split(s,',');
+         //   float dx = std::stod(pp[0]);
+         //   float dy = std::stod(pp[1]);
+         //   //u->set(dx,dy);
+         //   std::cout << dx << " " << dy << std::endl;
+	 //}
    
-         std::string s2 = url.paramString("5","");
-         //u->setDown(s2=="t");
-	 if(s2=="t") {std::cout << "t" << std::endl;}
+         //std::string s2 = url.paramString("5","");
+         ////u->setDown(s2=="t");
+	 //if(s2=="t") {std::cout << "t" << std::endl;}
    
          return std::string("ok");
       } else {

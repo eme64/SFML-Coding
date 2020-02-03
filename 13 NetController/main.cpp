@@ -27,8 +27,12 @@
 //  - RoomServer extends FileServer
 //  - map of id->Room, room has ptr to RoomServer
 //  - RoomServer has active Room, Room can call other Room
+//  - User holds what controls are active
+//  - On room activation, users should be revisited to reset controls
+//  - on draw, can take controls info from user
 
 // ToDo:
+//  - next: integrate controls
 //  - timeout on user? / logout?
 
 
@@ -77,6 +81,12 @@ public:
       visitUsers(f);
    }
    virtual evp::UserData* newUserData(const evp::User* u) { return new MyUserData();}
+   virtual void onActivate() {
+      std::cout << "MyActivate " << name() << std::endl;
+   }
+   virtual void onActivateUser(evp::User* const u) {
+      std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
+   }
 private:
 };
 

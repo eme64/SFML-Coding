@@ -269,7 +269,20 @@ private:
    std::map<std::string, Item*> files_;
 };
 
-class RoomServer;
+
+class Control {
+public:
+   Control(const std::string &id, float x0, float y0, float x1, float y1) : id_(id), x0(x0),y0(y0),x1(x1),y1(y1) {}
+private:
+   const std::string id_;
+   float x0,y0,x1,y1;
+};
+
+class SlideKnobControl : public Control {
+public:
+   SlideKnobControl(const std::string &id, float x0, float y0, float x1, float y1) : Control(id,x0,y0,x1,y1) {}
+private:
+};
 
 class User {
 public:
@@ -277,16 +290,24 @@ public:
    void setId(const std::string &id) {id_=id;}
    std::string name() const {return name_;}
    std::string id() const {return id_;}
+
+   void handleInput(const std::string &iid, const std::string &data) {
+      std::cout << name() << " " << iid << " " << data << std::endl;
+   }
 private:
    std::string name_;
    std::string id_;
+
+   std::map<std::string,Control*> id2control_;
 };
 
 class UserData {
 public:
-   virtual void dummy() {} // required for polymorphism
+   virtual std::string dummy() {return "";}
 private:
 };
+
+class RoomServer;
 
 class Room {
 public:
@@ -294,17 +315,27 @@ public:
    const std::string &name() {return name_;}
    virtual void draw(sf::RenderTarget &target) {}
    virtual UserData* newUserData(const User* u) { return new UserData();}
-   void onUserNew(User* const u) {
-      user2data_[u] = newUserData(u);
-   }
-   void onUserLeave(User* const u) {
-      user2data_.erase(u);
-   }
+   void onUserNew(User* const u);
+   void onUserLeave(User* const u);
    typedef std::function<void(evp::User*,evp::UserData*)> UserVisitF;
    void visitUsers(UserVisitF f) {
       for(const auto it : user2data_) {
          f(it.first, it.second);
       }
+   }
+   void onActivateHandle() {
+      onActivate();
+      for(const auto &it : user2data_) {
+         onActivateUser(it.first);
+      }
+   }
+   virtual void onActivate() {
+      // called when room activated
+      std::cout << "Activating Room " << name() << std::endl;
+   }
+   virtual void onActivateUser(User* const u) {
+      // called when room activated
+      // or when user added to active room
    }
 private:
    const std::string name_;
@@ -325,10 +356,12 @@ public:
       Room* r = room(name);
       if(r) {
          active_ = r;
+	 active_->onActivateHandle();
       } else {
          std::cout << "Error: could not find room " << r->name() << std::endl;
       }
    }
+   Room* active() const {return active_;}
    
    void draw(sf::RenderTarget &target) {
       if(active_) {
