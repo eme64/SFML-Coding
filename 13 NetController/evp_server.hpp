@@ -4,6 +4,7 @@
 #include <vector>
 #include <queue>
 #include <SFML/Network.hpp>
+#include <SFML/Graphics.hpp>
 #include <cassert>
 #include <string>
 
@@ -266,6 +267,121 @@ public:
    void registerFunction(const std::string &url, const FunctionItem::F f);
 private:
    std::map<std::string, Item*> files_;
+};
+
+class RoomServer;
+
+class User {
+public:
+   User(const std::string &name) : name_(name) {}
+   void setId(const std::string &id) {id_=id;}
+   std::string name() const {return name_;}
+   std::string id() const {return id_;}
+private:
+   std::string name_;
+   std::string id_;
+};
+
+class UserData {
+public:
+   virtual void dummy() {} // required for polymorphism
+private:
+};
+
+class Room {
+public:
+   Room(const std::string &name, RoomServer* server);
+   const std::string &name() {return name_;}
+   virtual void draw(sf::RenderTarget &target) {}
+   virtual UserData* newUserData(const User* u) { return new UserData();}
+   void onUserNew(User* const u) {
+      user2data_[u] = newUserData(u);
+   }
+   void onUserLeave(User* const u) {
+      user2data_.erase(u);
+   }
+   typedef std::function<void(evp::User*,evp::UserData*)> UserVisitF;
+   void visitUsers(UserVisitF f) {
+      for(const auto it : user2data_) {
+         f(it.first, it.second);
+      }
+   }
+private:
+   const std::string name_;
+   RoomServer* const server_;
+
+   std::map<User*,UserData*> user2data_;
+};
+
+class RoomServer : public FileServer {
+public:
+   RoomServer();
+   void addRoom(Room* r) { rooms_[r->name()] = r; }
+   Room* room(const std::string &name) {
+      const auto it = rooms_.find(name);
+      if(it!=rooms_.end()) {return it->second;} else {return NULL;}
+   };
+   void setActive(const std::string &name) {
+      Room* r = room(name);
+      if(r) {
+         active_ = r;
+      } else {
+         std::cout << "Error: could not find room " << r->name() << std::endl;
+      }
+   }
+   
+   void draw(sf::RenderTarget &target) {
+      if(active_) {
+         active_->draw(target);
+      } else {
+	 std::cout << "No active room to draw!" << std::endl;
+      }
+   }
+private:
+   // Room Part:
+   std::map<std::string,Room*> rooms_;
+   Room* active_;
+
+   void onUserNew(User* const u) {
+      for(const auto it : rooms_) {it.second->onUserNew(u);}
+   }
+   void onUserLeave(User* const u) {
+      for(const auto it : rooms_) {it.second->onUserLeave(u);}
+   }
+
+   // User Part:
+   void login(const std::string &inName, std::string &outId, bool &outSuccess) {
+      const auto &it = name2user_.find(inName);
+      if(it == name2user_.end()) {
+         // user does not exist yet
+	 outSuccess = true;
+         User* u = new User(inName);
+	 outId = newId();
+	 u->setId(outId);
+	 name2user_[inName] = u;
+	 id2user_[outId] = u;
+
+	 onUserNew(u);
+      } else {
+         // user exists
+	 outSuccess = false;
+      }
+   }
+   std::string newId() {
+      return std::to_string(++userIdCnt);
+   }
+   User* id2user(const std::string &id) {
+      const auto &it = id2user_.find(id);
+      if(it==id2user_.end()) {
+         return NULL;
+      } else {
+         return it->second;
+      }
+   }
+   
+   int userIdCnt = 0;
+   std::map<std::string, User*> name2user_;
+   std::map<std::string, User*> id2user_;
 };
 
 } // namespace evp

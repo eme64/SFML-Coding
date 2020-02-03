@@ -28,6 +28,10 @@
 //  - map of id->Room, room has ptr to RoomServer
 //  - RoomServer has active Room, Room can call other Room
 
+// ToDo:
+//  - timeout on user? / logout?
+
+
 class Color {
 public:
    float r,g,b,a;//0..1
@@ -55,156 +59,35 @@ void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, co
    target.draw(rectangle, sf::BlendAlpha);//BlendAdd
 }
 
-class TestServer : public evp::FileServer {
+class MyUserData : public evp::UserData {
 public:
-   TestServer() {
-      // register files:
-      registerString("",std::string("")
-              +"<html> <head> <title> REDIRECT </title>\n"
-	      +"<meta http-equiv='Refresh' content='0; url=login.html'/>\n"
-	      +"</head>\n"
-              +"<body>\n"
-              +"<p> redirecting...\n"
-              +"</body> </html>"
-      );
-      registerFile("login.html","login.html");
-
-      evp::FileServer::FunctionItem::F loginFunc = [&](const evp::URL &url) -> std::string {
-	 std::string name = url.paramString("name","");
-         // validate name:
-	 bool success = false;
-	 std::string id;
-	 login(name, id, success);
-	 if(!success) {
-            return std::string("")
-              +"<html> <head> <title>LOGIN FAILED</title>\n"
-	      +"<meta http-equiv='Refresh' content='10; url=login.html'/>\n"
-	      +"</head>\n"
-              +"<body>\n"
-	      +"<p>Login failed, name "+name+" already in use!</br>\n"
-	      +"<button onclick='window.location=\"login.html\"'>Try Again</button>\n"
-	      +"</body> </html>";
-	 } else {
-            return std::string("")
-              +"<html> <head> <title>LOGIN SUCESS - Redirect</title>\n"
-	      +"<meta http-equiv='Refresh' content='1; url=index.html'/>\n"
-	      +"</head>\n"
-              +"<body>\n"
-              +"<script>\n"
-	      +"document.cookie = 'user="+name+"'\n"
-	      +"document.cookie = 'userid="+id+"'\n"
-              +"</script>\n"
-	      +"<p> Welcome, "+name+"!\n"
-	      +"</body> </html>";
-	 }
-      };
-      registerFunction("login2.html", loginFunc);
-
-      registerFile("index.html","index.html");
-      registerFile("test.html","test.html");
-      registerFile("script.js","script.js");
-      registerFile("util.js","util.js");
-      registerFile("img.png","img.png");
-      registerFile("favicon.ico","favicon.ico");
-
-      registerString("hello.html",std::string("")
-              +"<html> <head> <title> TITLE </title> </head>\n"
-              +"<body>\n"
-              +"<p> hello world\n"
-              +"<img src='img.png' alt='subtitle'>\n"
-              +"</body> </html>"
-      );
-
-      evp::FileServer::FunctionItem::F func = [&](const evp::URL &url) -> std::string {
-	 std::string id = url.paramString("uid","");
-	 User* u = id2user(id);
-	 if(u) {
-            std::string s = url.paramString("0","");
-	    if(s=="f") {
-               u->set(0,0);
-	    } else {
-               const auto& pp = evp::split(s,',');
-	       float dx = std::stod(pp[0]);
-               float dy = std::stod(pp[1]);
-               u->set(dx,dy);
-	    }
-
-            std::string s2 = url.paramString("5","");
-	    u->setDown(s2=="t");
-
-	    return std::string("ok");
-	 } else {
-            return std::string("error: user");
-	 }
-      };
-      registerFunction("data", func);
-   }
-   
-   void draw(sf::RenderTarget &target) {
-      for(auto &it : name2user_) {
-         it.second->draw(target);
-      }
-   }
-   
-   class User {
-   public:
-      User(const std::string &name) : name_(name) {}
-      void setId(const std::string &id) {id_=id;}
-      std::string name() const {return name_;}
-      std::string id() const {return id_;}
-      void set(float dx, float dy) {dx_=dx; dy_=dy;}
-      void draw(sf::RenderTarget &target) {
-         x_ = std::min(800.0, std::max(0.0, x_ + 0.1*dx_));
-         y_ = std::min(600.0, std::max(0.0, y_ + 0.1*dy_));
-         DrawRect(x_-5, y_-5, 10,10, target, Color(down_,1-down_,0));
-      }
-      void setDown(bool d) {down_=d;}
-      bool down() {return down_;}
-   private:
-      std::string name_;
-      std::string id_;
-      double x_,y_,dx_,dy_;
-      bool down_;
-   };
+   float x=100,y=100;
 private:
-   void login(const std::string &inName, std::string &outId, bool &outSuccess) {
-      const auto &it = name2user_.find(inName);
-      if(it == name2user_.end()) {
-         // user does not exist yet
-	 outSuccess = true;
-         User* u = new User(inName);
-	 outId = newId();
-	 u->setId(outId);
-	 name2user_[inName] = u;
-	 id2user_[outId] = u;
-      } else {
-         // user exists
-	 outSuccess = false;
-      }
+};
+
+class MyRoom : public evp::Room {
+public:
+   MyRoom(const std::string &name, evp::RoomServer* server)
+   : evp::Room(name,server) {}
+   virtual void draw(sf::RenderTarget &target) {
+      evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
+         MyUserData* data = dynamic_cast<MyUserData*>(raw);
+         DrawRect(data->x,data->y, 5,5, target, Color(1,0,0));
+      };
+      visitUsers(f);
    }
-   std::string newId() {
-      return std::to_string(++idCnt);
-   }
-   User* id2user(const std::string &id) {
-      const auto &it = id2user_.find(id);
-      if(it==id2user_.end()) {
-         return NULL;
-      } else {
-         return it->second;
-      }
-   }
-   
-   int idCnt = 0;
-   std::map<std::string, User*> name2user_;
-   std::map<std::string, User*> id2user_;
+   virtual evp::UserData* newUserData(const evp::User* u) { return new MyUserData();}
+private:
 };
 
 
 int main(int argc, char** argv) {
    std::cout << "Starting..." << std::endl;
    
-   TestServer server;
-   
+   evp::RoomServer server;
+   MyRoom* room = new MyRoom("lobby",&server);
+   server.setActive("lobby");
+
    sf::ContextSettings settings;
    settings.antialiasingLevel = 8;
    sf::RenderWindow* window = new sf::RenderWindow(

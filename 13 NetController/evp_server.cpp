@@ -80,3 +80,99 @@ evp::FileServer::registerFunction(const std::string &url, const evp::FileServer:
    files_[url] = new evp::FileServer::FunctionItem(f);
 }
 
+
+// ------------------ Room
+evp::Room::Room(const std::string &name, RoomServer* server) 
+: name_(name), server_(server) {
+   server_->addRoom(this);
+}
+// ------------------ RoomServer
+evp::RoomServer::RoomServer() {
+   // set up basic handlers:
+   
+   // redirect to login:
+   registerString("",std::string("")
+           +"<html> <head> <title> REDIRECT </title>\n"
+           +"<meta http-equiv='Refresh' content='0; url=login.html'/>\n"
+           +"</head>\n"
+           +"<body>\n"
+           +"<p> redirecting...\n"
+           +"</body> </html>"
+   );
+   registerFile("login.html","RoomServer/login.html");
+
+
+   evp::FileServer::FunctionItem::F loginFunc = [&](const evp::URL &url) -> std::string {
+      std::string name = url.paramString("name","");
+      // validate name:
+      bool success = false;
+      std::string id;
+      login(name, id, success);
+      if(!success) {
+         return std::string("")
+           +"<html> <head> <title>LOGIN FAILED</title>\n"
+           +"<meta http-equiv='Refresh' content='10; url=login.html'/>\n"
+           +"</head>\n"
+           +"<body>\n"
+           +"<p>Login failed, name "+name+" already in use!</br>\n"
+           +"<button onclick='window.location=\"login.html\"'>Try Again</button>\n"
+           +"</body> </html>";
+      } else {
+         return std::string("")
+           +"<html> <head> <title>LOGIN SUCESS - Redirect</title>\n"
+           +"<meta http-equiv='Refresh' content='1; url=control.html'/>\n"
+           +"</head>\n"
+           +"<body>\n"
+           +"<script>\n"
+           +"document.cookie = 'user="+name+"'\n"
+           +"document.cookie = 'userid="+id+"'\n"
+           +"</script>\n"
+           +"<p> Welcome, "+name+"!\n"
+           +"</body> </html>";
+      }
+   };
+   registerFunction("login2.html", loginFunc);
+   
+   registerFile("control.html","RoomServer/control.html");
+   registerFile("test.html","RoomServer/test.html");
+   registerFile("script.js","RoomServer/script.js");
+   registerFile("util.js","RoomServer/util.js");
+   registerFile("img.png","RoomServer/img.png");
+   registerFile("favicon.ico","RoomServer/favicon.ico");
+
+   registerString("hello.html",std::string("")
+           +"<html> <head> <title> TITLE </title> </head>\n"
+           +"<body>\n"
+           +"<p> hello world\n"
+           +"<img src='img.png' alt='subtitle'>\n"
+           +"</body> </html>"
+   );
+
+   evp::FileServer::FunctionItem::F func = [&](const evp::URL &url) -> std::string {
+      std::string id = url.paramString("uid","");
+      User* u = id2user(id);
+      if(u) {
+         std::string s = url.paramString("0","");
+         if(s=="f") {
+            //u->set(0,0);
+         } else {
+            const auto& pp = evp::split(s,',');
+            float dx = std::stod(pp[0]);
+            float dy = std::stod(pp[1]);
+            //u->set(dx,dy);
+            std::cout << dx << " " << dy << std::endl;
+	 }
+   
+         std::string s2 = url.paramString("5","");
+         //u->setDown(s2=="t");
+	 if(s2=="t") {std::cout << "t" << std::endl;}
+   
+         return std::string("ok");
+      } else {
+         return std::string("error: user");
+      }
+   };
+   registerFunction("data", func);
+ 
+}
+
