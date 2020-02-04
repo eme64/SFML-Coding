@@ -63,6 +63,41 @@ void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, co
    target.draw(rectangle, sf::BlendAlpha);//BlendAdd
 }
 
+class LobbyRoom : public evp::Room {
+public:
+   LobbyRoom(const std::string &name, evp::RoomServer* server)
+   : evp::Room(name,server) {}
+   virtual void draw(sf::RenderTarget &target) {
+      DrawRect(10,10, 100,100, target, Color(0.5,0.5,0));
+      //evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
+      //   MyUserData* data = dynamic_cast<MyUserData*>(raw);
+      //   if(data->down) {
+      //      DrawRect(data->x,data->y, 5,5, target, Color(0,1,0));
+      //   } else {
+      //      DrawRect(data->x,data->y, 5,5, target, Color(1,0,0));
+      //   }
+      //};
+      //visitUsers(f);
+   }
+   virtual void onActivate() {
+      std::cout << "MyActivate " << name() << std::endl;
+   }
+   virtual void onActivateUser(evp::User* const u,evp::UserData* const raw) {
+      std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
+   
+      u->clearControls();
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,
+			      [this](bool down) {
+				 if(down) {this->server()->setActive("game1");}
+			      }));
+
+   }
+private:
+};
+
+
+
+
 class MyUserData : public evp::UserData {
 public:
    float x=100,y=100;
@@ -107,8 +142,8 @@ public:
 				 data->down = down;
 			      }));
       u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,
-			      [data](bool down) {
-				 data->down = down;
+			      [this](bool down) {
+				 if(down) {this->server()->setActive("lobby");}
 			      }));
 
    }
@@ -120,7 +155,8 @@ int main(int argc, char** argv) {
    std::cout << "Starting..." << std::endl;
    
    evp::RoomServer server;
-   MyRoom* room = new MyRoom("lobby",&server);
+   LobbyRoom* lobby = new LobbyRoom("lobby",&server);
+   MyRoom* game1 = new MyRoom("game1",&server);
    server.setActive("lobby");
 
    sf::ContextSettings settings;

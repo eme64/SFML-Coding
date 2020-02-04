@@ -285,10 +285,10 @@ private:
    const std::string id_;
 };
 
-class SlideKnobControl : public Control {
+class KnobControl : public Control {
 public:
    typedef std::function<void(bool,float,float)> HandleF;
-   SlideKnobControl(const std::string &id, float x0, float y0, float x1, float y1,HandleF f) : Control(id,x0,y0,x1,y1), f_(f) {}
+   KnobControl(const std::string &id, float x0, float y0, float x1, float y1,bool isSlide,float sensitivity,HandleF f) : Control(id,x0,y0,x1,y1), f_(f), isSlide_(isSlide), sensitivity_(sensitivity) {}
    virtual void handleInput(const std::string &data) {
       if(data=="f") {
          f_(false,0,0);
@@ -300,7 +300,31 @@ public:
       }
    }
    virtual std::string controlString() {
-      const std::string res = std::string("ks:") + id()
+      const std::string res = (isSlide_ ? std::string("ks:") : std::string("kd:"))
+	      +id()
+	      +":"+std::to_string(x0)
+	      +","+std::to_string(y0)
+	      +","+std::to_string(x1)
+	      +","+std::to_string(y1)
+	      +","+std::to_string(sensitivity_);
+      return res;
+   }
+private:
+   HandleF f_;
+   bool isSlide_;
+   float sensitivity_;
+};
+
+class ButtonControl : public Control {
+public:
+   typedef std::function<void(bool)> HandleF;
+   ButtonControl(const std::string &id, float x0, float y0, float x1, float y1,HandleF f) : Control(id,x0,y0,x1,y1), f_(f)  {}
+   virtual void handleInput(const std::string &data) {
+      f_(data=="t");
+   }
+   virtual std::string controlString() {
+      const std::string res = std::string("b:")
+	      +id()
 	      +":"+std::to_string(x0)
 	      +","+std::to_string(y0)
 	      +","+std::to_string(x1)
@@ -324,7 +348,7 @@ public:
       if(it!=id2control_.end()) {
          it->second->handleInput(data);
       } else {
-         std::cout << "handleInput lost " << iid << " " << data << std::endl;
+         //std::cout << "handleInput lost " << iid << " " << data << std::endl;
       }
    }
    std::string controlString() {
@@ -399,6 +423,7 @@ public:
       // called when room activated
       // or when user added to active room
    }
+   RoomServer* server() const {return server_;}
 private:
    const std::string name_;
    RoomServer* const server_;

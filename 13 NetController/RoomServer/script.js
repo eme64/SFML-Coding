@@ -317,7 +317,7 @@ canvas.addEventListener("touchstart", function(event) {
       
       var e = findElement(tdata[id].x0,tdata[id].y0);
       console.log("touch: " + e);
-      if(e!=undefined) {
+      if(e!=undefined && e in elements) {
          var cc = elements[e].canCapture;
          var ic = elements[e].isCaptured;
          if(cc && ic==undefined) {
@@ -344,11 +344,13 @@ canvas.addEventListener("touchmove", function(event) {
       if(tdata[id].element != undefined) {
          // we were captured
 	 var e = tdata[id].element;
-	 elements[e].handleTouchCapturedMove(tdata[id].x1,tdata[id].y1);
+	 if(e in elements) {
+	    elements[e].handleTouchCapturedMove(tdata[id].x1,tdata[id].y1);
+         }
       } else {
 	 // just inform who we are over:
          var e = findElement(tdata[id].x1,tdata[id].y1);
-	 if(e!=undefined) {
+	 if(e!=undefined && e in elements) {
             var cc = elements[e].canCapture;
 	    if(!cc) {
 	       elements[e].handleTouchMove(tdata[id].x1,tdata[id].y1)
@@ -367,13 +369,15 @@ canvas.addEventListener("touchend", function(event) {
       if(tdata[id].element != undefined) {
          // we were captured
 	 var e = tdata[id].element;
-	 elements[e].handleTouchCapturedEnd();
-	 elements[e].isCaptured = undefined;
-	 tdata[id].element = undefined;
+	 if(e in elements) {
+	    elements[e].handleTouchCapturedEnd();
+	    elements[e].isCaptured = undefined;
+	    tdata[id].element = undefined;
+         }
       } else {
 	 // just inform who we are over:
          var e = findElement(tdata[id].x1,tdata[id].y1);
-	 if(e!=undefined) {
+	 if(e!=undefined && e in elements) {
             var cc = elements[e].canCapture;
 	    if(!cc) {
 	       elements[e].handleTouchEnd(tdata[id].x1,tdata[id].y1)
