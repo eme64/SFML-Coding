@@ -60,7 +60,7 @@ class Element {
 }
 
 class Knob extends Element {
-   constructor(id,x0,y0,x1,y1,type="direction") {
+   constructor(id,x0,y0,x1,y1,type="direction",sensitivity=0.05) {
       super(id,x0,y0,x1,y1);
       this.color = "#AAAA00"
       this.type = type;
@@ -69,7 +69,7 @@ class Knob extends Element {
       this.y0_ = 0;
       this.x1_ = 0;
       this.y1_ = 0;
-      this.dmax = 0.05;//directon distance - sensitivity
+      this.dmax = sensitivity;//directon distance - sensitivity
    }
    handleTouchCapture(x,y) {
       this.color = "#CCCC00"
@@ -121,6 +121,17 @@ class Knob extends Element {
 	    return "";
       }
    }
+   draw() {
+      super.draw()
+      if(this.type == "direction" && this.drag) {
+         ctx.fillStyle = "#000000";
+         var xx = (this.x0_)*canvas.width;
+         var yy = (this.y0_)*canvas.height;
+         var rx = this.dmax * canvas.width;
+         var ry = this.dmax * canvas.height;
+         ctx.fillRect(xx-rx, yy-ry, 2*rx, 2*ry);
+      }
+   }
 }
 
 class Button extends Element {
@@ -164,11 +175,11 @@ function loadElements(s) {
 	    switch(eKind) {
 	       case "kd": // knob direction
 	          console.log(eId + " Knob direction")
-	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],"direction");
+	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],"direction",eP[4]);
 	          break;
 	       case "ks": // knob slide
 	          console.log(eId + " Knob slide")
-	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],"slide");
+	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],"slide",eP[4]);
 	          break;
 	       case "b": // button
 	          console.log(eId + " Button")

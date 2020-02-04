@@ -94,12 +94,23 @@ public:
       std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
    
       u->clearControls();
-      u->registerControl(new evp::SlideKnobControl(u->nextControlId(),0.1,0.1,0.8,0.8,
+      u->registerControl(new evp::KnobControl(u->nextControlId(),0.05,0.05,0.4,0.4,true,1,
 			      [data](bool down, float dx, float dy) {
 				 data->x += dx*100;
 				 data->y += dy*100;
 				 data->down = down;
 			      }));
+      u->registerControl(new evp::KnobControl(u->nextControlId(),0.55,0.05,0.4,0.4,false,0.05,
+			      [data](bool down, float dx, float dy) {
+				 data->x += dx;
+				 data->y += dy;
+				 data->down = down;
+			      }));
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,
+			      [data](bool down) {
+				 data->down = down;
+			      }));
+
    }
 private:
 };
