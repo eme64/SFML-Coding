@@ -272,33 +272,95 @@ private:
 
 class Control {
 public:
+   float x0,y0,x1,y1;
    Control(const std::string &id, float x0, float y0, float x1, float y1) : id_(id), x0(x0),y0(y0),x1(x1),y1(y1) {}
+   std::string id() {return id_;}
+   virtual void handleInput(const std::string &data) {
+      std::cout << "handleInput " << id_ << " " << data << std::endl;
+   }
+   virtual std::string controlString() {
+      return "";
+   }
 private:
    const std::string id_;
-   float x0,y0,x1,y1;
 };
 
 class SlideKnobControl : public Control {
 public:
-   SlideKnobControl(const std::string &id, float x0, float y0, float x1, float y1) : Control(id,x0,y0,x1,y1) {}
+   typedef std::function<void(bool,float,float)> HandleF;
+   SlideKnobControl(const std::string &id, float x0, float y0, float x1, float y1,HandleF f) : Control(id,x0,y0,x1,y1), f_(f) {}
+   virtual void handleInput(const std::string &data) {
+      if(data=="f") {
+         f_(false,0,0);
+      } else {
+         auto parts = split(data,',');
+	 float dx = std::stod(parts[0]);
+	 float dy = std::stod(parts[1]);
+	 f_(true,dx,dy);
+      }
+   }
+   virtual std::string controlString() {
+      const std::string res = std::string("ks:") + id()
+	      +":"+std::to_string(x0)
+	      +","+std::to_string(y0)
+	      +","+std::to_string(x1)
+	      +","+std::to_string(y1);
+      return res;
+   }
 private:
+   HandleF f_;
 };
 
 class User {
 public:
    User(const std::string &name) : name_(name) {}
+   ~User() { clearControls(); }
    void setId(const std::string &id) {id_=id;}
    std::string name() const {return name_;}
    std::string id() const {return id_;}
 
    void handleInput(const std::string &iid, const std::string &data) {
-      std::cout << name() << " " << iid << " " << data << std::endl;
+      auto it = id2control_.find(iid);
+      if(it!=id2control_.end()) {
+         it->second->handleInput(data);
+      } else {
+         std::cout << "handleInput lost " << iid << " " << data << std::endl;
+      }
+   }
+   std::string controlString() {
+      std::string res("");
+      for(auto it : id2control_) {
+	 std::string tmp = it.second->controlString();
+	 if(tmp!=""){
+	    if(res!="") {res+=";";}
+	    res+=tmp;
+	 }
+      }
+      return res;
+   }
+   std::string nextControlId() {return std::to_string(nextControlId_++);}
+   void registerControl(Control* c) {
+      assert(id2control_.find(c->id())==id2control_.end());
+      id2control_[c->id()] = c;
+   }
+   void removeControl(const std::string &id) {
+      auto it = id2control_.find(id);
+      assert(it!=id2control_.end());
+      delete it->second;
+      id2control_.erase(it);
+   }
+   void clearControls() {
+      for(auto it : id2control_) {
+         delete it.second;
+      }
+      id2control_.clear();
    }
 private:
    std::string name_;
    std::string id_;
 
    std::map<std::string,Control*> id2control_;
+   int nextControlId_ = 1;
 };
 
 class UserData {
@@ -326,14 +388,14 @@ public:
    void onActivateHandle() {
       onActivate();
       for(const auto &it : user2data_) {
-         onActivateUser(it.first);
+         onActivateUser(it.first,it.second);
       }
    }
    virtual void onActivate() {
       // called when room activated
       std::cout << "Activating Room " << name() << std::endl;
    }
-   virtual void onActivateUser(User* const u) {
+   virtual void onActivateUser(User* const u, UserData* const d) {
       // called when room activated
       // or when user added to active room
    }

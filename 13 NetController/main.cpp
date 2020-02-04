@@ -66,6 +66,7 @@ void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, co
 class MyUserData : public evp::UserData {
 public:
    float x=100,y=100;
+   bool down = false;
 private:
 };
 
@@ -76,7 +77,11 @@ public:
    virtual void draw(sf::RenderTarget &target) {
       evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
          MyUserData* data = dynamic_cast<MyUserData*>(raw);
-         DrawRect(data->x,data->y, 5,5, target, Color(1,0,0));
+	 if(data->down) {
+            DrawRect(data->x,data->y, 5,5, target, Color(0,1,0));
+	 } else {
+            DrawRect(data->x,data->y, 5,5, target, Color(1,0,0));
+	 }
       };
       visitUsers(f);
    }
@@ -84,8 +89,17 @@ public:
    virtual void onActivate() {
       std::cout << "MyActivate " << name() << std::endl;
    }
-   virtual void onActivateUser(evp::User* const u) {
+   virtual void onActivateUser(evp::User* const u,evp::UserData* const raw) {
+      MyUserData* data = dynamic_cast<MyUserData*>(raw);
       std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
+   
+      u->clearControls();
+      u->registerControl(new evp::SlideKnobControl(u->nextControlId(),0.1,0.1,0.8,0.8,
+			      [data](bool down, float dx, float dy) {
+				 data->x += dx*100;
+				 data->y += dy*100;
+				 data->down = down;
+			      }));
    }
 private:
 };

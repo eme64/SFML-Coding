@@ -146,7 +146,8 @@ class Button extends Element {
 }
 
 function loadElements(s) {
-   if(s != elementsString) {
+   if(s!=elementsString) {
+      elementsString = s;
       console.log("Load elements...");
       var els = s.split(";");
       newIds = {}
@@ -214,9 +215,8 @@ function getElementsData() {
 
 
 
-loadElements("ks:0:0.1,0.1,0.8,0.2;kd:3:0.1,0.6,0.8,0.3");
-
-loadElements("ks:0:0.1,0.1,0.8,0.2;kd:4:0.1,0.4,0.8,0.2;b:5:0.1,0.7,0.3,0.2;b:6:0.6,0.7,0.3,0.2");
+//loadElements("ks:0:0.1,0.1,0.8,0.2;kd:3:0.1,0.6,0.8,0.3");
+//loadElements("ks:0:0.1,0.1,0.8,0.2;kd:4:0.1,0.4,0.8,0.2;b:5:0.1,0.7,0.3,0.2;b:6:0.6,0.7,0.3,0.2");
 
 var canvas = document.getElementById("canvas");
 var ctx = canvas.getContext("2d");
@@ -381,7 +381,17 @@ function run() {
    var url = "data?uid="+getCookie("userid")+s;
    fetch(url)
    .then(data => {return data.text()})
-   .then(txt => {/*console.log("data: "+txt)*/})
+   .then(txt => {
+      if(txt.startsWith("#")) {
+	 if(txt=="#ok") {
+            loadElements("");
+	 } else {
+            console.log("data error: "+txt);
+	 }
+      } else {
+         loadElements(txt);
+      }
+   })
    .catch(error => console.log(error))
 
    clear();

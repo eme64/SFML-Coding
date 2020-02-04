@@ -88,8 +88,9 @@ evp::Room::Room(const std::string &name, RoomServer* server)
 }
 void
 evp::Room::onUserNew(User* const u) {
-   user2data_[u] = newUserData(u);
-   if(server_->active() == this) { onActivateUser(u); }
+   UserData* d = newUserData(u);
+   user2data_[u] = d;
+   if(server_->active() == this) { onActivateUser(u,d); }
 }
 void
 evp::Room::onUserLeave(User* const u) {
@@ -184,8 +185,15 @@ evp::RoomServer::RoomServer() {
          ////u->setDown(s2=="t");
 	 //if(s2=="t") {std::cout << "t" << std::endl;}
    
-         return std::string("ok");
+         //return u->controlString();
+	 const std::string ctrl = u->controlString();
+	 if(ctrl!="") {
+	    return ctrl;
+	 } else {
+            return std::string("#ok");
+	 }
       } else {
+         //return std::string("#error: user");
          return std::string("error: user");
       }
    };
