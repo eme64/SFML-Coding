@@ -244,44 +244,12 @@ function setTxt(s) {
    txt.innerHTML = s;
 }
 
-var drag = false;
-var dragStart;
-var dragEnd;
-
-canvas.addEventListener("mousedown", function(event) {
-   dragStart = {
-      x: event.pageX - canvas.offsetLeft,
-      y: event.pageY - canvas.offsetTop
-   };
-   drag = true;
-   console.log("mousedown");
-   
-   clear();
-   ctx.fillStyle = "#BBBB00";
-   ctx.fillRect(dragStart.x,dragStart.y,10, 10);
-});
-canvas.addEventListener("mousemove", function(event) {
-   if(drag) {
-      dragEnd = {
-         x: event.pageX - canvas.offsetLeft,
-         y: event.pageY - canvas.offsetTop
-      }
-      var dx = (dragEnd.x - dragStart.x) / canvas.width;
-      var dy = dragEnd.y - dragStart.y / canvas.height;
-      console.log(dx + "" + dy);
-      ctx.fillStyle = "#BB0000";
-      ctx.fillRect(dragEnd.x,dragEnd.y,10, 10);
-   }
-});
-canvas.addEventListener("mouseup", function(event) {
-   drag = false;
-   console.log("mouseup");
-   clear();
-});
-
 function rgb(r, g, b){
    return ["rgb(",r,",",g,",",b,")"].join("");
 }
+
+
+
 
 
 var ntouches = 20;
@@ -289,7 +257,7 @@ var tdata = {};
 
 function initTData() {
    var i;
-   for(i=0; i<ntouches; i++) {
+   for(i=-1; i<ntouches; i++) {
       tdata[i] = {
          drag: false,
 	 x0: 0,
@@ -303,89 +271,113 @@ function initTData() {
 }
 initTData();
 
+function tDataStart(id, x, y) {
+   tdata[id].drag = true;
+   tdata[id].x0 = (x - canvas.offsetLeft)/canvas.width;
+   tdata[id].y0 = (y - canvas.offsetTop)/canvas.height;
+   tdata[id].x1 = tdata[id].x0;
+   tdata[id].y1 = tdata[id].y0;
+   
+   var e = findElement(tdata[id].x0,tdata[id].y0);
+   console.log("touch: " + e);
+   if(e!=undefined && e in elements) {
+      var cc = elements[e].canCapture;
+      var ic = elements[e].isCaptured;
+      if(cc && ic==undefined) {
+         // capture it myself
+         tdata[id].element = e;
+         elements[e].isCaptured = id;
+         elements[e].handleTouchCapture(tdata[id].x0,tdata[id].y0);
+      }
+      if(!cc) {
+         // inform it
+         elements[e].handleTouch(tdata[id].x0,tdata[id].y0);
+      }
+   }
+}
 canvas.addEventListener("touchstart", function(event) {
    event.preventDefault();
    var touches = event.changedTouches;
    for(var i=0; i<touches.length; i++) {
       var id = touches[i].identifier;
       
-      tdata[id].drag = true;
-      tdata[id].x0 = (touches[i].pageX - canvas.offsetLeft)/canvas.width;
-      tdata[id].y0 = (touches[i].pageY - canvas.offsetTop)/canvas.height;
-      tdata[id].x1 = tdata[id].x0;
-      tdata[id].y1 = tdata[id].y0;
-      
-      var e = findElement(tdata[id].x0,tdata[id].y0);
-      console.log("touch: " + e);
-      if(e!=undefined && e in elements) {
-         var cc = elements[e].canCapture;
-         var ic = elements[e].isCaptured;
-         if(cc && ic==undefined) {
-	    // capture it myself
-            tdata[id].element = e;
-            elements[e].isCaptured = id;
-            elements[e].handleTouchCapture(tdata[id].x0,tdata[id].y0);
-	 }
-	 if(!cc) {
-	    // inform it
-            elements[e].handleTouch(tdata[id].x0,tdata[id].y0);
-	 }
-      }
+      tDataStart(id,touches[i].pageX,touches[i].pageY);
    }
 });
+canvas.addEventListener("mousedown", function(event) {
+   tDataStart(-1, event.pageX,event.pageY);
+});
+
+
+function tDataMove(id, x, y) {
+   if(!tdata[id].drag) {return;}
+   tdata[id].x1 = (x - canvas.offsetLeft)/canvas.width;
+   tdata[id].y1 = (y - canvas.offsetTop)/canvas.height;
+   
+   if(tdata[id].element != undefined) {
+      // we were captured
+      var e = tdata[id].element;
+      if(e in elements) {
+         elements[e].handleTouchCapturedMove(tdata[id].x1,tdata[id].y1);
+      }
+   } else {
+      // just inform who we are over:
+      var e = findElement(tdata[id].x1,tdata[id].y1);
+      if(e!=undefined && e in elements) {
+         var cc = elements[e].canCapture;
+         if(!cc) {
+            elements[e].handleTouchMove(tdata[id].x1,tdata[id].y1)
+         }
+      }
+   }
+}
 canvas.addEventListener("touchmove", function(event) {
    var touches = event.changedTouches;
    for(var i=0; i<touches.length; i++) {
       var id = touches[i].identifier;
-
-      tdata[id].x1 = (touches[i].pageX - canvas.offsetLeft)/canvas.width;
-      tdata[id].y1 = (touches[i].pageY - canvas.offsetTop)/canvas.height;
       
-      if(tdata[id].element != undefined) {
-         // we were captured
-	 var e = tdata[id].element;
-	 if(e in elements) {
-	    elements[e].handleTouchCapturedMove(tdata[id].x1,tdata[id].y1);
-         }
-      } else {
-	 // just inform who we are over:
-         var e = findElement(tdata[id].x1,tdata[id].y1);
-	 if(e!=undefined && e in elements) {
-            var cc = elements[e].canCapture;
-	    if(!cc) {
-	       elements[e].handleTouchMove(tdata[id].x1,tdata[id].y1)
-	    }
-	 }
-      }
+      tDataMove(id, touches[i].pageX,touches[i].pageY);
    }
 });
+canvas.addEventListener("mousemove", function(event) {
+   tDataMove(-1, event.pageX,event.pageY);
+});
+
+
+function tDataEnd(id) {
+   tdata[id].drag = false;
+   
+   if(tdata[id].element != undefined) {
+      // we were captured
+      var e = tdata[id].element;
+      if(e in elements) {
+         elements[e].handleTouchCapturedEnd();
+         elements[e].isCaptured = undefined;
+         tdata[id].element = undefined;
+      }
+   } else {
+      // just inform who we are over:
+      var e = findElement(tdata[id].x1,tdata[id].y1);
+      if(e!=undefined && e in elements) {
+         var cc = elements[e].canCapture;
+         if(!cc) {
+            elements[e].handleTouchEnd(tdata[id].x1,tdata[id].y1)
+         }
+      }
+   }
+}
 canvas.addEventListener("touchend", function(event) {
    var touches = event.changedTouches;
    for(var i=0; i<touches.length; i++) {
       var id = touches[i].identifier;
       
-      tdata[id].drag = false;
-      
-      if(tdata[id].element != undefined) {
-         // we were captured
-	 var e = tdata[id].element;
-	 if(e in elements) {
-	    elements[e].handleTouchCapturedEnd();
-	    elements[e].isCaptured = undefined;
-	    tdata[id].element = undefined;
-         }
-      } else {
-	 // just inform who we are over:
-         var e = findElement(tdata[id].x1,tdata[id].y1);
-	 if(e!=undefined && e in elements) {
-            var cc = elements[e].canCapture;
-	    if(!cc) {
-	       elements[e].handleTouchEnd(tdata[id].x1,tdata[id].y1)
-	    }
-	 }
-      }
+      tDataEnd(id);
    }
 });
+canvas.addEventListener("mouseup", function(event) {
+   tDataEnd(-1);
+});
+
 
 var cnt = 0;
 function run() {
