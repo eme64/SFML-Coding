@@ -14,7 +14,7 @@ elements = {}
 // id -> element
 
 class Element {
-   constructor(id,x0,y0,x1,y1) {
+   constructor(id,x0,y0,x1,y1,kCodes) {
       this.id = id;
       this.x0=parseFloat(x0);
       this.y0=parseFloat(y0);
@@ -22,7 +22,9 @@ class Element {
       this.y1=parseFloat(y1);
       this.canCapture = true;
       this.isCaptured = undefined;
-      this.color = "#FF0000"
+      this.color = "#FF0000";
+      
+      kDataRegister(this, kCodes);
    }
    draw() {
       ctx.fillStyle = this.color;
@@ -51,7 +53,13 @@ class Element {
       console.log("handleTouchEnd " + this.id);
    }
    // may want to add more handlers for enter / leave without capture?
-
+   
+   handleKeyDown(kCode) {
+      console.log("handleKeyDown " + this.id + " " + kCode)
+   }
+   handleKeyUp(kCode) {
+      console.log("handleKeyUp " + this.id + " " + kCode)
+   }
    get() {
       // returns string to send to server
       // if "", then send nothing
@@ -60,8 +68,8 @@ class Element {
 }
 
 class Knob extends Element {
-   constructor(id,x0,y0,x1,y1,type="direction",sensitivity=0.05) {
-      super(id,x0,y0,x1,y1);
+   constructor(id,x0,y0,x1,y1,kCodes,type="direction",sensitivity=0.05) {
+      super(id,x0,y0,x1,y1,kCodes);
       this.color = "#AAAA00"
       this.type = type;
       this.drag = false;
@@ -135,8 +143,8 @@ class Knob extends Element {
 }
 
 class Button extends Element {
-   constructor(id,x0,y0,x1,y1) {
-      super(id,x0,y0,x1,y1);
+   constructor(id,x0,y0,x1,y1,kCodes) {
+      super(id,x0,y0,x1,y1,kCodes);
       this.color = "#00AAAA"
       this.drag = false;
       this.canCapture = true;
@@ -151,6 +159,16 @@ class Button extends Element {
       this.drag = false;
       this.color = "#00AAAA"
    }
+
+   handleKeyDown(kCode) {
+      this.drag = true;
+      this.color = "#AAFF00"
+   }
+   handleKeyUp(kCode) {
+      this.drag = false;
+      this.color = "#00AAAA"
+   }
+
    get() {
       return this.drag ? "t" : "f";
    }
@@ -175,15 +193,15 @@ function loadElements(s) {
 	    switch(eKind) {
 	       case "kd": // knob direction
 	          console.log(eId + " Knob direction")
-	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],"direction",eP[4]);
+	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],[],"direction",eP[4]);
 	          break;
 	       case "ks": // knob slide
 	          console.log(eId + " Knob slide")
-	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],"slide",eP[4]);
+	          elements[String(eId)] = new Knob(eId,eP[0],eP[1],eP[2],eP[3],[],"slide",eP[4]);
 	          break;
 	       case "b": // button
 	          console.log(eId + " Button")
-	          elements[String(eId)] = new Button(eId,eP[0],eP[1],eP[2],eP[3]);
+	          elements[String(eId)] = new Button(eId,eP[0],eP[1],eP[2],eP[3],[eP[4]]);
 	          break;
 
 	       default:
@@ -378,6 +396,35 @@ canvas.addEventListener("mouseup", function(event) {
    tDataEnd(-1);
 });
 
+// ------------------------ Key Events:
+
+kData = {};
+
+function kDataRegister(element, kCodes) {
+   for(var i in kCodes) {
+      var c = kCodes[i];
+      kData[c] = element;
+      console.log("kData register: " + element + " - " + c);
+   }
+}
+
+document.addEventListener('keydown', function(event) {
+   if(event.code in kData) {
+      var e = kData[event.code];
+      e.handleKeyDown(event.code);
+   }
+});
+
+document.addEventListener('keyup', function(event) {
+   if(event.code in kData) {
+      var e = kData[event.code];
+      e.handleKeyUp(event.code);
+   }
+});
+
+
+// ------------------------ Main:
+
 
 var cnt = 0;
 function run() {
@@ -408,8 +455,4 @@ function run() {
 run()
 
 var timer = setInterval(run, 50);
-
-clear();
-
-
 

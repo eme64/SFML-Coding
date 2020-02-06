@@ -86,11 +86,14 @@ public:
       std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
    
       u->clearControls();
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.05,0.9,0.4,"Digit1",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("game1");}
 			      }));
-
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,"Digit2",
+			      [this](bool down) {
+				 if(down) {this->server()->setActive("game2");}
+			      }));
    }
 private:
 };
@@ -141,7 +144,7 @@ public:
 				 data->y += dy;
 				 data->down = down;
 			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,"Escape",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("lobby");}
 			      }));
@@ -151,12 +154,78 @@ private:
 };
 
 
+class PlatformUserData : public evp::UserData {
+public:
+   float x=100, y=100;
+   float dx=0, dy=0;
+   bool up=false, left=false, right=false;
+private:
+};
+
+class PlatformRoom : public evp::Room {
+public:
+   PlatformRoom(const std::string &name, evp::RoomServer* server)
+   : evp::Room(name,server) {}
+   virtual void draw(sf::RenderTarget &target) {
+      evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
+         PlatformUserData* data = dynamic_cast<PlatformUserData*>(raw);
+	 
+	 if(data->left) {data->dx-=0.01;}
+	 if(data->right) {data->dx+=0.01;}
+	 if(data->y <= 0 and data->up) {data->dy=2;}
+
+         data->dx = std::min(data->dx,2.0f);
+         data->dx = std::max(data->dx,-2.0f);
+	 data->x += data->dx;
+	 data->dx *= 0.99;
+	 data->x = std::max(100.0f, std::min(700.0f, data->x));
+
+	 data->dy -= 0.01;
+	 data->y += data->dy;
+	 data->y = std::max(0.0f, data->y);
+         
+         DrawRect(data->x,500 - data->y, 5,5, target, Color(0.5 + data->left,0.5 + data->right, 0.5 + data->up));
+      };
+      visitUsers(f);
+   }
+   virtual evp::UserData* newUserData(const evp::User* u) { return new PlatformUserData();}
+   virtual void onActivate() {
+      std::cout << "PlatformActivate " << name() << std::endl;
+   }
+   virtual void onActivateUser(evp::User* const u,evp::UserData* const raw) {
+      PlatformUserData* data = dynamic_cast<PlatformUserData*>(raw);
+      std::cout << "PlatformActivateUser " << name() << " " << u->name() << std::endl;
+   
+      u->clearControls();
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.05,0.9,0.2,"Escape",
+			      [this](bool down) {
+				 if(down) {this->server()->setActive("lobby");}
+			      }));
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0,0.4,0.3,0.5,"KeyA",
+			      [data](bool down) {
+				 data->left = down;
+			      }));
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.35,0.3,0.3,0.5,"KeyW",
+			      [data](bool down) {
+				 data->up = down;
+			      }));
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.7,0.4,0.3,0.5,"KeyD",
+			      [data](bool down) {
+				 data->right = down;
+			      }));
+   }
+private:
+};
+
+
+
 int main(int argc, char** argv) {
    std::cout << "Starting..." << std::endl;
    
    evp::RoomServer server;
    LobbyRoom* lobby = new LobbyRoom("lobby",&server);
    MyRoom* game1 = new MyRoom("game1",&server);
+   PlatformRoom* game2 = new PlatformRoom("game2",&server);
    server.setActive("lobby");
 
    sf::ContextSettings settings;

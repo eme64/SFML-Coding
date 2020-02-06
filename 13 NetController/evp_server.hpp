@@ -318,7 +318,7 @@ private:
 class ButtonControl : public Control {
 public:
    typedef std::function<void(bool)> HandleF;
-   ButtonControl(const std::string &id, float x0, float y0, float x1, float y1,HandleF f) : Control(id,x0,y0,x1,y1), f_(f)  {}
+   ButtonControl(const std::string &id, float x0, float y0, float x1, float y1, const std::string &key, HandleF f) : Control(id,x0,y0,x1,y1), f_(f), key_(key)  {}
    virtual void handleInput(const std::string &data) {
       f_(data=="t");
    }
@@ -328,11 +328,13 @@ public:
 	      +":"+std::to_string(x0)
 	      +","+std::to_string(y0)
 	      +","+std::to_string(x1)
-	      +","+std::to_string(y1);
+	      +","+std::to_string(y1)
+	      +","+key_;
       return res;
    }
 private:
    HandleF f_;
+   std::string key_;
 };
 
 class User {
