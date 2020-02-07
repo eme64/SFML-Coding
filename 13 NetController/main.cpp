@@ -37,6 +37,20 @@
 //  - next: integrate controls
 //  - timeout on user? / logout?
 
+// Ideas:
+// - rts:
+//   - commander places buildings
+//   - maybe have multiple teleport locations?
+//   - mine for mass and energy, relay to base
+//   - build things with mass, weapons use energy
+//   - commander cannot attack, only build
+//   - commander can make units follow him
+//
+// - race game:
+//   - run through voronoy map to reach goal, tiles have properties
+//
+// - other inspirations: overcooked, ibb and obb, snipperclips, bomberman, think of the children, 
+// - rts coop, tower defense style? or clean up map?
 
 class Color {
 public:
