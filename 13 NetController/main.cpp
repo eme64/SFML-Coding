@@ -49,7 +49,7 @@
 // - race game:
 //   - run through voronoy map to reach goal, tiles have properties
 //
-// - other inspirations: overcooked, ibb and obb, snipperclips, bomberman, think of the children, 
+// - other inspirations: overcooked, ibb and obb, snipperclips, bomberman, think of the children, catastronauts 
 // - rts coop, tower defense style? or clean up map?
 
 class Color {
