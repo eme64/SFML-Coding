@@ -11,6 +11,10 @@
 #include "evp_voronoi.hpp"
 
 
+#include "FastNoise/FastNoise.h"
+//https://github.com/Auburns/FastNoise/wiki
+
+
 #ifndef VORONOI_ROOM_HPP
 #define VORONOI_ROOM_HPP
 
@@ -28,18 +32,37 @@ public:
    VoronoiRoom(const std::string &name, evp::RoomServer* server)
    : evp::Room(name,server) {
       vmap = new evp::VoronoiMap<CInfo>(3000, 1000,1000);
+      
+      seed_=0;
+      setupMap();
+   }
+   
+   void setupMap() {
+      std::vector<FastNoise> noiseGen(6);
+      for(int i=0; i<noiseGen.size(); i++) {
+	 noiseGen[i].SetNoiseType(FastNoise::SimplexFractal);
+	 noiseGen[i].SetSeed(seed_++);
+	 noiseGen[i].SetFrequency(0.005*std::pow(2.0,i));
+      }
+      
       for(int i=0; i<vmap->num_cells; i++) {
 	 float x = vmap->cells[i].pos.x;
 	 float y = vmap->cells[i].pos.y;
-         vmap->cells[i].color = Color(
-			 ((int)x % 256)/256.0,
-			 ((int)y % 256)/256.0,
-			 0 ).toSFML();
+         float h0 = 0;
+	 for(int i=0; i<noiseGen.size(); i++) {
+            h0 += (1.0+noiseGen[i].GetNoise(x,y))*0.5*std::pow(0.5,i);
+	 }
+	 h0 *= 0.5;
+	 vmap->cells[i].color = Color(
+			 (h0>0.5? h0 : 0),
+			 (h0>0.6? h0 : 0),
+			 (h0>0.3? h0 : 0)).toSFML();
 	 vmap->cells[i].info = 123;
       }
+
       vmap->create_mesh();
    }
-   
+
    ~VoronoiRoom() {
       delete vmap;
    }
@@ -77,14 +100,18 @@ public:
 				 data->y += dy;
 				 data->down = down;
 			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,"Escape",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.4,0.4,"Space",
+			      [this](bool down) {
+				 if(down) {setupMap();}
+			      }));
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.55,0.55,0.9,0.4,"Escape",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("lobby");}
 			      }));
-
    }
 private:
    evp::VoronoiMap<CInfo> *vmap;
+   int seed_;
 };
 
 
