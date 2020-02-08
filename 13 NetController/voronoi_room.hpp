@@ -8,6 +8,7 @@
 
 #include "evp_server.hpp"
 #include "evp_draw.hpp"
+#include "evp_voronoi.hpp"
 
 
 #ifndef VORONOI_ROOM_HPP
@@ -20,11 +21,31 @@ public:
 private:
 };
 
+typedef int CInfo;
+
 class VoronoiRoom : public evp::Room {
 public:
    VoronoiRoom(const std::string &name, evp::RoomServer* server)
-   : evp::Room(name,server) {}
+   : evp::Room(name,server) {
+      vmap = new evp::VoronoiMap<CInfo>(3000, 1000,1000);
+      for(int i=0; i<vmap->num_cells; i++) {
+	 float x = vmap->cells[i].pos.x;
+	 float y = vmap->cells[i].pos.y;
+         vmap->cells[i].color = Color(
+			 ((int)x % 256)/256.0,
+			 ((int)y % 256)/256.0,
+			 0 ).toSFML();
+	 vmap->cells[i].info = 123;
+      }
+      vmap->create_mesh();
+   }
+   
+   ~VoronoiRoom() {
+      delete vmap;
+   }
+
    virtual void draw(sf::RenderTarget &target) {
+      vmap->draw(0,0,1,target);
       evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
          VoronoiUserData* data = dynamic_cast<VoronoiUserData*>(raw);
 	 if(data->down) {
@@ -63,6 +84,7 @@ public:
 
    }
 private:
+   evp::VoronoiMap<CInfo> *vmap;
 };
 
 
