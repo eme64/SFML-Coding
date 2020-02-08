@@ -51,6 +51,8 @@
 //
 // - other inspirations: overcooked, ibb and obb, snipperclips, bomberman, think of the children, catastronauts 
 // - rts coop, tower defense style? or clean up map?
+// - adios amigos (space exploration, rogue like, physics, collision)
+
 
 class Color {
 public:
