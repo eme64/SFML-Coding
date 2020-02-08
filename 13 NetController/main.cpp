@@ -13,6 +13,9 @@
 
 #include "evp_server.hpp"
 
+#include "voronoi_room.hpp"
+#include "evp_draw.hpp"
+
 // Ideas:
 //  - file adapter
 //  - login: unique name - nonce
@@ -53,34 +56,6 @@
 // - rts coop, tower defense style? or clean up map?
 // - adios amigos (space exploration, rogue like, physics, collision)
 
-
-class Color {
-public:
-   float r,g,b,a;//0..1
-   Color(const float r,const float g,const float b,const float a=1.0) {
-     this->r = std::min(1.0f,std::max(0.0f,r));
-     this->g = std::min(1.0f,std::max(0.0f,g));
-     this->b = std::min(1.0f,std::max(0.0f,b));
-     this->a = std::min(1.0f,std::max(0.0f,a));
-   }
-   Color operator*(const float scale) {return Color(scale*r,scale*g,scale*b,a);}
- 
-   sf::Color toSFML() const {
-     return sf::Color(255.0*r,255.0*g,255.0*b,255.0*a);
-   }
-protected:
-};
-
-
-void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, const Color& color, float w=0.0) {
-   sf::RectangleShape rectangle;
-   rectangle.setSize(sf::Vector2f(dx, dy));
-   rectangle.setFillColor(color.toSFML());
-   rectangle.setPosition(x, y);
-   rectangle.setRotation(w);
-   target.draw(rectangle, sf::BlendAlpha);//BlendAdd
-}
-
 class LobbyRoom : public evp::Room {
 public:
    LobbyRoom(const std::string &name, evp::RoomServer* server)
@@ -104,13 +79,17 @@ public:
       std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
    
       u->clearControls();
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.05,0.9,0.4,"Digit1",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.0,0.9,0.3,"Digit1",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("game1");}
 			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,"Digit2",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.35,0.9,0.3,"Digit2",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("game2");}
+			      }));
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.7,0.9,0.3,"Digit3",
+			      [this](bool down) {
+				 if(down) {this->server()->setActive("game3");}
 			      }));
    }
 private:
@@ -306,6 +285,7 @@ int main(int argc, char** argv) {
    LobbyRoom* lobby = new LobbyRoom("lobby",&server);
    MyRoom* game1 = new MyRoom("game1",&server);
    RocketRoom* game2 = new RocketRoom("game2",&server);
+   VoronoiRoom* game3 = new VoronoiRoom("game3",&server);
    server.setActive("lobby");
 
    sf::ContextSettings settings;
