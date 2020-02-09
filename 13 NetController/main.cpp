@@ -55,6 +55,8 @@
 // - other inspirations: overcooked, ibb and obb, snipperclips, bomberman, think of the children, catastronauts 
 // - rts coop, tower defense style? or clean up map?
 // - adios amigos (space exploration, rogue like, physics, collision)
+//
+//
 
 class LobbyRoom : public evp::Room {
 public:
@@ -285,7 +287,7 @@ int main(int argc, char** argv) {
    LobbyRoom* lobby = new LobbyRoom("lobby",&server);
    MyRoom* game1 = new MyRoom("game1",&server);
    RocketRoom* game2 = new RocketRoom("game2",&server);
-   VoronoiRoom* game3 = new VoronoiRoom("game3",&server);
+   VoronoiRoom* game3 = new VoronoiRoom("game3",&server, 800,600);
    server.setActive("lobby");
 
    sf::ContextSettings settings;

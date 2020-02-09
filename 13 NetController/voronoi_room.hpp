@@ -20,44 +20,74 @@
 
 class VoronoiUserData : public evp::UserData {
 public:
-   float x=100,y=100;
-   bool down = false;
+   float x=20,y=300;
+   float dx=0,dy=0;
+   float w=0;
+   bool left,right;
 private:
 };
 
-typedef int CInfo;
+
+struct DetailNoise {
+   std::vector<FastNoise> noiseGen;
+   DetailNoise(int &seed_, float baseFreq = 0.007, int depth=6) {
+      noiseGen.resize(depth);
+      for(int i=0; i<noiseGen.size(); i++) {
+	 noiseGen[i].SetNoiseType(FastNoise::SimplexFractal);
+	 noiseGen[i].SetSeed(seed_++);
+	 noiseGen[i].SetFrequency(baseFreq*std::pow(2.0,i));
+      }
+   }
+   inline float get(float x,float y) {
+      float h0 = 0;
+      for(int i=0; i<noiseGen.size(); i++) {
+         h0 += (1.0+noiseGen[i].GetNoise(x,y))*0.5*std::pow(0.5,i);
+      }
+      return h0 * 0.5;  
+   }
+};
+
+struct CInfo {
+   enum Type {Normal, Blocked, Fast, Slow};
+   Type t;
+};
 
 class VoronoiRoom : public evp::Room {
 public:
-   VoronoiRoom(const std::string &name, evp::RoomServer* server)
-   : evp::Room(name,server) {
-      vmap = new evp::VoronoiMap<CInfo>(3000, 1000,1000);
+   VoronoiRoom(const std::string &name, evp::RoomServer* server,float dx, float dy)
+   : evp::Room(name,server), dx_(dx), dy_(dy) {
+      vmap = new evp::VoronoiMap<CInfo>(5000, dx_-10,dy_-10);
       
       seed_=0;
       setupMap();
    }
    
    void setupMap() {
-      std::vector<FastNoise> noiseGen(6);
-      for(int i=0; i<noiseGen.size(); i++) {
-	 noiseGen[i].SetNoiseType(FastNoise::SimplexFractal);
-	 noiseGen[i].SetSeed(seed_++);
-	 noiseGen[i].SetFrequency(0.005*std::pow(2.0,i));
-      }
-      
+      DetailNoise n0(seed_);// for types
+      DetailNoise n1(seed_);// for coloring?
+         
       for(int i=0; i<vmap->num_cells; i++) {
 	 float x = vmap->cells[i].pos.x;
 	 float y = vmap->cells[i].pos.y;
-         float h0 = 0;
-	 for(int i=0; i<noiseGen.size(); i++) {
-            h0 += (1.0+noiseGen[i].GetNoise(x,y))*0.5*std::pow(0.5,i);
+	 float h0 = n0.get(x,y);
+	 float h1 = n1.get(x,y);
+         
+	 Color c(h0,h0,h0);
+	 if(h0 > 0.6) {
+	    vmap->cells[i].info.t = CInfo::Blocked;
+	 } else {
+            if(h1 > 0.6) {
+	       vmap->cells[i].info.t = CInfo::Fast;
+	       c = Color(h0*0.5,h1,h0*0.5);
+	    } else if(h1<0.3) {
+	       vmap->cells[i].info.t = CInfo::Slow;
+	       c = Color(1-h1,h0*0.5,h0*0.5);
+	    } else {
+	       vmap->cells[i].info.t = CInfo::Normal;
+	       c = Color(h0*0.5,h0*0.5,h0*0.5);
+	    }
 	 }
-	 h0 *= 0.5;
-	 vmap->cells[i].color = Color(
-			 (h0>0.5? h0 : 0),
-			 (h0>0.6? h0 : 0),
-			 (h0>0.3? h0 : 0)).toSFML();
-	 vmap->cells[i].info = 123;
+	 vmap->cells[i].color = c.toSFML();
       }
 
       vmap->create_mesh();
@@ -71,11 +101,42 @@ public:
       vmap->draw(0,0,1,target);
       evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
          VoronoiUserData* data = dynamic_cast<VoronoiUserData*>(raw);
-	 if(data->down) {
-            DrawRect(data->x,data->y, 5,5, target, Color(0,1,0));
-	 } else {
-            DrawRect(data->x,data->y, 5,5, target, Color(1,0,0));
+	 
+	 data->w += (1.0*data->right-1.0*data->left)*0.1;
+	 float dxx = std::cos(data->w);
+	 float dyy = std::sin(data->w);
+	 data->dx += dxx*0.01;
+	 data->dy += dyy*0.01;
+         data->x += data->dx;
+         data->y += data->dy;
+	 data->dx *= 0.99;
+	 data->dy *= 0.99;
+	 
+	 if(data->x < 10) {data->x = 10;data->dx=0;}
+	 if(data->y < 10) {data->y = 10;data->dy=0;}
+	 if(data->x > dx_-10) {data->x = dx_-10;data->dx=0;}
+	 if(data->y > dy_-10) {data->y = dy_-10;data->dy=0;}
+	 
+         size_t cellI = vmap->getCell(data->x, data->y, 0);
+         auto &cell = vmap->cells[cellI];
+         
+	 Color c(0,1,0);
+	 if(cell.info.t == CInfo::Blocked) {
+	    c = Color(1,0,0);
+	    float ddx = data->x - cell.pos.x;
+	    float ddy = data->y - cell.pos.y;
+	    float dd = std::sqrt(ddx*ddx + ddy*ddy);
+	    data->dx = ddx / dd;
+	    data->dy = ddy / dd;
+	 } else if(cell.info.t == CInfo::Fast) {
+	    data->dx += dxx*0.02;
+	    data->dy += dyy*0.02;
+	 } else if(cell.info.t == CInfo::Slow) {
+	    data->dx *= 0.8;
+	    data->dy *= 0.8;
 	 }
+         DrawRect(data->x-2,data->y-2, 4,4, target, c);
+         DrawRect(data->x-1 + 5*dxx,data->y-1 + 5*dyy, 2,2, target, c);
       };
       visitUsers(f);
    }
@@ -88,17 +149,13 @@ public:
       std::cout << "VoronoiActivateUser " << name() << " " << u->name() << std::endl;
    
       u->clearControls();
-      u->registerControl(new evp::KnobControl(u->nextControlId(),0.05,0.05,0.4,0.4,true,1,
-			      [data](bool down, float dx, float dy) {
-				 data->x += dx*100;
-				 data->y += dy*100;
-				 data->down = down;
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.05,0.4,0.4,"KeyA",
+			      [data](bool down) {
+			         data->left = down;
 			      }));
-      u->registerControl(new evp::KnobControl(u->nextControlId(),0.55,0.05,0.4,0.4,false,0.15,
-			      [data](bool down, float dx, float dy) {
-				 data->x += dx;
-				 data->y += dy;
-				 data->down = down;
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.55,0.05,0.4,0.4,"KeyD",
+			      [data](bool down) {
+				 data->right = down;
 			      }));
       u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.4,0.4,"Space",
 			      [this](bool down) {
@@ -112,6 +169,8 @@ public:
 private:
    evp::VoronoiMap<CInfo> *vmap;
    int seed_;
+   float dx_;
+   float dy_;
 };
 
 
