@@ -20,10 +20,12 @@
 
 class VoronoiUserData : public evp::UserData {
 public:
+   Color color = Color(1,1,1);
    float x=20,y=300;
    float dx=0,dy=0;
    float w=0;
    bool left,right;
+   std::vector<float> trail;
 private:
 };
 
@@ -56,7 +58,7 @@ class VoronoiRoom : public evp::Room {
 public:
    VoronoiRoom(const std::string &name, evp::RoomServer* server,float dx, float dy)
    : evp::Room(name,server), dx_(dx), dy_(dy) {
-      vmap = new evp::VoronoiMap<CInfo>(3000, dx_-10,dy_-10);
+      vmap = new evp::VoronoiMap<CInfo>(3000, dx_,dy_);
       
       seed_=0;
       setupMap();
@@ -108,6 +110,7 @@ public:
          data->dx = 0;
          data->dy = 0;
          data->w = 0;
+	 data->trail.clear();
       };
       visitUsers(freset);
    }
@@ -145,11 +148,10 @@ public:
          size_t cellI = vmap->getCell(data->x, data->y, 0);
          auto &cell = vmap->cells[cellI];
          
-	 Color c(0,1,0);
+	 Color c = data->color;
 	 if(cell.info.t == CInfo::Goal) {
 	    setWinner(user);
 	 } else if(cell.info.t == CInfo::Blocked) {
-	    c = Color(1,0,0);
 	    float ddx = data->x - cell.pos.x;
 	    float ddy = data->y - cell.pos.y;
 	    float dd = std::sqrt(ddx*ddx + ddy*ddy);
@@ -162,6 +164,33 @@ public:
 	    data->dx *= 0.8;
 	    data->dy *= 0.8;
 	 }
+	 
+         if(data->trail.size() == 0) {
+	    data->trail.push_back(data->x);
+            data->trail.push_back(data->y);
+	 }
+
+	 int ts = data->trail.size();
+	 float tdx = data->trail[ts-2] - data->x;
+	 float tdy = data->trail[ts-2] - data->y;
+         float td2 = tdx*tdx + tdy*tdy;
+	 if(td2 > 25) {
+	    data->trail.push_back(data->x);
+            data->trail.push_back(data->y);
+	 }
+	 
+         float tx = data->trail[0];
+         float ty = data->trail[1];
+	 int ii = 2;
+	 while(ii<data->trail.size()) {
+	    float ttx = data->trail[ii];
+	    float tty = data->trail[ii+1];
+	    DrawLine(tx,ty,ttx,tty,target, c);
+	    tx = ttx;
+	    ty = tty;
+	    ii+=2;
+	 }
+
          DrawRect(data->x-3,data->y-3, 6,6, target, Color(0,0,0));
          DrawRect(data->x-2 + 5*dxx,data->y-2 + 5*dyy, 4,4, target, Color(0,0,0));
          DrawRect(data->x-2,data->y-2, 4,4, target, c);
@@ -194,9 +223,15 @@ public:
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("lobby");}
 			      }));
+      data->color = nextColor();
    }
    void setWinner(evp::User* w) {winner_ = w;}
 private:
+   Color nextColor() {
+      int i = colorCnt++;
+      return Color::hue((i*5 % 17) / 17.0);
+   }
+   int colorCnt = 1;
    evp::VoronoiMap<CInfo> *vmap;
    int seed_;
    float dx_;
