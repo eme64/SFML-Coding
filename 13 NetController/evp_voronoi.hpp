@@ -142,6 +142,26 @@ struct CellMapSubstructureGrid : public CellMapSubstructure {
    }
 };
 
+struct CellMapSubstructureAntiCircle : public CellMapSubstructure {
+   float x0,y0,r0,r1;
+   CellMapSubstructureAntiCircle(int n, float x0, float y0, float r0, float r1) 
+   : x0(x0),y0(y0),r0(r0),r1(r1) {
+      points.reserve(n);
+      for(int i=0; i<n; i++) {
+	 const float x = x0 + r1*std::cos(2*M_PI*i/((float) n));
+	 const float y = y0 + r1*std::sin(2*M_PI*i/((float) n));
+	 points.push_back(Point(x,y));
+      }
+   }
+   virtual bool isInside(float x, float y) {
+      const float dx = x0-x;
+      const float dy = y0-y;
+      const float d2 = dx*dx + dy*dy;
+      return d2 > r0*r0;
+   }
+};
+
+
 
 template <typename CInfo>
 struct CellMapCell

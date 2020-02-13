@@ -66,11 +66,16 @@ public:
       std::vector<evp::CellMapSubstructure*> subs;
       subs.push_back(new evp::CellMapSubstructureGrid(10,10, 200,200,300,300));
       subs.push_back(new evp::CellMapSubstructureGrid(10,10, 350,200,450,300));
+      subs.push_back(new evp::CellMapSubstructureAntiCircle(100, 400,300, 250,270));
       cm_ = new evp::CellMap<int>(10,10,790,590, subs, 4000);
    }
    virtual void draw(sf::RenderTarget &target) {
-      DrawRect(10,10, 100,100, target, Color(0.5,0.5,0));
+      evp::DrawRect(10,10, 100,100, target, evp::Color(0.5,0.5,0));
       cm_->draw(0,0,1,target);
+
+      size_t ci = cm_->getCell(mx,my,0);
+      int nn = cm_->cells[ci].neighbors.size();
+      evp::DrawText(0,0, "Hello World! "+std::to_string(nn), 10, target, evp::Color(1,1,1));
    }
    virtual void onActivate() {
       std::cout << "MyActivate " << name() << std::endl;
@@ -92,8 +97,10 @@ public:
 				 if(down) {this->server()->setActive("game3");}
 			      }));
    }
+   void setM(float x,float y) {mx=x; my=y;}
 private:
    evp::CellMap<int>* cm_;
+   float mx,my;
 };
 
 
@@ -114,9 +121,9 @@ public:
       evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
          MyUserData* data = dynamic_cast<MyUserData*>(raw);
 	 if(data->down) {
-            DrawRect(data->x,data->y, 5,5, target, Color(0,1,0));
+            evp::DrawRect(data->x,data->y, 5,5, target, evp::Color(0,1,0));
 	 } else {
-            DrawRect(data->x,data->y, 5,5, target, Color(1,0,0));
+	    evp::DrawRect(data->x,data->y, 5,5, target, evp::Color(1,0,0));
 	 }
       };
       visitUsers(f);
@@ -200,9 +207,10 @@ int main(int argc, char** argv) {
 
       // --------------- DRAW
       window->clear();
-      
+     
+      lobby->setM(mouseX,mouseY);
       server.draw(*window);
-      DrawRect(mouseX, mouseY, 5,5, *window, Color(1,1,1));
+      evp::DrawRect(mouseX, mouseY, 5,5, *window, evp::Color(1,1,1));
       
       window->display();
    }

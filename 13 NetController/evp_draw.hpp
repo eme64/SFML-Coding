@@ -3,6 +3,8 @@
 #ifndef EVP_DRAW_HPP
 #define EVP_DRAW_HPP
 
+namespace evp {
+
 class Color {
 public:
    float r,g,b,a;//0..1
@@ -50,6 +52,30 @@ public:
 protected:
 };
 
+  sf::Font font;
+  bool isFont = false;
+  sf::Font& getFont() {
+    if (!isFont) {
+      if (!font.loadFromFile("arial.ttf")) {
+          std::cout << "font could not be loaded!" << std::endl;
+      } else {
+        isFont = true;
+      }
+    }
+    return font;
+  }
+
+  void DrawText(float x, float y, std::string text, float size, sf::RenderTarget &target, const Color& color,float alignX=0,float alignY=0) {
+    sf::Text shape(text, getFont());
+    shape.setCharacterSize(std::floor(size));
+    //shape.setColor(color.toSFML());
+    shape.setFillColor(color.toSFML());
+    sf::FloatRect bounds = shape.getLocalBounds();
+    shape.setPosition(std::floor(x-alignX*bounds.width),std::floor(y-alignY*bounds.height));
+    //shape.setStyle(sf::Text::Bold | sf::Text::Underlined);
+    target.draw(shape, sf::BlendAlpha);//BlendAdd
+  }
+
 
 void DrawRect(float x, float y, float dx, float dy, sf::RenderTarget &target, const Color& color, float w=0.0) {
    sf::RectangleShape rectangle;
@@ -70,6 +96,6 @@ void DrawLine(float x1, float y1, float x2, float y2, sf::RenderTarget &window, 
   window.draw(line, 2, sf::Lines, sf::BlendAlpha);
 }
 
-
+}; // namespace evp
 
 #endif //EVP_DRAW_HPP

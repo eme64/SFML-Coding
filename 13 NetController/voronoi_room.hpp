@@ -20,7 +20,7 @@
 
 class VoronoiUserData : public evp::UserData {
 public:
-   Color color = Color(1,1,1);
+   evp::Color color = evp::Color(1,1,1);
    float x=20,y=300;
    float dx=0,dy=0;
    float w=0;
@@ -77,20 +77,20 @@ public:
 	 float h1 = n1.get(x,y);
 	 float h2 = n2.get(x,y)*(x<100?x*0.01:1.0)*((x>dx_-100)?(1.0-(x-dx_+100)*0.01):1.0);
          
-	 Color c(h0,h0,h0);
+	 evp::Color c(h0,h0,h0);
 	 if(h0 > 0.57) {
 	    vmap->cells[i].info.t = CInfo::Blocked;
 	 } else {
             if(h2 > 0.55) {
 	       vmap->cells[i].info.t = CInfo::Slow;
-	       c = Color((1-h1)*0.7,h0*0.3,h0*0.3);
+	       c = evp::Color((1-h1)*0.7,h0*0.3,h0*0.3);
 	    } else if(h1>0.58) {
 	       vmap->cells[i].info.t = CInfo::Fast;
-	       c = Color(h0*0.5,h1,h0*0.5);
-	       c = Color(h0*0.3,h1*0.7,h0*0.3);
+	       c = evp::Color(h0*0.5,h1,h0*0.5);
+	       c = evp::Color(h0*0.3,h1*0.7,h0*0.3);
 	    } else {
 	       vmap->cells[i].info.t = CInfo::Normal;
-	       c = Color(h0*0.2,h0*0.2,h0*0.2);
+	       c = evp::Color(h0*0.2,h0*0.2,h0*0.2);
 	    }
 	 }
 	 vmap->cells[i].color = c.toSFML();
@@ -98,7 +98,7 @@ public:
 
       auto &goal = vmap->cells[vmap->getCell(dx_-50,dy_*0.5,0)];
       goal.info.t = CInfo::Goal;
-      goal.color = Color(1,1,0).toSFML();
+      goal.color = evp::Color(1,1,0).toSFML();
 
       vmap->create_mesh();
    }
@@ -148,7 +148,7 @@ public:
          size_t cellI = vmap->getCell(data->x, data->y, 0);
          auto &cell = vmap->cells[cellI];
          
-	 Color c = data->color;
+	 evp::Color c = data->color;
 	 if(cell.info.t == CInfo::Goal) {
 	    setWinner(user);
 	 } else if(cell.info.t == CInfo::Blocked) {
@@ -191,8 +191,8 @@ public:
 	    ii+=2;
 	 }
 
-         DrawRect(data->x-3,data->y-3, 6,6, target, Color(0,0,0));
-         DrawRect(data->x-2 + 5*dxx,data->y-2 + 5*dyy, 4,4, target, Color(0,0,0));
+         DrawRect(data->x-3,data->y-3, 6,6, target, evp::Color(0,0,0));
+         DrawRect(data->x-2 + 5*dxx,data->y-2 + 5*dyy, 4,4, target, evp::Color(0,0,0));
          DrawRect(data->x-2,data->y-2, 4,4, target, c);
          DrawRect(data->x-1 + 5*dxx,data->y-1 + 5*dyy, 2,2, target, c);
       };
@@ -227,9 +227,9 @@ public:
    }
    void setWinner(evp::User* w) {winner_ = w;}
 private:
-   Color nextColor() {
+   evp::Color nextColor() {
       int i = colorCnt++;
-      return Color::hue((i*5 % 17) / 17.0);
+      return evp::Color::hue((i*5 % 17) / 17.0);
    }
    int colorCnt = 1;
    evp::VoronoiMap<CInfo> *vmap;

@@ -10,19 +10,19 @@
 
 class Particle {
 public:
-   Particle(float x,float y, float dx, float dy, float w, float dw, float s, const Color &color, int t)
+   Particle(float x,float y, float dx, float dy, float w, float dw, float s, const evp::Color &color, int t)
    : x(x),y(y),dx(dx),dy(dy), w(w),dw(dw), s(s), color(color), t0(t),t(t) {}
    bool draw(sf::RenderTarget &target) {
       w+=dw;
       x+=dx;
       y+=dy;
-      DrawRect(x, y, s,s, target, Color(color.r, color.g, color.b, ((float) t) / ((float) t0)), w);
+      DrawRect(x, y, s,s, target, evp::Color(color.r, color.g, color.b, ((float) t) / ((float) t0)), w);
       return (t--)>0;
    }
 private:
    float x,y,dx,dy,w,dw,s;
    int t0,t;
-   Color color;
+   evp::Color color;
 };
 
 class RocketUserData : public evp::UserData {
@@ -53,7 +53,7 @@ public:
       y1_=580;
    }
    virtual void draw(sf::RenderTarget &target) {
-      DrawRect(x0_,y0_, x1_-x0_, y1_-y0_, target, Color(0.1,0.1,0.1));
+      DrawRect(x0_,y0_, x1_-x0_, y1_-y0_, target, evp::Color(0.1,0.1,0.1));
       evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
          RocketUserData* data = dynamic_cast<RocketUserData*>(raw);
 	 
@@ -66,7 +66,7 @@ public:
             data->dx+=0.1*dxx;
             data->dy+=0.1*dyy;
 
-	    particles_.insert(new Particle(data->x, data->y, data->dx-dxx*2, data->dy-dyy*2, 0,0, 3, Color(1,0.5,0.2), 60));
+	    particles_.insert(new Particle(data->x, data->y, data->dx-dxx*2, data->dy-dyy*2, 0,0, 3, evp::Color(1,0.5,0.2), 60));
 	 }
          
 	 data->dy+=0.01;
@@ -80,7 +80,7 @@ public:
          if(data->y < y0_) {data->y = y0_; data->dy = 0;}
          if(data->y > y1_) {data->y = y1_; data->dy = 0;}
          
-	 drawRocket(data->x,data->y, 10, data->w, target, Color(0.5 + data->left,0.5 + data->right, 0.5 + data->up));
+	 drawRocket(data->x,data->y, 10, data->w, target, evp::Color(0.5 + data->left,0.5 + data->right, 0.5 + data->up));
       };
       visitUsers(f);
       
@@ -123,7 +123,7 @@ private:
    std::set<Particle*> particles_;
    std::vector<sf::ConvexShape> rocket_;
 
-   void drawRocket(float x,float y, float scale, float w, sf::RenderTarget &target, const Color& color) {
+   void drawRocket(float x,float y, float scale, float w, sf::RenderTarget &target, const evp::Color& color) {
       for(sf::Shape &s : rocket_) {
          s.setFillColor(color.toSFML());
          s.setPosition(x,y);
