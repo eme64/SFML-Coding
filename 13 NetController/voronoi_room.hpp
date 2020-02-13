@@ -24,6 +24,7 @@ public:
    float w=0;
    bool left,right;
    std::vector<float> trail;
+   int score = 0;
 private:
 };
 
@@ -106,6 +107,7 @@ public:
       }
       
       vmap->draw(0,0,1,target);
+      int ui = 0;
       evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
          VoronoiUserData* data = dynamic_cast<VoronoiUserData*>(raw);
 	 
@@ -130,6 +132,7 @@ public:
 	 evp::Color c = data->color;
 	 if(cell.info.t == CInfo::Goal) {
 	    setWinner(user);
+	    data->score++;
 	 } else if(cell.info.t == CInfo::Blocked) {
 	    float ddx = data->x - cell.pos.x;
 	    float ddy = data->y - cell.pos.y;
@@ -174,6 +177,10 @@ public:
          DrawRect(data->x-2 + 5*dxx,data->y-2 + 5*dyy, 4,4, target, evp::Color(0,0,0));
          DrawRect(data->x-2,data->y-2, 4,4, target, c);
          DrawRect(data->x-1 + 5*dxx,data->y-1 + 5*dyy, 2,2, target, c);
+
+         DrawRect(300,580-20*ui, 200, 15, target, evp::Color(0,0,0,0.6));
+	 DrawText(300,580-20*ui, user->name() + " " + std::to_string(data->score),
+	          15, target, c);
       };
       visitUsers(f);
    }
@@ -194,10 +201,10 @@ public:
 			      [data](bool down) {
 				 data->right = down;
 			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.4,0.4,"Space",
-			      [this](bool down) {
-				 if(down) {setupMap();}
-			      }));
+//      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.4,0.4,"Space",
+//			      [this](bool down) {
+//				 if(down) {setupMap();}
+//			      }));
       u->registerControl(new evp::ButtonControl(u->nextControlId(),0.55,0.55,0.9,0.4,"Escape",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("lobby");}
