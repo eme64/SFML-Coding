@@ -41,7 +41,6 @@ public:
       cm_->create_mesh();
    }
    virtual void draw(sf::RenderTarget &target, float x,float y,float s, float mx, float my) {
-      //cm_->draw(400,300,200,target);
       const float ox = 400 + s*x;
       const float oy = 300 + s*y;
       cm_->draw(ox,oy,s,target);
