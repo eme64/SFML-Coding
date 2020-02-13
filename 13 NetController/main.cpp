@@ -79,7 +79,7 @@ public:
       //size_t ci = cm_->getCell(mx,my,0);
       //int nn = cm_->cells[ci].neighbors.size();
       //evp::DrawText(0,50, "Hello World! "+std::to_string(nn), 15, target, evp::Color(1,1,1));
-      so_->draw(target,mx,my);
+      so_->draw(target,x,y,s,mx,my);
    }
    virtual void onActivate() {
       std::cout << "MyActivate " << name() << std::endl;
@@ -88,17 +88,26 @@ public:
       std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
    
       u->clearControls();
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.0,0.9,0.3,"Digit1",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.0,0.9,0.2,"Digit1",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("game1");}
 			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.35,0.9,0.3,"Digit2",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.25,0.9,0.2,"Digit2",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("game2");}
 			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.7,0.9,0.3,"Digit3",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.5,0.9,0.2,"Digit3",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("game3");}
+			      }));
+      u->registerControl(new evp::KnobControl(u->nextControlId(),0.05,.75,0.4,0.25,true,1,
+			      [&](bool down, float dx, float dy) {
+				 x+= dx;
+				 y+= dy;
+			      }));
+      u->registerControl(new evp::KnobControl(u->nextControlId(),0.55,.75,0.4,0.25,true,1,
+			      [&](bool down, float dx, float dy) {
+				 s *= std::pow(10,dy);
 			      }));
    }
    void setM(float x,float y) {mx=x; my=y;}
@@ -106,6 +115,7 @@ private:
    //evp::CellMap<int>* cm_;
    SpaceObject* so_;
    float mx,my;
+   float x=0,y=0,s=290;
 };
 
 

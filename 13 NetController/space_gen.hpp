@@ -40,11 +40,13 @@ public:
       }
       cm_->create_mesh();
    }
-   virtual void draw(sf::RenderTarget &target, float mx, float my) {
+   virtual void draw(sf::RenderTarget &target, float x,float y,float s, float mx, float my) {
       //cm_->draw(400,300,200,target);
-      cm_->draw(400,300,290,target);
-      mx-=400;mx/=290;
-      my-=300;my/=290;
+      const float ox = 400 + s*x;
+      const float oy = 300 + s*y;
+      cm_->draw(ox,oy,s,target);
+      mx-=ox;mx/=s;
+      my-=oy;my/=s;
 
       size_t ci = cm_->getCell(mx,my,0);
       int nn = cm_->cells[ci].neighbors.size();
