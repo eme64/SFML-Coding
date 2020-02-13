@@ -181,6 +181,8 @@ public:
    // override these below for impl
    virtual void handleError(std::string &ret, const std::string &error);
    virtual void handleRequest(std::string &ret, const std::string &url);
+
+   unsigned short getPort() {return port;}
 private:
    sf::TcpListener listener;
    unsigned short port;

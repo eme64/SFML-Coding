@@ -9,6 +9,11 @@
 #include "evp_draw.hpp"
 
 
+
+#ifndef EVP_VORONOI_HPP
+#define EVP_VORONOI_HPP
+
+
 //https://github.com/JCash/voronoi
 #define JC_VORONOI_IMPLEMENTATION
 // If you wish to use doubles
@@ -17,9 +22,6 @@
 //#define JCV_ATAN2 atan2
 #include "jc_voronoi.h"
 
-
-#ifndef EVP_VORONOI_HPP
-#define EVP_VORONOI_HPP
 
 namespace evp {
 
@@ -168,6 +170,8 @@ struct CellMapCell
 {
   Point pos;
   sf::Color color;
+  int sub = -1;
+  int subI = -1;
 
   std::vector<Point> corners;
   std::vector<int> neighbors;
@@ -249,6 +253,17 @@ struct CellMap
 
     // ----------------  extract graph
     cells.resize(numCells);
+    
+    int ppIndex=0;
+    for(int si=0; si<subs.size(); si++) {
+       int pi=0;
+       for(const Point& p : subs[si]->points) {
+          int i = ppIndex++;
+	  cells[i].sub = si;
+	  cells[i].subI = pi;
+       }
+    }
+	
 
     for(size_t i = 0; i<numCells; i++)
     {
@@ -421,8 +436,8 @@ struct CellMap
   void draw(float x, float y, float zoom, sf::RenderTarget &target)
   {
     sf::Transform t;
-    t.scale(zoom, zoom);
     t.translate(x, y);
+    t.scale(zoom, zoom);
 
     target.draw(&mesh[0], mesh.size(), sf::Triangles, t);
   }

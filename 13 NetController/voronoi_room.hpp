@@ -11,9 +11,7 @@
 #include "evp_voronoi.hpp"
 
 
-#include "FastNoise/FastNoise.h"
-//https://github.com/Auburns/FastNoise/wiki
-
+#include "evp_noise.hpp"
 
 #ifndef VORONOI_ROOM_HPP
 #define VORONOI_ROOM_HPP
@@ -29,25 +27,6 @@ public:
 private:
 };
 
-
-struct DetailNoise {
-   std::vector<FastNoise> noiseGen;
-   DetailNoise(int &seed_, float baseFreq = 0.007, int depth=5) {
-      noiseGen.resize(depth);
-      for(int i=0; i<noiseGen.size(); i++) {
-	 noiseGen[i].SetNoiseType(FastNoise::SimplexFractal);
-	 noiseGen[i].SetSeed(seed_++);
-	 noiseGen[i].SetFrequency(baseFreq*std::pow(2.0,i));
-      }
-   }
-   inline float get(float x,float y) {
-      float h0 = 0;
-      for(int i=0; i<noiseGen.size(); i++) {
-         h0 += (1.0+noiseGen[i].GetNoise(x,y))*0.5*std::pow(0.5,i);
-      }
-      return h0 * 0.5;  
-   }
-};
 
 struct CInfo {
    enum Type {Normal, Blocked, Fast, Slow, Goal};
@@ -66,9 +45,9 @@ public:
    }
    
    void setupMap() {
-      DetailNoise n0(seed_);
-      DetailNoise n1(seed_);
-      DetailNoise n2(seed_);
+      evp::DetailNoise n0(seed_);
+      evp::DetailNoise n1(seed_);
+      evp::DetailNoise n2(seed_);
          
       for(int i=0; i<vmap->num_cells; i++) {
 	 float x = vmap->cells[i].pos.x;
