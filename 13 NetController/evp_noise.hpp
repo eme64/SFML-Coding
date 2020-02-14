@@ -25,6 +25,11 @@ struct DetailNoise {
       }
       return h0 * 0.5;  
    }
+   inline float getCyclic(float a, float r) {
+      float x = std::cos(a)*r;
+      float y = std::sin(a)*r;
+      return get(x,y);
+   }
 };
 
 } // namespace evp

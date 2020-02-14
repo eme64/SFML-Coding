@@ -26,9 +26,10 @@ public:
 	 float h1 = n0.get(c.pos.x,c.pos.y);
 
 	 const float d2 = c.pos.x*c.pos.x + c.pos.y*c.pos.y;
+	 const float a = atan2(c.pos.x, c.pos.y);
 	 if(c.sub > 0) {
 	    c.color = evp::Color(1,i%2,0.5).toSFML();
-	 } else if(d2 > 0.6) {
+	 } else if(d2 > 0.4+0.4*n0.getCyclic(a,0.5)) {
 	    c.color = evp::Color(0,0,h0).toSFML();
 	 } else if(d2 < 0.3){
             float fac = 1-std::sqrt(d2);
