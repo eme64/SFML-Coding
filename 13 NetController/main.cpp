@@ -21,6 +21,8 @@
 // Ideas:
 //  - file adapter
 //  - login: unique name - nonce
+//  - logout / timeout: keep player name??? -> may depend on room?
+//     - room defines if it keeps user info for disconnected users
 
 // Idea Rooms:
 //  - idea is to use a "room" for things like lobby, one per game, ...
