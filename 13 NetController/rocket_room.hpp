@@ -101,6 +101,7 @@ public:
       std::cout << "RocketActivateUser " << name() << " " << u->name() << std::endl;
    
       u->clearControls();
+      u->registerControl(new evp::BGColorControl(u->nextControlId(),evp::Color(0.1,0.2,0.3)));
       u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.05,0.9,0.2,"Escape",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("lobby");}

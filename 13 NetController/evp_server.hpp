@@ -15,6 +15,8 @@
 
 #include <chrono>
 
+#include "evp_draw.hpp"
+
 #ifndef EVP_SERVER_HPP
 #define EVP_SERVER_HPP
 
@@ -338,6 +340,22 @@ private:
    HandleF f_;
    std::string key_;
 };
+
+class BGColorControl : public Control {
+public:
+   BGColorControl(const std::string &id, evp::Color color) : Control(id,0,0,1,1), color(color)  {}
+   virtual std::string controlString() {
+      const std::string res = std::string("bgc:")
+	      +id()
+	      +":"+std::to_string(color.r)
+	      +","+std::to_string(color.g)
+	      +","+std::to_string(color.b);
+      return res;
+   }
+private:
+   evp::Color color;
+};
+
 
 class User {
 public:

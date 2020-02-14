@@ -76,6 +76,7 @@ public:
       std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
    
       u->clearControls();
+      u->registerControl(new evp::BGColorControl(u->nextControlId(),evp::Color(0.9,0.9,0.9)));
       u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.0,0.9,0.2,"Digit1",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("game1");}
@@ -139,6 +140,7 @@ public:
       std::cout << "MyActivateUser " << name() << " " << u->name() << std::endl;
    
       u->clearControls();
+      u->registerControl(new evp::BGColorControl(u->nextControlId(),evp::Color(0.7,0.9,0.9)));
       u->registerControl(new evp::KnobControl(u->nextControlId(),0.05,0.05,0.4,0.4,true,1,
 			      [data](bool down, float dx, float dy) {
 				 data->x += dx*100;

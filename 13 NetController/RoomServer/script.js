@@ -11,6 +11,7 @@ console.log("Loading");
 
 elementsString = "";
 elements = {}
+elementBG = undefined;
 // id -> element
 
 class Element {
@@ -174,6 +175,13 @@ class Button extends Element {
    }
 }
 
+class BGColor extends Element {
+   constructor(id, r,g,b) {
+      super(id, 0,0,1,1, []);
+      this.color = rgb(r*255,g*255,b*255);
+   }
+}
+
 function loadElements(s) {
    if(s!=elementsString) {
       elementsString = s;
@@ -203,7 +211,10 @@ function loadElements(s) {
 	          console.log(eId + " Button")
 	          elements[String(eId)] = new Button(eId,eP[0],eP[1],eP[2],eP[3],[eP[4]]);
 	          break;
-
+	       case "bgc": // background color
+	          console.log(eId + " BG Color")
+	          elementBG = new BGColor(eId, eP[0], eP[1], eP[2]);
+	          break;
 	       default:
 	          console.log(eId + " error! " + els[i])
 	    }
@@ -219,6 +230,7 @@ function loadElements(s) {
 }
 
 function drawElements() {
+   if(elementBG) {elementBG.draw();}
    for(var i in elements) {
       elements[i].draw();
    }

@@ -154,9 +154,9 @@ public:
 
 	 int ts = data->trail.size();
 	 float tdx = data->trail[ts-2] - data->x;
-	 float tdy = data->trail[ts-2] - data->y;
+	 float tdy = data->trail[ts-1] - data->y;
          float td2 = tdx*tdx + tdy*tdy;
-	 if(td2 > 25) {
+	 if(td2 > 100) {
 	    data->trail.push_back(data->x);
             data->trail.push_back(data->y);
 	 }
@@ -192,7 +192,9 @@ public:
       VoronoiUserData* data = dynamic_cast<VoronoiUserData*>(raw);
       std::cout << "VoronoiActivateUser " << name() << " " << u->name() << std::endl;
    
+      data->color = nextColor();
       u->clearControls();
+      u->registerControl(new evp::BGColorControl(u->nextControlId(),data->color));
       u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.05,0.4,0.4,"KeyA",
 			      [data](bool down) {
 			         data->left = down;
@@ -209,7 +211,6 @@ public:
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("lobby");}
 			      }));
-      data->color = nextColor();
    }
    void setWinner(evp::User* w) {winner_ = w;}
 private:
