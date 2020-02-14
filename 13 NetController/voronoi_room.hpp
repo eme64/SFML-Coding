@@ -195,11 +195,11 @@ public:
       data->color = nextColor();
       u->clearControls();
       u->registerControl(new evp::BGColorControl(u->nextControlId(),data->color));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.05,0.4,0.4,"KeyA",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.4,0.4,"KeyA",
 			      [data](bool down) {
 			         data->left = down;
 			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.55,0.05,0.4,0.4,"KeyD",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.55,0.55,0.4,0.4,"KeyD",
 			      [data](bool down) {
 				 data->right = down;
 			      }));
@@ -207,7 +207,7 @@ public:
 //			      [this](bool down) {
 //				 if(down) {setupMap();}
 //			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.55,0.55,0.9,0.4,"Escape",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.55,0.05,0.4,0.4,"Escape",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("lobby");}
 			      }));

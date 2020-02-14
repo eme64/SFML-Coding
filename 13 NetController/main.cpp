@@ -147,19 +147,19 @@ public:
    
       u->clearControls();
       u->registerControl(new evp::BGColorControl(u->nextControlId(),evp::Color(0.7,0.9,0.9)));
-      u->registerControl(new evp::KnobControl(u->nextControlId(),0.05,0.05,0.4,0.4,true,1,
+      u->registerControl(new evp::KnobControl(u->nextControlId(),0.05,0.55,0.4,0.4,true,1,
 			      [data](bool down, float dx, float dy) {
 				 data->x += dx*100;
 				 data->y += dy*100;
 				 data->down = down;
 			      }));
-      u->registerControl(new evp::KnobControl(u->nextControlId(),0.55,0.05,0.4,0.4,false,0.15,
+      u->registerControl(new evp::KnobControl(u->nextControlId(),0.55,0.55,0.4,0.4,false,0.15,
 			      [data](bool down, float dx, float dy) {
 				 data->x += dx;
 				 data->y += dy;
 				 data->down = down;
 			      }));
-      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.55,0.9,0.4,"Escape",
+      u->registerControl(new evp::ButtonControl(u->nextControlId(),0.05,0.05,0.9,0.4,"Escape",
 			      [this](bool down) {
 				 if(down) {this->server()->setActive("lobby");}
 			      }));
