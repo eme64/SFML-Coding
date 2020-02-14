@@ -57,8 +57,14 @@
 // - other inspirations: overcooked, ibb and obb, snipperclips, bomberman, think of the children, catastronauts 
 // - rts coop, tower defense style? or clean up map?
 // - adios amigos (space exploration, rogue like, physics, collision)
-//
-//
+
+// Next steps for space game:
+// - phyics: collision, mass, impulse, rotations -> orbital mechanics - simple rocket demo.
+// - integrate CellMap and physics.
+// - rocket mechanics?
+// - possibly LOD CellMap
+// - editor: terrain + rockets?
+// - proper interaction mechanics - maybe script?
 
 class LobbyRoom : public evp::Room {
 public:
