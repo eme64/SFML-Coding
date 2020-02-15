@@ -1,0 +1,30 @@
+<html>
+	<head>
+		<title>LOGIN</title>
+	</head>
+	<body>
+	   <p> Name:
+	   <input id="name" type="text"/>
+	   <button onclick="handleSubmit()">Login</button>
+	   <div id="txt"></div>
+
+	   <script>
+	      function handleSubmit() {
+		 var inp = document.getElementById("name");
+		 var name = inp.value;
+		 var filtered = name.replace(/\W/g, '');
+		 if(name!=filtered) {
+		    inp.value = filtered;
+	            var txt = document.getElementById("txt");
+	            txt.innerHTML = "Name error, only use: _a..zA..Z0..9"
+		 } else {
+	            console.log("submit " + filtered);
+		    window.location.href = "login2.html?name="+filtered;
+		 }
+	      }
+	   </script>
+	</body>
+</html>
+
+
+

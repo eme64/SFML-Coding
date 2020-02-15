@@ -20,7 +20,7 @@
 //#define JCV_REAL_TYPE double
 //#define JCV_FABS fabs
 //#define JCV_ATAN2 atan2
-#include "jc_voronoi.h"
+#include "jc_voronoi/jc_voronoi.h"
 
 
 namespace evp {
