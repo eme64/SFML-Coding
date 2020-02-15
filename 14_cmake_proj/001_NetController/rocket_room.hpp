@@ -1,7 +1,8 @@
-
-
 #include "evp/server.hpp"
 #include "evp/draw.hpp"
+
+#include "box2d/box2d.h"
+
 
 #ifndef ROCKET_ROOM_HPP
 #define ROCKET_ROOM_HPP
@@ -31,56 +32,75 @@ public:
    float dx=0, dy=0;
    float w = 90;
    bool up=false, left=false, right=false;
+   b2Body* body = NULL;
 private:
 };
 
 class RocketRoom : public evp::Room {
 public:
    RocketRoom(const std::string &name, evp::RoomServer* server)
-   : evp::Room(name,server) {
-      sf::ConvexShape polygon;
-      polygon.setPointCount(5);
-      polygon.setPoint(0, sf::Vector2f(1, 0));
-      polygon.setPoint(1, sf::Vector2f(0.7, 0.2));
-      polygon.setPoint(2, sf::Vector2f(-1, 0.2));
-      polygon.setPoint(3, sf::Vector2f(-1, -0.2));
-      polygon.setPoint(4, sf::Vector2f(0.7, -0.2));
-      rocket_.push_back(polygon);
+   : evp::Room(name,server), world_(b2Vec2(0,10)) {
+      //sf::ConvexShape polygon;
+      //polygon.setPointCount(5);
+      //polygon.setPoint(0, sf::Vector2f(1, 0));
+      //polygon.setPoint(1, sf::Vector2f(0.7, 0.2));
+      //polygon.setPoint(2, sf::Vector2f(-1, 0.2));
+      //polygon.setPoint(3, sf::Vector2f(-1, -0.2));
+      //polygon.setPoint(4, sf::Vector2f(0.7, -0.2));
+      //rocket_.push_back(polygon);
 
-      x0_=20;
-      y0_=20;
-      x1_=780;
-      y1_=580;
+      x0_=10;
+      y0_=10;
+      x1_=790;
+      y1_=590;
+
+      b2BodyDef groundBodyDef;
+      groundBodyDef.position.Set(0,0);
+      groundBody = world_.CreateBody(&groundBodyDef);
+      b2Vec2 vs[5];
+      vs[0].Set(1,1);
+      vs[1].Set(1,59);
+      vs[2].Set(79,59);
+      vs[3].Set(79,1);
+      vs[4].Set(1,1);
+      b2ChainShape chain;
+      chain.CreateChain(vs, 5);
+      groundBody->CreateFixture(&chain, 0.0f);
+
+      for(int i=0; i<100;i++) {
+         b2BodyDef bodyDef;
+         bodyDef.type = b2_dynamicBody;
+         bodyDef.position.Set(10.0+5*(i%10), 5.0f+i*0.2);
+         bodyDef.angle = M_PI*0.1*i;
+         bodyDef.angularDamping = 1.0;
+         b2Body* body = world_.CreateBody(&bodyDef);
+         b2PolygonShape dynamicBox;
+         dynamicBox.SetAsBox(1.0,1.0);
+         b2FixtureDef fixtureDef;
+         fixtureDef.shape = &dynamicBox;
+         fixtureDef.density = 0.05f;
+         fixtureDef.friction = 0.1f;
+         body->CreateFixture(&fixtureDef);
+      }
    }
    virtual void draw(sf::RenderTarget &target) {
       DrawRect(x0_,y0_, x1_-x0_, y1_-y0_, target, evp::Color(0.1,0.1,0.1));
       evp::Room::UserVisitF f = [&] (evp::User* user, evp::UserData* raw) {
          RocketUserData* data = dynamic_cast<RocketUserData*>(raw);
 	 
-	 if(data->left) {data->w-=5;}
-	 if(data->right) {data->w+=5;}
-         
+	 if(data->left) {data->body->ApplyTorque(-20,true);}
+	 if(data->right) {data->body->ApplyTorque(20,true);}
 	 if(data->up) {
-            const float dxx = std::cos(data->w / 360.0 * 2.0 * M_PI);
-            const float dyy = std::sin(data->w / 360.0 * 2.0 * M_PI);
-            data->dx+=0.1*dxx;
-            data->dy+=0.1*dyy;
+            b2Vec2 vv = data->body->GetTransform().q.GetYAxis();
+            b2Vec2 pos = data->body->GetPosition();
+            b2Vec2 vel = data->body->GetLinearVelocity();
+	    data->body->ApplyForceToCenter(50.0*vv ,true);
+	    
+	    float dxx = (vel.x-20*vv.x)/60.0;
+	    float dyy = (vel.y-20*vv.y)/60.0;
+	    particles_.insert(new Particle(pos.x*10, pos.y*10, dxx*10, dyy*10, 0,0, 3, evp::Color(1,0.5,0.2), 60));
 
-	    particles_.insert(new Particle(data->x, data->y, data->dx-dxx*2, data->dy-dyy*2, 0,0, 3, evp::Color(1,0.5,0.2), 60));
 	 }
-         
-	 data->dy+=0.01;
-	 data->x += data->dx;
-	 data->y += data->dy;
-	 data->dx*=0.99;
-	 data->dy*=0.99;
-	 
-         if(data->x < x0_) {data->x = x0_; data->dx = 0;}
-         if(data->x > x1_) {data->x = x1_; data->dx = 0;}
-         if(data->y < y0_) {data->y = y0_; data->dy = 0;}
-         if(data->y > y1_) {data->y = y1_; data->dy = 0;}
-         
-	 drawRocket(data->x,data->y, 10, data->w, target, evp::Color(0.5 + data->left,0.5 + data->right, 0.5 + data->up));
       };
       visitUsers(f);
       
@@ -91,6 +111,28 @@ public:
 	    particles_.erase(it);
 	 }
       }
+
+      // box2d:
+      world_.Step(timeStep, velocityIterations, positionIterations);
+      for(b2Body* it = world_.GetBodyList(); it!=NULL; it=it->GetNext()) {
+         b2Vec2 position = it->GetPosition();
+         const b2Transform& t = it->GetTransform();
+         DrawRect(10*position.x,10*position.y,2,2, target, evp::Color(1,1,1));
+         for(b2Fixture* f = it->GetFixtureList(); f!=NULL; f=f->GetNext()) {
+            b2PolygonShape* s = dynamic_cast<b2PolygonShape*>(f->GetShape());
+	    if(s) {
+	       for(int i=0; i<s->m_count; i++) {
+                  b2Vec2 v = b2Mul(t,s->m_vertices[i]);
+                  
+		  DrawRect(10*(v.x),10*(v.y),2,2, target, evp::Color(0.5,0.5,0.5));
+	       }
+	    } else {
+	       //std::cout << f->GetShape()->m_type << std::endl;
+	    }
+	 }
+      }
+      //float angle = body->GetAngle();
+      //printf("%4.2f %4.2f %4.2f\n", position.x, position.y, angle);
    }
    virtual evp::UserData* newUserData(const evp::User* u) { return new RocketUserData();}
    virtual void onActivate() {
@@ -118,21 +160,44 @@ public:
 			      [data](bool down) {
 				 data->right = down;
 			      }));
+      
+      b2BodyDef bodyDef;
+      bodyDef.type = b2_dynamicBody;
+      bodyDef.position.Set(10.0f, 20.0f);
+      bodyDef.angle = M_PI*0.2;
+      bodyDef.bullet = true;
+      bodyDef.angularDamping = 1.0;
+      data->body = world_.CreateBody(&bodyDef);
+      b2PolygonShape dynamicBox;
+      dynamicBox.SetAsBox(0.5,0.7);
+      b2FixtureDef fixtureDef;
+      fixtureDef.shape = &dynamicBox;
+      fixtureDef.density = 1.0f;
+      fixtureDef.friction = 0.01f;
+      data->body->CreateFixture(&fixtureDef);
    }
 private:
    float x0_,y0_,x1_,y1_; // limits of room
    std::set<Particle*> particles_;
-   std::vector<sf::ConvexShape> rocket_;
+   //std::vector<sf::ConvexShape> rocket_;
 
-   void drawRocket(float x,float y, float scale, float w, sf::RenderTarget &target, const evp::Color& color) {
-      for(sf::Shape &s : rocket_) {
-         s.setFillColor(color.toSFML());
-         s.setPosition(x,y);
-	 s.setScale(scale,scale);
-	 s.setRotation(w);
-	 target.draw(s, sf::BlendAlpha);
-      }
-   }
+   //void drawRocket(float x,float y, float scale, float w, sf::RenderTarget &target, const evp::Color& color) {
+   //   for(sf::Shape &s : rocket_) {
+   //      s.setFillColor(color.toSFML());
+   //      s.setPosition(x,y);
+   //      s.setScale(scale,scale);
+   //      s.setRotation(w);
+   //      target.draw(s, sf::BlendAlpha);
+   //   }
+   //}
+
+   // box2d:
+   b2World world_;
+   b2Body* groundBody = NULL;
+
+   float timeStep = 1.0f / 60.0f;
+   int32 velocityIterations = 8;
+   int32 positionIterations = 3;
 };
 
 

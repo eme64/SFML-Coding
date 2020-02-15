@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
    MyRoom* game1 = new MyRoom("game1",&server);
    RocketRoom* game2 = new RocketRoom("game2",&server);
    VoronoiRoom* game3 = new VoronoiRoom("game3",&server, 800,600);
-   server.setActive("lobby");
+   server.setActive("game2");
 
    sf::ContextSettings settings;
    settings.antialiasingLevel = 8;

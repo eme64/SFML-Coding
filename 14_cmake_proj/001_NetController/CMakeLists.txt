@@ -10,6 +10,7 @@ add_executable(001_NetController main.cpp ${NC_HEADER_FILES})
 
 target_link_libraries(001_NetController PUBLIC evp_lib fastnoise_lib)
 target_link_libraries(001_NetController PUBLIC sfml-graphics sfml-window sfml-system sfml-network pthread)
+target_link_libraries(001_NetController PUBLIC box2d)
 
 file(COPY RoomServer DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 file(COPY arial.ttf DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
