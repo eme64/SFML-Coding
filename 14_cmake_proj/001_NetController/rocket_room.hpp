@@ -80,6 +80,7 @@ public:
          fixtureDef.shape = &dynamicBox;
          fixtureDef.density = 0.05f;
          fixtureDef.friction = 0.1f;
+         fixtureDef.restitution = 0.9f;
          body->CreateFixture(&fixtureDef);
       }
    }
@@ -174,6 +175,7 @@ public:
       fixtureDef.shape = &dynamicBox;
       fixtureDef.density = 1.0f;
       fixtureDef.friction = 0.01f;
+      fixtureDef.restitution = 0.5f;
       data->body->CreateFixture(&fixtureDef);
    }
 private:
