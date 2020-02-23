@@ -433,11 +433,12 @@ struct CellMap
   //  }
   //}
 
-  void draw(float x, float y, float zoom, sf::RenderTarget &target)
+  void draw(float x, float y, float zoom, float w, sf::RenderTarget &target)
   {
     sf::Transform t;
     t.translate(x, y);
     t.scale(zoom, zoom);
+    t.rotate(w*180.0f/M_PI);
 
     target.draw(&mesh[0], mesh.size(), sf::Triangles, t);
   }

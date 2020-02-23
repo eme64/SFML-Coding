@@ -75,7 +75,7 @@ public:
       so_ = new SpaceObject();
    }
    virtual void draw(sf::RenderTarget &target) {
-      so_->draw(target,x,y,s,mx,my);
+      so_->draw(target,x,y,s,mx,my, 0 /*angle*/);
    }
    virtual void onActivate() {
       std::cout << "MyActivate " << name() << std::endl;

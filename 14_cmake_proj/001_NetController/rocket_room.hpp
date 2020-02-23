@@ -1,6 +1,8 @@
 #include "evp/server.hpp"
 #include "evp/draw.hpp"
 
+#include "space_gen.hpp"
+
 #include "box2d/box2d.h"
 
 
@@ -39,7 +41,7 @@ private:
 class RocketRoom : public evp::Room {
 public:
    RocketRoom(const std::string &name, evp::RoomServer* server)
-   : evp::Room(name,server), world_(b2Vec2(0,10)) {
+   : evp::Room(name,server), world_(b2Vec2(0,0.1)) {
       //sf::ConvexShape polygon;
       //polygon.setPointCount(5);
       //polygon.setPoint(0, sf::Vector2f(1, 0));
@@ -67,22 +69,28 @@ public:
       chain.CreateChain(vs, 5);
       groundBody->CreateFixture(&chain, 0.0f);
 
-      for(int i=0; i<100;i++) {
-         b2BodyDef bodyDef;
-         bodyDef.type = b2_dynamicBody;
-         bodyDef.position.Set(10.0+5*(i%10), 5.0f+i*0.2);
-         bodyDef.angle = M_PI*0.1*i;
-         bodyDef.angularDamping = 1.0;
-         b2Body* body = world_.CreateBody(&bodyDef);
-         b2PolygonShape dynamicBox;
-         dynamicBox.SetAsBox(1.0,1.0);
-         b2FixtureDef fixtureDef;
-         fixtureDef.shape = &dynamicBox;
-         fixtureDef.density = 0.05f;
-         fixtureDef.friction = 0.1f;
-         fixtureDef.restitution = 0.9f;
-         body->CreateFixture(&fixtureDef);
-      }
+      
+      SpaceObject* so = new SpaceObject(20);
+
+      b2Body* bb = so->makeBody(&world_, 20,20, 1, 0);
+      bb->SetUserData(so);
+      
+      //for(int i=0; i<100;i++) {
+      //   b2BodyDef bodyDef;
+      //   bodyDef.type = b2_dynamicBody;
+      //   bodyDef.position.Set(10.0+5*(i%10), 5.0f+i*0.2);
+      //   bodyDef.angle = M_PI*0.1*i;
+      //   bodyDef.angularDamping = 1.0;
+      //   b2Body* body = world_.CreateBody(&bodyDef);
+      //   b2PolygonShape dynamicBox;
+      //   dynamicBox.SetAsBox(1.0,1.0);
+      //   b2FixtureDef fixtureDef;
+      //   fixtureDef.shape = &dynamicBox;
+      //   fixtureDef.density = 0.05f;
+      //   fixtureDef.friction = 0.1f;
+      //   fixtureDef.restitution = 0.9f;
+      //   body->CreateFixture(&fixtureDef);
+      //}
    }
    virtual void draw(sf::RenderTarget &target) {
       DrawRect(x0_,y0_, x1_-x0_, y1_-y0_, target, evp::Color(0.1,0.1,0.1));
@@ -118,7 +126,18 @@ public:
       for(b2Body* it = world_.GetBodyList(); it!=NULL; it=it->GetNext()) {
          b2Vec2 position = it->GetPosition();
          const b2Transform& t = it->GetTransform();
-         DrawRect(10*position.x,10*position.y,2,2, target, evp::Color(1,1,1));
+         
+	 SpaceObject* so = (SpaceObject*) it->GetUserData();
+	 if(so) {
+	    so->draw(target,
+		     position.x*10,
+		     position.y*10,
+		     10,
+		     0,0,
+		     it->GetAngle());
+	 }
+	 
+	 DrawRect(10*position.x,10*position.y,2,2, target, evp::Color(1,1,1));
          for(b2Fixture* f = it->GetFixtureList(); f!=NULL; f=f->GetNext()) {
             b2PolygonShape* s = dynamic_cast<b2PolygonShape*>(f->GetShape());
 	    if(s) {
@@ -164,7 +183,7 @@ public:
       
       b2BodyDef bodyDef;
       bodyDef.type = b2_dynamicBody;
-      bodyDef.position.Set(10.0f, 20.0f);
+      bodyDef.position.Set(70.0f,50.0f);
       bodyDef.angle = M_PI*0.2;
       bodyDef.bullet = true;
       bodyDef.angularDamping = 1.0;
