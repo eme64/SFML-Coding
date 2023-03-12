@@ -109,7 +109,8 @@ struct Cell {
 };
 
 struct Ant {
-  float x, y, w, c = 0;
+  float x, y, w = 0;
+  float f = 0.1;
 };
 
 struct Arena {
@@ -144,13 +145,23 @@ struct Arena {
       ant.y = size_y * 0.5f;
     }
   }
+  void same_ants() {
+    for (Ant &ant : ants) {
+      ant.f = 1.0;
+    }
+  }
+  void two_ants() {
+    for (Ant &ant : ants) {
+      ant.f = ((float) rand() / (RAND_MAX)) > 0.5 ? 1.0 : -1.0;
+    }
+  }
 
   void update() {
     for (Ant &ant : ants) {
       int x = ((((int) ant.x) % size_x) + size_x) % size_x;
       int y = ((((int) ant.y) % size_y) + size_y) % size_y;
       Cell &cell = cells[y][x];
-      cell.feromone += 0.01;
+      cell.feromone += ant.f;
       float w = ant.w;
       float ax = ant.x + cos(w) * ANTS_SPEED;
       float ay = ant.y + sin(w) * ANTS_SPEED;
@@ -165,8 +176,7 @@ struct Arena {
       float fl = cells[ayl][axl].feromone;
       float fr = cells[ayr][axr].feromone;
       float wr = (((float) rand() / (RAND_MAX))*0.04 - 0.02);
-      ant.w += (fl > fr) ? -ANTS_AGILITY : ANTS_AGILITY;
-      ant.c = ant.w;
+      ant.w += ((fl > fr) ? -ANTS_AGILITY : ANTS_AGILITY) * ant.f;
       ant.x = fmod(fmod(ax, size_x) + size_x, size_x);
       ant.y = fmod(fmod(ay, size_y) + size_y, size_y);
     }
@@ -198,7 +208,7 @@ struct Arena {
     }
     if (ENABLE_ANTS) {
       for (Ant &ant : ants) {
-        DrawDot(ant.x*scale, ant.y*scale, 3, window, HueToRGB(ant.c / (M_PI*2)));
+        DrawDot(ant.x*scale, ant.y*scale, 3, window, HueToRGB(ant.w / (M_PI*2)));
       }
     }
   }
@@ -331,6 +341,12 @@ int main()
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
           arena.reset();
           arena.center_ants();
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num3)) {
+          arena.same_ants();
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num4)) {
+          arena.two_ants();
         }
 
         sf::Vector2i mousepos = sf::Mouse::getPosition(window);
