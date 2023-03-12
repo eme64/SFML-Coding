@@ -32,6 +32,8 @@ bool ENABLE_CELLS = false;
 bool ENABLE_ANTS = true;
 
 float CELLS_MAX = 1.0;
+float ANTS_SPEED = 0.5;
+float ANTS_AGILITY = 0.1;
 
 // --------------------------------------------------------- DRAWING
 sf::Color HueToRGB(float hue) {
@@ -121,41 +123,62 @@ struct Arena {
       cells[i].resize(size_x);
     }
     ants.resize(num);
+    reset();
+  }
+
+  void reset() {
+    for (int y = 0; y < size_y; y++) {
+      for (int x = 0; x < size_x; x++) {
+        cells[y][x].feromone = 0;
+      }
+    }
     for (Ant &ant : ants) {
       ant.x = (((float) rand() / (RAND_MAX)) * size_x);
       ant.y = (((float) rand() / (RAND_MAX)) * size_y);
       ant.w = (((float) rand() / (RAND_MAX)) * M_PI * 2);
     }
   }
+  void center_ants() {
+    for (Ant &ant : ants) {
+      ant.x = size_x * 0.5f;
+      ant.y = size_y * 0.5f;
+    }
+  }
 
   void update() {
     for (Ant &ant : ants) {
-      int x = ant.x;
-      int y = ant.y;
+      int x = ((((int) ant.x) % size_x) + size_x) % size_x;
+      int y = ((((int) ant.y) % size_y) + size_y) % size_y;
       Cell &cell = cells[y][x];
       cell.feromone += 0.01;
       float w = ant.w;
-      float ax = ant.x + cos(w) * 0.5;
-      float ay = ant.y + sin(w) * 0.5;
-      float axl = ant.x + cos(w-M_PI*0.2) * 1.5;
-      float ayl = ant.y + sin(w-M_PI*0.2) * 1.5;
-      float axr = ant.x + cos(w+M_PI*0.2) * 1.5;
-      float ayr = ant.y + sin(w+M_PI*0.2) * 1.5;
-      axl = fmod(fmod(axl, size_x) + size_x, size_x);
-      ayl = fmod(fmod(ayl, size_y) + size_y, size_y);
-      axr = fmod(fmod(axr, size_x) + size_x, size_x);
-      ayr = fmod(fmod(ayr, size_y) + size_y, size_y);
+      float ax = ant.x + cos(w) * ANTS_SPEED;
+      float ay = ant.y + sin(w) * ANTS_SPEED;
+      int axl = ant.x + cos(w-M_PI*0.2) * 1.5;
+      int ayl = ant.y + sin(w-M_PI*0.2) * 1.5;
+      int axr = ant.x + cos(w+M_PI*0.2) * 1.5;
+      int ayr = ant.y + sin(w+M_PI*0.2) * 1.5;
+      axl = ((axl % size_x) + size_x) % size_x;
+      ayl = ((ayl % size_y) + size_y) % size_y;
+      axr = ((axr % size_x) + size_x) % size_x;
+      ayr = ((ayr % size_y) + size_y) % size_y;
       float fl = cells[ayl][axl].feromone;
       float fr = cells[ayr][axr].feromone;
       float wr = (((float) rand() / (RAND_MAX))*0.04 - 0.02);
-      ant.w += (fl > fr) ? -0.1 : 0.1;
+      ant.w += (fl > fr) ? -ANTS_AGILITY : ANTS_AGILITY;
       ant.c = ant.w;
       ant.x = fmod(fmod(ax, size_x) + size_x, size_x);
       ant.y = fmod(fmod(ay, size_y) + size_y, size_y);
     }
+    float CX = size_x / 2;
+    float CY = size_y / 2;
+    float IX = 0.03 / (CX * CX);
+    float IY = 0.03 / (CY * CY);
     for (int y = 0; y < size_y; y++) {
       for (int x = 0; x < size_x; x++) {
-        cells[y][x].feromone *= 0.99;
+        float dx = CX - x;
+        float dy = CY - y;
+        cells[y][x].feromone *= 0.99 - (dx*dx*IX + dy*dy*IY);
       }
     }
   }
@@ -171,6 +194,7 @@ struct Arena {
           DrawRect(x*scale, y*scale, scale, scale, window, HueToRGB(f*factor));
         }
       }
+      CELLS_MAX = new_max;
     }
     if (ENABLE_ANTS) {
       for (Ant &ant : ants) {
@@ -283,6 +307,32 @@ int main()
           }
         }
 
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)){
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
+            ANTS_SPEED /= 1.05;
+          } else {
+            ANTS_SPEED *= 1.05;
+          }
+          ANTS_SPEED = std::min(10.0f, std::max(0.1f, ANTS_SPEED));
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)){
+          if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
+            ANTS_AGILITY /= 1.05;
+          } else {
+            ANTS_AGILITY *= 1.05;
+          }
+          ANTS_AGILITY = std::min(1.0f, std::max(0.01f, ANTS_AGILITY));
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num1)) {
+          arena.reset();
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num2)) {
+          arena.reset();
+          arena.center_ants();
+        }
+
         sf::Vector2i mousepos = sf::Mouse::getPosition(window);
         MOUSE_X = mousepos.x;
         MOUSE_Y = mousepos.y;
@@ -302,9 +352,17 @@ int main()
         arena.draw(window);
 
         FPS_tick();
-        DrawText(5,5, "FPS: " + std::to_string(framesPerSec), 10, window, sf::Color(255,255,255));
-        DrawText(5,20, "avg: " + std::to_string(framesPerSec_avg), 10, window, sf::Color(255,255,255));
-        DrawText(5,35, "ticker: " + std::to_string(ticker), 10, window, sf::Color(255,255,255));
+        DrawText(5,10, "FPS: " + std::to_string(framesPerSec), 16, window, sf::Color(255,255,255));
+        DrawText(5,30, "avg: " + std::to_string(framesPerSec_avg), 16, window, sf::Color(255,255,255));
+        DrawText(5,50, "ticker: " + std::to_string(ticker), 16, window, sf::Color(255,255,255));
+
+	DrawText(5,60, "Cells: (shift +) Q", 16, window, sf::Color(255,255,255));
+	DrawText(5,100, "Ants: (shift +) A", 16, window, sf::Color(255,255,255));
+
+	DrawText(5,130, "Ant speed: (shift +) S: " + std::to_string(ANTS_SPEED), 16, window, sf::Color(255,255,255));
+	DrawText(5,150, "Ant agility: (shift +) W: " + std::to_string(ANTS_AGILITY), 16, window, sf::Color(255,255,255));
+
+	DrawText(5,180, "Reset with scenario: 0..9" + std::to_string(ANTS_AGILITY), 16, window, sf::Color(255,255,255));
 
 	window.display();
     }
