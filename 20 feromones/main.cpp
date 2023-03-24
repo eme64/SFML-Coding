@@ -11,8 +11,8 @@
 //https://github.com/Auburns/FastNoise/wiki
 
 //----------------------------------- STATIC VARIABLES
-float SCREEN_SIZE_X = 1000;
-float SCREEN_SIZE_Y = 800;
+float SCREEN_SIZE_X = 1500;
+float SCREEN_SIZE_Y = 1000;
 
 float MOUSE_X;
 float MOUSE_Y;
