@@ -11,8 +11,8 @@
 //https://github.com/Auburns/FastNoise/wiki
 
 //----------------------------------- STATIC VARIABLES
-float SCREEN_SIZE_X = 1600;
-float SCREEN_SIZE_Y = 1000;
+float SCREEN_SIZE_X = 1000;
+float SCREEN_SIZE_Y = 800;
 
 float MOUSE_X;
 float MOUSE_Y;
@@ -60,6 +60,41 @@ sf::Color HueToRGB(float hue) {
   }
   hue-=1.0;
   return sf::Color(255.0,0,255.0-255.0*hue);
+}
+
+sf::Color heat(float h) {
+  if (h >= 0) {
+    return sf::Color(255.0*h,0,0);
+  } else {
+    return sf::Color(0,-255.0*h,-255.0*h);
+  }
+}
+
+sf::Color heat2(float h) {
+  if (h >= 0) {
+    if (h <= 0.1) {
+      h *= 10.0;
+      return sf::Color(255.0*h,0,255.0*h);
+    } else if (h <= 0.3) {
+      h = (h-0.1) * 5.0;
+      return sf::Color(255.0,0,255.0 - 255.0*h);
+    } else {
+      h = (h-0.3) * (1.0 / 0.7);
+      return sf::Color(255.0,255.0*h,0);
+    }
+  } else {
+    h = -h;
+    if (h <= 0.1) {
+      h *= 10.0;
+      return sf::Color(0,0,255.0*h);
+    } else if (h <= 0.3) {
+      h = (h-0.1) * 5.0;
+      return sf::Color(0,255.0*h,255.0);
+    } else {
+      h = (h-0.3) * (1.0 / 0.7);
+      return sf::Color(0,255.0,255.0-255.0*h);
+    }
+  }
 }
 
 void DrawDot(float x, float y, float r, sf::RenderWindow &window, sf::Color color = sf::Color(255,0,0))
@@ -192,13 +227,13 @@ struct Arena {
 
   void draw(sf::RenderWindow &window) {
     if (ENABLE_CELLS) {
-      float factor = 0.6 / CELLS_MAX;
+      float factor = 1.0 / CELLS_MAX;
       float new_max = 0.1;
       for (int y = 0; y < size_y; y++) {
         for (int x = 0; x < size_x; x++) {
           float f = cells[y][x].feromone;
           new_max = std::max(new_max, f);
-          DrawRect(x*scale, y*scale, scale, scale, window, HueToRGB(f*factor));
+          DrawRect(x*scale, y*scale, scale, scale, window, heat2(f*factor)); //HueToRGB(f*factor));
         }
       }
       CELLS_MAX = new_max;
@@ -216,9 +251,9 @@ int main()
 {
     // ------------------------------------ WINDOW
     sf::ContextSettings settings;
-    settings.antialiasingLevel = 8;
-    //sf::Style style = sf::Style::Fullscreen;//Default
-    sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "feromones", sf::Style::Fullscreen, settings);
+    //settings.antialiasingLevel = 8;
+    //sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "feromones", sf::Style::Fullscreen, settings);
+    sf::RenderWindow window(sf::VideoMode(SCREEN_SIZE_X, SCREEN_SIZE_Y), "feromones", sf::Style::Default, settings);
     sf::Vector2u size = window.getSize();
     SCREEN_SIZE_X = size.x;
     SCREEN_SIZE_Y = size.y;
@@ -369,7 +404,7 @@ int main()
         DrawText(5,30, "avg: " + std::to_string(framesPerSec_avg), 16, window, sf::Color(255,255,255));
         DrawText(5,50, "ticker: " + std::to_string(ticker), 16, window, sf::Color(255,255,255));
 
-	DrawText(5,60, "Cells: (shift +) Q", 16, window, sf::Color(255,255,255));
+	DrawText(5,80,  "Cells: (shift +) Q", 16, window, sf::Color(255,255,255));
 	DrawText(5,100, "Ants: (shift +) A", 16, window, sf::Color(255,255,255));
 
 	DrawText(5,130, "Ant speed: (shift +) S: " + std::to_string(ANTS_SPEED), 16, window, sf::Color(255,255,255));
