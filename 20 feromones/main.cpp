@@ -59,10 +59,7 @@ sf::Color HueToRGB(float hue) {
     return sf::Color(255.0*hue,0,255.0);
   }
   hue-=1.0;
-  if (hue<1.0) {
-    return sf::Color(255.0,0,255.0-255.0*hue);
-  }
-  return sf::Color(255,255,255);
+  return sf::Color(255.0,0,255.0-255.0*hue);
 }
 
 void DrawDot(float x, float y, float r, sf::RenderWindow &window, sf::Color color = sf::Color(255,0,0))
