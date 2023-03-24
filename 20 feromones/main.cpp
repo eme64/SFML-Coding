@@ -7,9 +7,6 @@
 #include <queue>
 #include <algorithm>
 
-#include "FastNoise/FastNoise.h"
-//https://github.com/Auburns/FastNoise/wiki
-
 //----------------------------------- STATIC VARIABLES
 float SCREEN_SIZE_X = 1500;
 float SCREEN_SIZE_Y = 1000;
