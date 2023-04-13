@@ -84,12 +84,16 @@ public:
       };
       visitUsers(f);
       
-      for(auto it = particles_.begin(); it!=particles_.end(); it++) {
-         Particle *p = *it;
+      std::vector<Particle*> del_list;
+
+      for(Particle* p : particles_) {
 	 if(! p->draw(target)) {
-	    delete p;
-	    particles_.erase(it);
+            del_list.push_back(p);
 	 }
+      }
+      for(Particle* p : del_list) {
+         particles_.erase(p);
+         delete p;
       }
    }
    virtual evp::UserData* newUserData(const evp::User* u) { return new RocketUserData();}
