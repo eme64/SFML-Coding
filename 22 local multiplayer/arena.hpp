@@ -26,6 +26,77 @@ struct Control {
   void set_right(Callback f) {_right = f;}
 };
 
+struct Camera {
+  float _target_dx = 0, _target_dy = 0;
+  float _x = 0, _y = 0, _scale = 0;
+  float _min_x, _min_y, _max_x, _max_y;
+  Camera(float target_dx, float target_dy)
+  : _target_dx(target_dx), _target_dy(target_dy) {
+  }
+  Camera() {}
+  float x(float x_) {return _x + _scale*x_;}
+  float y(float y_) {return _y + _scale*y_;}
+  float dx(float dx_) {return _scale*dx_;}
+  float dy(float dy_) {return _scale*dy_;}
+
+  void rect(float x_, float y_, float dx_, float dy_, sf::RenderWindow &window, sf::Color color) {
+    DrawRect(x(x_), y(y_), dx(dx_), dy(dy_), window, color);
+  }
+  void dot(float x_, float y_, float r_, sf::RenderWindow &window, sf::Color color) {
+    DrawDot(x(x_), y(y_), dx(r_), window, color);
+  }
+  void capture_start() {
+    _min_x = 1e10;
+    _min_y = 1e10;
+    _max_x = -1e10;
+    _max_y = -1e10;
+  }
+  void capture_add(float x_, float y_) {
+    _min_x = std::min(_min_x, x_);
+    _min_y = std::min(_min_y, y_);
+    _max_x = std::max(_max_x, x_);
+    _max_y = std::max(_max_y, y_);
+  }
+  void capture_end(float min_dx, float min_dy, float margin_factor) {
+    float ddx = _max_x - _min_x;
+    float ddy = _max_y - _min_y;
+    assert(ddx >= 0 && ddy >=0 && "had at least one capture_add");
+    float ccx = (_max_x + _min_x) * 0.5;
+    float ccy = (_max_y + _min_y) * 0.5;
+    // If captured points are too close, then take bigger view
+    ddx = std::max(ddx, min_dx);
+    ddy = std::max(ddy, min_dy);
+    // Figure out scale
+    float r1 = _target_dx / _target_dy;
+    float r2 = ddx / ddy;
+    if (r1 < r2) {
+      // x is bottleneck
+      _scale = _target_dx / ddx;
+    } else {
+      // y is bottleneck
+      _scale = _target_dy / ddy;
+    }
+    _scale /= margin_factor;
+    // Figure out offset, given scale
+    // _target_dx * 0.5 = x(ccx) = _x + _scale*ccx
+    _x = _target_dx*0.5 - _scale*ccx;
+    _y = _target_dy*0.5 - _scale*ccy;
+  }
+  void transition_to(Camera& c, float factor) {
+    float f1 = 1.0-factor;
+    float f2 = factor;
+    if (_scale == 0) {
+      f1 = 0; f2 = 1;
+    }
+    //_x = c._x;
+    //_y = c._y;
+    //_scale = c._scale;
+    _x = f1*_x + f2*c._x;
+    _y = f1*_y + f2*c._y;
+    _scale = f1*_scale + f2*c._scale;
+  }
+};
+
 struct User {
   int _uid;
   Control* _ctrl;
@@ -61,8 +132,7 @@ struct Room {
     }
   }
 
-  virtual void update() {
-  }
+  virtual void update() {}
 
   virtual void draw(sf::RenderWindow &window) {
     sf::Vector2u size = window.getSize();

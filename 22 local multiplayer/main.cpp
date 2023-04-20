@@ -74,8 +74,12 @@ int main()
     Arena arena(SCREEN_SIZE_X/scale, SCREEN_SIZE_Y/scale, scale);
     Control* ctrl_0 = arena.new_ctrl();
     Control* ctrl_1 = arena.new_ctrl();
+    Control* ctrl_2 = arena.new_ctrl();
+    Control* ctrl_3 = arena.new_ctrl();
     RoomLobby lobby("lobby");
     arena.add_room(&lobby);
+    arena.new_user();
+    arena.new_user();
     arena.new_user();
     arena.new_user();
 
@@ -106,6 +110,16 @@ int main()
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down )){ ctrl_1->down(); }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left )){ ctrl_1->left(); }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)){ ctrl_1->right(); }
+
+	if (sf::Keyboard::isKeyPressed(sf::Keyboard::T)){ ctrl_2->up(); }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::G)){ ctrl_2->down(); }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::F)){ ctrl_2->left(); }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::H)){ ctrl_2->right(); }
+
+	if (sf::Keyboard::isKeyPressed(sf::Keyboard::I)){ ctrl_3->up(); }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::K)){ ctrl_3->down(); }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::J)){ ctrl_3->left(); }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::L)){ ctrl_3->right(); }
 
         bool display_fps = false;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::F1)) {
